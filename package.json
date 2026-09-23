@@ -1,0 +1,15 @@
+{
+  "name": "blinkit-dashboard",
+  "version": "1.0.0",
+  "description": "Phase 1 MVP - Blinkit inventory report dashboard",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "express": "^4.19.2",
+    "multer": "^1.4.5-lts.1",
+    "nodemon": "^3.1.14",
+    "xlsx": "^0.18.5"
+  }
+}

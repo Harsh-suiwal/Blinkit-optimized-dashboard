@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Blinkit Inventory Dashboard</title>
+<script>
+(function () {
+  var saved = localStorage.getItem('blinkitTheme');
+  var theme = saved || (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+  document.documentElement.setAttribute('data-theme', theme);
+})();
+</script>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<div id="sidebar-root"></div>
+
+<div class="main-content">
+
+<header class="topbar">
+  <div class="topbar-left">
+    <h1>Blinkit Inventory Dashboard</h1>
+    <span id="lastUpdated" class="muted">No report uploaded yet</span>
+  </div>
+  <div class="topbar-right">
+    <label class="upload-btn">
+      Upload Report
+      <input type="file" id="fileInput" accept=".xlsx" hidden>
+    </label>
+    <button id="exportBtn" class="secondary-btn">Export Sheet</button>
+    <button id="exportAllBtn" class="secondary-btn full-report-btn">&#128202; Full Report</button>
+  </div>
+</header>
+
+<div id="uploadStatus" class="upload-status"></div>
+
+<section class="cards">
+  <div class="card">
+    <div class="card-label">Units Sold (30 days)</div>
+    <div class="card-value" id="kpiUnitsSold">-</div>
+  </div>
+  <div class="card">
+    <div class="card-label">Total Stock Available</div>
+    <div class="card-value" id="kpiStock">-</div>
+  </div>
+  <div class="card">
+    <div class="card-label">Products</div>
+    <div class="card-value" id="kpiProducts">-</div>
+  </div>
+  <div class="card">
+    <div class="card-label">Low / Out of Stock</div>
+    <div class="card-value" id="kpiLowStock">-</div>
+  </div>
+</section>
+
+<section class="controls">
+  <input type="text" id="searchBox" placeholder="Search product or warehouse...">
+</section>
+
+<section class="table-wrap">
+  <table id="productTable">
+    <thead>
+      <tr>
+        <th data-key="productName">Product</th>
+        <th data-key="warehouseName">Warehouse</th>
+        <th data-key="totalStockAvailable">Stock</th>
+        <th data-key="unitsSold7">Sold - 7d</th>
+        <th data-key="unitsSold15">Sold - 15d</th>
+        <th data-key="unitsSold30">Sold - 30d</th>
+        <th data-key="unitsSold45">Sold - 45d</th>
+        <th data-key="unitsSold60">Sold - 60d</th>
+        <th data-key="incomingInventory">Incoming</th>
+        <th>Status</th>
+      </tr>
+    </thead>
+    <tbody id="productTableBody"></tbody>
+  </table>
+  <p id="emptyState" class="muted" style="display:none;">No data yet. Upload a report to get started.</p>
+</section>
+
+</div>
+
+<script src="sidebar.js"></script>
+<script src="app.js"></script>
+</body>
+</html>

@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Campaign Analysis</title>
+  <script>
+(function () {
+  var saved = localStorage.getItem('blinkitTheme');
+  var theme = saved || (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+  document.documentElement.setAttribute('data-theme', theme);
+})();
+</script>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<div id="sidebar-root"></div>
+
+<div class="main-content">
+
+<header class="topbar">
+  <div class="topbar-left">
+    <h1>Campaign Analysis</h1>
+    <span id="lastUpdated" class="muted">No campaign report uploaded yet</span>
+  </div>
+  <div class="topbar-right">
+    <label class="upload-btn">
+      Upload Campaign Sheet
+      <input type="file" id="fileInput" accept=".xlsx" hidden>
+    </label>
+    <button id="campaignExportBtn" class="secondary-btn">Export Sheet</button>
+  </div>
+</header>
+
+<div id="uploadStatus" class="upload-status"></div>
+
+<section class="controls campaign-controls">
+  <label class="filter-label" for="periodSelect">Period</label>
+  <select id="periodSelect"></select>
+  <input type="text" id="searchBox" placeholder="Search campaign...">
+</section>
+
+<section class="cards campaign-kpis">
+  <div class="card">
+    <div class="card-label">Total Ad Spend</div>
+    <div class="card-value" id="kpiAdSpend">-</div>
+  </div>
+  <div class="card">
+    <div class="card-label">Total Sales</div>
+    <div class="card-value" id="kpiSales">-</div>
+  </div>
+  <div class="card">
+    <div class="card-label">Overall ROAS</div>
+    <div class="card-value" id="kpiRoas">-</div>
+  </div>
+  <div class="card">
+    <div class="card-label">Overall ROI</div>
+    <div class="card-value" id="kpiRoi">-</div>
+  </div>
+  <div class="card">
+    <div class="card-label">Qty Sold</div>
+    <div class="card-value" id="kpiUnits">-</div>
+  </div>
+  <div class="card">
+    <div class="card-label">Active Campaigns</div>
+    <div class="card-value" id="kpiActive">-</div>
+  </div>
+</section>
+
+<section class="campaign-highlights">
+  <div class="highlight-card highlight-best">
+    <div class="highlight-label">Best Campaign</div>
+    <div class="highlight-name" id="bestCampaign">-</div>
+    <div class="highlight-metric" id="bestCampaignMetric">-</div>
+  </div>
+  <div class="highlight-card highlight-worst">
+    <div class="highlight-label">Needs Attention</div>
+    <div class="highlight-name" id="worstCampaign">-</div>
+    <div class="highlight-metric" id="worstCampaignMetric">-</div>
+  </div>
+  <div class="funnel-card">
+    <div class="highlight-label">Campaign Funnel</div>
+    <div class="funnel-row">
+      <div><strong id="funnelImpressions">-</strong><span>Impressions</span></div>
+      <div class="funnel-arrow">&rarr;</div>
+      <div><strong id="funnelAtc">-</strong><span>ATC</span></div>
+      <div class="funnel-arrow">&rarr;</div>
+      <div><strong id="funnelUnits">-</strong><span>Qty Sold</span></div>
+    </div>
+  </div>
+</section>
+
+<section class="legend">
+  <span class="legend-item"><span class="dot dot-top"></span> Top performer (top 25% by ROAS)</span>
+  <span class="legend-item"><span class="dot dot-low"></span> Needs attention (bottom 25% by ROAS)</span>
+</section>
+
+<section class="table-wrap">
+  <table id="campaignTable">
+    <thead>
+      <tr>
+        <th>Rank</th>
+        <th data-key="campaignName">Campaign</th>
+        <th data-key="campaignDetail">Type</th>
+        <th data-key="status">Status</th>
+        <th data-key="adSpend">Ad Spend</th>
+        <th data-key="sales">Sales</th>
+        <th data-key="roas">ROAS</th>
+        <th data-key="roiPct">ROI</th>
+        <th data-key="rosPerUnit">ROS / Unit</th>
+        <th data-key="impressions">Impressions</th>
+        <th data-key="atc">ATC</th>
+        <th data-key="qtySold">Qty Sold</th>
+      </tr>
+    </thead>
+    <tbody id="campaignTableBody"></tbody>
+  </table>
+  <p id="emptyState" class="muted" style="display:none;">No campaign data yet. Upload the Oicia Campaign Sheet to get started.</p>
+</section>
+
+</div>
+
+<script src="sidebar.js"></script>
+<script src="campaign.js"></script>
+</body>
+</html>

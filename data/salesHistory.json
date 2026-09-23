@@ -1,0 +1,254 @@
+{
+  "snapshots": [
+    {
+      "date": "2026-09-23",
+      "city": "Bengaluru",
+      "revenue": 16288,
+      "units": 32,
+      "orderCount": 32,
+      "avgOrderValue": 509,
+      "topProduct": "Oicia Heavy Duty Cleaver Knife (Stainless Steel)",
+      "topProductRevenue": 16288
+    },
+    {
+      "date": "2026-09-23",
+      "city": "Gurgaon",
+      "revenue": 5070,
+      "units": 13,
+      "orderCount": 13,
+      "avgOrderValue": 390,
+      "topProduct": "Oicia Stainless Steel Spoon Set",
+      "topProductRevenue": 2793
+    },
+    {
+      "date": "2026-09-23",
+      "city": "Jalandhar",
+      "revenue": 250,
+      "units": 1,
+      "orderCount": 1,
+      "avgOrderValue": 250,
+      "topProduct": "Oicia Non-Stick Brush & Spatula Set (Silicone)",
+      "topProductRevenue": 250
+    },
+    {
+      "date": "2026-09-23",
+      "city": "Surat",
+      "revenue": 1518,
+      "units": 4,
+      "orderCount": 4,
+      "avgOrderValue": 379.5,
+      "topProduct": "Oicia Heavy Duty Cleaver Knife (Stainless Steel)",
+      "topProductRevenue": 1018
+    },
+    {
+      "date": "2026-09-23",
+      "city": "Pune",
+      "revenue": 3965,
+      "units": 12,
+      "orderCount": 12,
+      "avgOrderValue": 330.42,
+      "topProduct": "Oicia Non-Stick Brush & Spatula Set (Silicone)",
+      "topProductRevenue": 1750
+    },
+    {
+      "date": "2026-09-23",
+      "city": "Mumbai",
+      "revenue": 30903,
+      "units": 84,
+      "orderCount": 77,
+      "avgOrderValue": 401.34,
+      "topProduct": "Oicia Stainless Steel Spoon Set",
+      "topProductRevenue": 6783
+    },
+    {
+      "date": "2026-09-23",
+      "city": "Hyderabad",
+      "revenue": 1557,
+      "units": 4,
+      "orderCount": 4,
+      "avgOrderValue": 389.25,
+      "topProduct": "Oicia Stainless Steel Spoon Set",
+      "topProductRevenue": 798
+    },
+    {
+      "date": "2026-09-23",
+      "city": "Vadodara",
+      "revenue": 1956,
+      "units": 5,
+      "orderCount": 4,
+      "avgOrderValue": 489,
+      "topProduct": "Oicia Stainless Steel Spoon Set",
+      "topProductRevenue": 1197
+    },
+    {
+      "date": "2026-09-23",
+      "city": "Kolkata",
+      "revenue": 8049,
+      "units": 23,
+      "orderCount": 22,
+      "avgOrderValue": 365.86,
+      "topProduct": "Oicia Heavy Duty Cleaver Knife (Stainless Steel)",
+      "topProductRevenue": 3054
+    },
+    {
+      "date": "2026-09-23",
+      "city": "Delhi",
+      "revenue": 10904,
+      "units": 31,
+      "orderCount": 30,
+      "avgOrderValue": 363.47,
+      "topProduct": "Oicia Non-Stick Brush & Spatula Set (Silicone)",
+      "topProductRevenue": 3750
+    },
+    {
+      "date": "2026-09-23",
+      "city": "Ghaziabad",
+      "revenue": 2417,
+      "units": 7,
+      "orderCount": 7,
+      "avgOrderValue": 345.29,
+      "topProduct": "Oicia Heavy Duty Cleaver Knife (Stainless Steel)",
+      "topProductRevenue": 1018
+    },
+    {
+      "date": "2026-09-23",
+      "city": "Nashik",
+      "revenue": 1018,
+      "units": 2,
+      "orderCount": 2,
+      "avgOrderValue": 509,
+      "topProduct": "Oicia Heavy Duty Cleaver Knife (Stainless Steel)",
+      "topProductRevenue": 1018
+    },
+    {
+      "date": "2026-09-23",
+      "city": "Bhopal",
+      "revenue": 399,
+      "units": 1,
+      "orderCount": 1,
+      "avgOrderValue": 399,
+      "topProduct": "Oicia Stainless Steel Spoon Set",
+      "topProductRevenue": 399
+    },
+    {
+      "date": "2026-09-23",
+      "city": "Zirakpur",
+      "revenue": 509,
+      "units": 1,
+      "orderCount": 1,
+      "avgOrderValue": 509,
+      "topProduct": "Oicia Heavy Duty Cleaver Knife (Stainless Steel)",
+      "topProductRevenue": 509
+    },
+    {
+      "date": "2026-09-23",
+      "city": "Lucknow",
+      "revenue": 649,
+      "units": 2,
+      "orderCount": 2,
+      "avgOrderValue": 324.5,
+      "topProduct": "Oicia Stainless Steel Spoon Set",
+      "topProductRevenue": 399
+    },
+    {
+      "date": "2026-09-23",
+      "city": "Chandigarh",
+      "revenue": 500,
+      "units": 2,
+      "orderCount": 2,
+      "avgOrderValue": 250,
+      "topProduct": "Oicia Non-Stick Brush & Spatula Set (Silicone)",
+      "topProductRevenue": 500
+    },
+    {
+      "date": "2026-09-23",
+      "city": "Jaipur",
+      "revenue": 2926,
+      "units": 8,
+      "orderCount": 8,
+      "avgOrderValue": 365.75,
+      "topProduct": "Oicia Heavy Duty Cleaver Knife (Stainless Steel)",
+      "topProductRevenue": 1527
+    },
+    {
+      "date": "2026-09-23",
+      "city": "Patna",
+      "revenue": 1268,
+      "units": 3,
+      "orderCount": 3,
+      "avgOrderValue": 422.67,
+      "topProduct": "Oicia Heavy Duty Cleaver Knife (Stainless Steel)",
+      "topProductRevenue": 1018
+    },
+    {
+      "date": "2026-09-23",
+      "city": "Dehradun",
+      "revenue": 1018,
+      "units": 2,
+      "orderCount": 2,
+      "avgOrderValue": 509,
+      "topProduct": "Oicia Heavy Duty Cleaver Knife (Stainless Steel)",
+      "topProductRevenue": 1018
+    },
+    {
+      "date": "2026-09-23",
+      "city": "Chennai",
+      "revenue": 2286,
+      "units": 5,
+      "orderCount": 5,
+      "avgOrderValue": 457.2,
+      "topProduct": "Oicia Heavy Duty Cleaver Knife (Stainless Steel)",
+      "topProductRevenue": 2036
+    },
+    {
+      "date": "2026-09-23",
+      "city": "Kanpur",
+      "revenue": 399,
+      "units": 1,
+      "orderCount": 1,
+      "avgOrderValue": 399,
+      "topProduct": "Oicia Stainless Steel Spoon Set",
+      "topProductRevenue": 399
+    },
+    {
+      "date": "2026-09-23",
+      "city": "Mohali",
+      "revenue": 509,
+      "units": 1,
+      "orderCount": 1,
+      "avgOrderValue": 509,
+      "topProduct": "Oicia Heavy Duty Cleaver Knife (Stainless Steel)",
+      "topProductRevenue": 509
+    },
+    {
+      "date": "2026-09-23",
+      "city": "Faridabad",
+      "revenue": 250,
+      "units": 1,
+      "orderCount": 1,
+      "avgOrderValue": 250,
+      "topProduct": "Oicia Non-Stick Brush & Spatula Set (Silicone)",
+      "topProductRevenue": 250
+    },
+    {
+      "date": "2026-09-23",
+      "city": "Meerut",
+      "revenue": 509,
+      "units": 1,
+      "orderCount": 1,
+      "avgOrderValue": 509,
+      "topProduct": "Oicia Heavy Duty Cleaver Knife (Stainless Steel)",
+      "topProductRevenue": 509
+    },
+    {
+      "date": "2026-09-23",
+      "city": "Agra",
+      "revenue": 250,
+      "units": 1,
+      "orderCount": 1,
+      "avgOrderValue": 250,
+      "topProduct": "Oicia Non-Stick Brush & Spatula Set (Silicone)",
+      "topProductRevenue": 250
+    }
+  ]
+}
