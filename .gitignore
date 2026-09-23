@@ -1,0 +1,19 @@
+# Dependencies
+node_modules/
+
+# Runtime data this app generates — not source
+data/*
+uploads/*
+!data/.gitkeep
+!uploads/.gitkeep
+
+# Env / secrets
+.env
+.env.local
+
+# OS/editor cruft
+.DS_Store
+Thumbs.db
+.vscode/
+*.log
+npm-debug.log*

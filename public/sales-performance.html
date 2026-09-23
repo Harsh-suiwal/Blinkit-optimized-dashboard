@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Sales Performance - City Wise</title>
+<script>
+(function () {
+  var saved = localStorage.getItem('blinkitTheme');
+  var theme = saved || (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+  document.documentElement.setAttribute('data-theme', theme);
+})();
+</script>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<div id="sidebar-root"></div>
+
+<div class="main-content">
+
+<header class="topbar">
+  <div class="topbar-left">
+    <h1>Sales Performance - City Wise</h1>
+    <span id="lastUpdated" class="muted">No report uploaded yet</span>
+  </div>
+  <div class="topbar-right">
+    <label class="upload-btn">
+      Upload Sales Report
+      <input type="file" id="fileInput" accept=".xlsx" hidden>
+    </label>
+    <button id="wipeAllBtn" class="secondary-btn danger-btn">&#128465;&#65039; Clear All Data</button>
+  </div>
+</header>
+
+<div id="uploadStatus" class="upload-status"></div>
+
+<section class="cards">
+  <div class="card">
+    <div class="card-label">Total Revenue</div>
+    <div class="card-value" id="kpiRevenue">-</div>
+  </div>
+  <div class="card">
+    <div class="card-label">Total Units Sold</div>
+    <div class="card-value" id="kpiUnits">-</div>
+  </div>
+  <div class="card">
+    <div class="card-label">Total Orders</div>
+    <div class="card-value" id="kpiOrders">-</div>
+  </div>
+  <div class="card">
+    <div class="card-label">Top City</div>
+    <div class="card-value" id="kpiTopCity">-</div>
+  </div>
+</section>
+
+<section class="legend">
+  <span class="legend-item"><span class="dot dot-top"></span> Top performer (top 25% by revenue)</span>
+  <span class="legend-item"><span class="dot dot-low"></span> Needs attention (bottom 25% by revenue)</span>
+  <span class="legend-item"><span class="dot dot-up"></span> Growing vs last upload</span>
+  <span class="legend-item"><span class="dot dot-down"></span> Declining vs last upload</span>
+  <span class="legend-item muted">Tip: Ctrl+Z undoes the last delete</span>
+</section>
+
+<section class="table-wrap">
+  <table id="cityTable">
+    <thead>
+      <tr>
+        <th>Rank</th>
+        <th data-key="city">City</th>
+        <th data-key="revenue">Revenue</th>
+        <th data-key="units">Units Sold</th>
+        <th data-key="orderCount">Orders</th>
+        <th data-key="avgOrderValue">Avg Order Value</th>
+        <th data-key="topProduct">Best-Selling Product</th>
+        <th>Trend vs Last Upload</th>
+        <th></th>
+      </tr>
+    </thead>
+    <tbody id="cityTableBody"></tbody>
+  </table>
+  <p id="emptyState" class="muted" style="display:none;">No sales data yet. Upload sales_summary.xlsx to get started.</p>
+</section>
+
+</div>
+
+<script src="sidebar.js"></script>
+<script src="sales.js"></script>
+</body>
+</html>
