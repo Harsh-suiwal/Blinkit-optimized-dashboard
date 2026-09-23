@@ -1,4 +1,4 @@
-# Blinkit Inventory Dashboard — Phase 1 MVP
+# Blinkit Inventory Dashboard — Phase 1 
 
 ## Setup
 
