@@ -1,0 +1,38 @@
+# Dependencies
+node_modules
+**/node_modules
+
+# Environment files
+.env
+.env.*
+!.env.example
+
+# Uploads
+uploads
+
+# Generated data
+data/*.json
+!data/.gitkeep
+
+# Build output
+dist
+build
+.next
+
+# Logs
+*.log
+
+# IDE
+.vscode
+.idea
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Excel data
+data/*.json
+uploads/
+
+# Keep folder structure
+!data/.gitkeep

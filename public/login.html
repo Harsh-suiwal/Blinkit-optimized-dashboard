@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Login — Blinkit Dashboard</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body class="login-body">
+
+<div class="login-container">
+  <div class="login-card">
+    <div class="login-header">
+      <div class="login-logo">
+        <svg width="40" height="40" viewBox="0 0 40 40" fill="none">
+          <rect width="40" height="40" rx="10" fill="#f8b400"/>
+          <text x="50%" y="55%" dominant-baseline="middle" text-anchor="middle"
+                font-size="20" font-weight="700" fill="#1c2733">B</text>
+        </svg>
+      </div>
+      <h1>Blinkit Dashboard</h1>
+      <p class="muted">Sign in to manage your inventory</p>
+    </div>
+
+    <form id="loginForm" autocomplete="on">
+      <div class="form-group">
+        <label for="email">Email</label>
+        <input type="email" id="email" name="email" placeholder="admin@blinkit.local"
+               required autocomplete="email" autofocus>
+      </div>
+
+      <div class="form-group">
+        <label for="password">Password</label>
+        <input type="password" id="password" name="password" placeholder="••••••••"
+               required autocomplete="current-password">
+      </div>
+
+      <div id="loginError" class="login-error" style="display:none;"></div>
+
+      <button type="submit" class="login-btn" id="loginBtn">
+        <span id="loginBtnText">Sign In</span>
+        <span id="loginSpinner" class="spinner" style="display:none;"></span>
+      </button>
+    </form>
+  </div>
+</div>
+
+<script src="login.js"></script>
+</body>
+</html>
