@@ -480,6 +480,13 @@ app.get('/api/product-sales', requireAuth, (req, res) => {
   res.json({ date: latest.date, row });
 });
 
+// Full product-by-city breakdown used by feeder-scoped Sales Performance.
+app.get('/api/product-city-sales', requireAuth, (req, res) => {
+  const latest = loadProductSalesLatest();
+  if (!latest) return res.json({ date: null, productRows: [] });
+  res.json({ date: latest.date, productRows: latest.productRows || [] });
+});
+
 // Brand-focus: a single brand's totals + per-city breakdown, aggregated
 // from the product sales data.
 app.get('/api/brand-sales', requireAuth, (req, res) => {

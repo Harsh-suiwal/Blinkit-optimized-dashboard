@@ -2,7 +2,7 @@ import { Component, HostListener, OnInit, computed, effect, inject, signal } fro
 import { ApiService } from '../core/api.service';
 import { AuthService } from '../core/auth.service';
 import { compareValues, money } from '../core/formatters';
-import { CityRow, SalesSummary } from '../core/models';
+import { CityRow, ProductCitySalesRow, ProductSalesRow, SalesSummary } from '../core/models';
 import { UiStateService } from '../core/ui-state.service';
 import { feederCities } from '../core/feeder-map';
 
@@ -21,11 +21,23 @@ import { feederCities } from '../core/feeder-map';
     </header>
     <div class="upload-status" [class.success]="statusType() === 'success'" [class.error]="statusType() === 'error'">{{ status() }}</div>
     <section class="cards">
-      <div class="card"><div class="card-label">Total Revenue</div><div class="card-value">{{ money(summary().totalRevenue) }}</div></div>
-      <div class="card"><div class="card-label">Total Units Sold</div><div class="card-value">{{ summary().totalUnits }}</div></div>
-      <div class="card"><div class="card-label">Total Orders</div><div class="card-value">{{ ordersLabel() }}</div></div>
-      <div class="card"><div class="card-label">Top City</div><div class="card-value">{{ summary().topCity || '-' }}</div></div>
+      <div class="card"><div class="card-label">{{ ui.focusedFeeder() ? 'Feeder Revenue' : 'Total Revenue' }}</div><div class="card-value">{{ money(ui.focusedFeeder() ? feederSummary().revenue : summary().totalRevenue) }}</div></div>
+      <div class="card"><div class="card-label">Total Units Sold</div><div class="card-value">{{ ui.focusedFeeder() ? feederSummary().units : summary().totalUnits }}</div></div>
+      <div class="card"><div class="card-label">{{ ui.focusedFeeder() ? 'Product Orders*' : 'Total Orders' }}</div><div class="card-value">{{ ui.focusedFeeder() ? (feederOrderMetricsReady() ? feederSummary().orders : 'N/A') : ordersLabel() }}</div></div>
+      <div class="card"><div class="card-label">{{ ui.focusedFeeder() ? 'Cities in Feeder' : 'Top City' }}</div><div class="card-value">{{ ui.focusedFeeder() ? feederSummary().cities : (summary().topCity || '-') }}</div></div>
     </section>
+    @if (ui.focusedFeeder()) {
+      <section class="controls feeder-product-filter">
+        <label for="feederProductFilter">Product breakdown</label>
+        <select id="feederProductFilter" [value]="selectedFeederProduct()" (change)="selectFeederProduct($event)">
+          <option value="">All Products</option>
+          @for (product of feederProductNames(); track product) { <option [value]="product">{{ product }}</option> }
+        </select>
+        <span class="muted">{{ ui.focusedFeeder() }} feeder · {{ feederCities(ui.focusedFeeder()).length }} mapped cities</span>
+        @if (!feederOrderMetricsReady()) { <span class="muted">Re-upload the sales report to populate product-level orders and AOV.</span> }
+        @else { <span class="muted">* Orders and AOV are counted per product per city.</span> }
+      </section>
+    }
     <section class="legend">
       <span class="legend-item"><span class="dot dot-top"></span> Top performer (top 25% by revenue)</span>
       <span class="legend-item"><span class="dot dot-low"></span> Needs attention (bottom 25% by revenue)</span>
@@ -33,6 +45,14 @@ import { feederCities } from '../core/feeder-map';
       <span class="legend-item"><span class="dot dot-down"></span> Declining vs last upload</span>
       <span class="legend-item muted">Tip: Ctrl+Z undoes the last delete</span>
     </section>
+    @if (ui.focusedFeeder()) {
+    <section class="table-wrap">
+      <table id="feederProductTable"><thead><tr><th (click)="sortFeederBy('city')">City {{ feederSortIndicator('city') }}</th><th (click)="sortFeederBy('productName')">Product {{ feederSortIndicator('productName') }}</th><th (click)="sortFeederBy('revenue')">Revenue {{ feederSortIndicator('revenue') }}</th><th (click)="sortFeederBy('units')">Units Sold {{ feederSortIndicator('units') }}</th><th (click)="sortFeederBy('orderCount')">Orders {{ feederSortIndicator('orderCount') }}</th><th (click)="sortFeederBy('avgOrderValue')">Avg Order Value {{ feederSortIndicator('avgOrderValue') }}</th></tr></thead><tbody>
+        @for (row of displayedFeederRows(); track row.city + '::' + row.productName) { <tr><td>{{ row.city }}</td><td>{{ row.productName }}</td><td>{{ money(row.revenue) }}</td><td>{{ row.units }}</td><td>{{ row.orderCount ?? 'N/A' }}</td><td>@if (row.avgOrderValue === undefined) { <span class="na">N/A</span> } @else { {{ money(row.avgOrderValue) }} }</td></tr> }
+      </tbody></table>
+      @if (!displayedFeederRows().length) { <p class="muted">{{ emptyMessage() }}</p> }
+    </section>
+    } @else {
     <section class="table-wrap">
       <table id="cityTable"><thead><tr><th>Rank</th><th (click)="sortBy('city')">City {{ sortIndicator('city') }}</th><th (click)="sortBy('revenue')">Revenue {{ sortIndicator('revenue') }}</th><th (click)="sortBy('units')">Units Sold {{ sortIndicator('units') }}</th><th (click)="sortBy('orderCount')">Orders {{ sortIndicator('orderCount') }}</th><th (click)="sortBy('avgOrderValue')">Avg Order Value {{ sortIndicator('avgOrderValue') }}</th><th (click)="sortBy('topProduct')">Best-Selling Product {{ sortIndicator('topProduct') }}</th><th>Trend vs Last Upload</th><th></th></tr></thead><tbody>
         @for (row of displayedRows(); track row.city; let index = $index) {
@@ -48,6 +68,7 @@ import { feederCities } from '../core/feeder-map';
       </tbody></table>
       @if (!displayedRows().length) { <p class="muted">{{ emptyMessage() }}</p> }
     </section>
+    }
   `,
 })
 export class SalesPageComponent implements OnInit {
@@ -55,6 +76,10 @@ export class SalesPageComponent implements OnInit {
   readonly auth = inject(AuthService);
   readonly ui = inject(UiStateService);
   readonly rows = signal<CityRow[]>([]);
+  readonly feederProductRows = signal<ProductSalesRow[]>([]);
+  readonly selectedFeederProduct = signal('');
+  readonly feederSortKey = signal<keyof ProductCitySalesRow>('revenue');
+  readonly feederSortAsc = signal(false);
   readonly summary = signal<SalesSummary>({ totalRevenue: 0, totalUnits: 0, totalOrders: 0, cityCount: 0, topCity: null });
   readonly lastUpdated = signal('No report uploaded yet');
   readonly status = signal('');
@@ -67,6 +92,48 @@ export class SalesPageComponent implements OnInit {
     if (!feeder) return this.rows();
     const cities = new Set(feederCities(feeder).map((city) => city.toLocaleLowerCase()));
     return this.rows().filter((row) => cities.has(row.city.trim().toLocaleLowerCase()));
+  });
+  readonly feederProductNames = computed(() => {
+    const cities = new Set(feederCities(this.ui.focusedFeeder()).map((city) => city.trim().toLocaleLowerCase()));
+    return this.feederProductRows()
+      .filter((product) => product.cities.some((city) => cities.has(city.city.trim().toLocaleLowerCase())))
+      .map((product) => product.productName)
+      .sort((a, b) => a.localeCompare(b));
+  });
+  readonly feederBreakdown = computed<ProductCitySalesRow[]>(() => {
+    const cities = new Set(feederCities(this.ui.focusedFeeder()).map((city) => city.trim().toLocaleLowerCase()));
+    const productFilter = this.selectedFeederProduct();
+    return this.feederProductRows().flatMap((product) => {
+      if (productFilter && product.productName !== productFilter) return [];
+      return product.cities
+        .filter((city) => cities.has(city.city.trim().toLocaleLowerCase()))
+        .map((city) => ({ ...city, productName: product.productName, brandName: product.brandName }));
+    });
+  });
+  readonly displayedFeederRows = computed(() => {
+    const key = this.feederSortKey();
+    const direction = this.feederSortAsc() ? 1 : -1;
+    return [...this.feederBreakdown()].sort((a, b) => {
+      const left = a[key];
+      const right = b[key];
+      const order = typeof left === 'number' && typeof right === 'number'
+        ? left - right
+        : String(left ?? '').localeCompare(String(right ?? ''));
+      return direction * order;
+    });
+  });
+  readonly feederSummary = computed(() => {
+    const rows = this.feederBreakdown();
+    return {
+      revenue: rows.reduce((sum, row) => sum + row.revenue, 0),
+      units: rows.reduce((sum, row) => sum + row.units, 0),
+      orders: rows.reduce((sum, row) => sum + (row.orderCount || 0), 0),
+      cities: new Set(rows.map((row) => row.city)).size,
+    };
+  });
+  readonly feederOrderMetricsReady = computed(() => {
+    const rows = this.feederBreakdown();
+    return rows.length > 0 && rows.every((row) => row.orderCount !== undefined && row.avgOrderValue !== undefined);
   });
   readonly displayedRows = computed(() => this.sortRows());
   readonly money = money;
@@ -91,6 +158,13 @@ export class SalesPageComponent implements OnInit {
   ordersLabel() { return this.brandMode() ? 'N/A' : this.summary().totalOrders; }
   sortBy(key: keyof CityRow) { this.sortAsc.set(this.sortKey() === key ? !this.sortAsc() : true); this.sortKey.set(key); }
   sortIndicator(key: keyof CityRow) { return this.sortKey() === key ? (this.sortAsc() ? '↑' : '↓') : ''; }
+  feederCities(feeder: string) { return feederCities(feeder); }
+  selectFeederProduct(event: Event) { this.selectedFeederProduct.set((event.target as HTMLSelectElement).value); }
+  sortFeederBy(key: keyof ProductCitySalesRow) {
+    this.feederSortAsc.set(this.feederSortKey() === key ? !this.feederSortAsc() : key === 'city' || key === 'productName');
+    this.feederSortKey.set(key);
+  }
+  feederSortIndicator(key: keyof ProductCitySalesRow) { return this.feederSortKey() === key ? (this.feederSortAsc() ? '↑' : '↓') : ''; }
 
   trend(row: CityRow) {
     if (row.revenueChangePct === null || row.revenueChangePct === undefined) return 'First upload';
@@ -158,6 +232,8 @@ export class SalesPageComponent implements OnInit {
   }
 
   emptyMessage() {
+    if (this.ui.focusedFeeder() && this.selectedFeederProduct()) return `No sales recorded for "${this.selectedFeederProduct()}" in the ${this.ui.focusedFeeder()} feeder cities.`;
+    if (this.ui.focusedFeeder()) return `No product sales found in the ${this.ui.focusedFeeder()} feeder cities. Upload the sales report to refresh product-level details.`;
     if (this.productMode()) return `No sales recorded for "${this.ui.focusedProduct()}".`;
     if (this.brandMode()) return `No sales recorded for brand "${this.ui.focusedBrand()}".`;
     return 'No sales data yet. Upload sales_summary.xlsx to get started.';
@@ -166,6 +242,18 @@ export class SalesPageComponent implements OnInit {
   private async load() {
     const product = this.ui.focusedProduct();
     const brand = this.ui.focusedBrand();
+    const feeder = this.ui.focusedFeeder();
+    if (feeder) {
+      this.productMode.set(false);
+      this.brandMode.set(false);
+      try {
+        const data = await this.api.productCitySales();
+        this.feederProductRows.set(data.productRows || []);
+        if (this.selectedFeederProduct() && !this.feederProductNames().includes(this.selectedFeederProduct())) this.selectedFeederProduct.set('');
+        this.lastUpdated.set(data.date ? `Last updated: ${data.date} · product sales by city in ${feeder} feeder` : 'No report uploaded yet');
+      } catch (error) { this.setStatus(this.message(error), 'error'); }
+      return;
+    }
     this.productMode.set(Boolean(product));
     this.brandMode.set(!product && Boolean(brand));
     try {

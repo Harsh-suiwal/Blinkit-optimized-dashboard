@@ -132,7 +132,7 @@ function aggregateByProduct(salesRows) {
         revenue: 0,
         units: 0,
         orderIds: new Set(),
-        cities: new Map(), // city -> { revenue, units }
+        cities: new Map(), // city -> { revenue, units, orderIds }
       });
     }
     const p = byProduct.get(row.productName);
@@ -141,11 +141,12 @@ function aggregateByProduct(salesRows) {
     p.orderIds.add(row.orderId);
 
     if (!p.cities.has(row.customerCity)) {
-      p.cities.set(row.customerCity, { revenue: 0, units: 0 });
+      p.cities.set(row.customerCity, { revenue: 0, units: 0, orderIds: new Set() });
     }
     const c = p.cities.get(row.customerCity);
     c.revenue += row.revenue;
     c.units += row.quantity;
+    c.orderIds.add(row.orderId);
   }
 
   return Array.from(byProduct.values())
@@ -155,6 +156,8 @@ function aggregateByProduct(salesRows) {
           city,
           revenue: Math.round(stats.revenue * 100) / 100,
           units: stats.units,
+          orderCount: stats.orderIds.size,
+          avgOrderValue: stats.orderIds.size > 0 ? Math.round((stats.revenue / stats.orderIds.size) * 100) / 100 : 0,
         }))
         .sort((a, b) => b.revenue - a.revenue);
 

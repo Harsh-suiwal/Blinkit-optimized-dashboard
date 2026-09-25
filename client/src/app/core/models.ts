@@ -50,11 +50,17 @@ export interface SalesSummary {
 
 export interface ProductSalesRow {
   productName: string;
+  brandName?: string;
   revenue: number;
   units: number;
   orderCount: number;
   topCity?: string | null;
   cities: CityRow[];
+}
+
+export interface ProductCitySalesRow extends CityRow {
+  productName: string;
+  brandName?: string;
 }
 
 export interface CampaignPeriod {

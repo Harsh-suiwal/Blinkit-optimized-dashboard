@@ -8,6 +8,7 @@ import {
   CityRow,
   InventorySummary,
   ProductRow,
+  ProductCitySalesRow,
   ProductSalesRow,
   SalesSummary,
   User,
@@ -64,6 +65,10 @@ export class ApiService {
 
   productSales(product: string) {
     return this.get<{ date: string | null; row: ProductSalesRow | null }>(`/api/product-sales?product=${encodeURIComponent(product)}`);
+  }
+
+  productCitySales() {
+    return this.get<{ date: string | null; productRows: (ProductSalesRow & { cities: ProductCitySalesRow[] })[] }>('/api/product-city-sales');
   }
 
   brandSales(brand: string) {
