@@ -156,6 +156,28 @@ body {
   letter-spacing: 0.01em;
 }
 
+.topbar-left {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+
+.topbar-left > div {
+  min-width: 0;
+}
+
+.sidebar-brand app-brand-mark {
+  display: block;
+  flex: 0 0 32px;
+}
+
+.sidebar-brand .brand-mark {
+  display: block;
+  width: 32px;
+  height: 32px;
+}
+
 .muted {
   color: var(--text-muted);
   font-size: 13px;
@@ -559,6 +581,9 @@ tr.row-low:hover {
   padding: 20px 18px;
   font-size: 17px;
   border-bottom: 1px solid var(--sidebar-border);
+  display: flex;
+  align-items: center;
+  gap: 10px;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -770,6 +795,29 @@ html[data-theme="dark"] .theme-toggle-thumb {
     border-color 0.2s ease, color 0.2s ease, transform 0.2s cubic-bezier(0.34, 1.56, 0.64, 1);
 }
 
+.shortcut-hint {
+  position: fixed;
+  left: 50%;
+  bottom: 20px;
+  z-index: 999;
+  transform: translateX(-50%);
+  padding: 9px 16px;
+  border-radius: 980px;
+  background: rgba(28, 28, 30, 0.9);
+  color: #fff;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.22);
+  font-size: 13px;
+  white-space: nowrap;
+}
+
+.shortcut-hint kbd {
+  display: inline-block;
+  margin-left: 9px;
+  color: #7ab8ff;
+  font: inherit;
+  font-weight: 700;
+}
+
 .sidebar-collapse-toggle:hover {
   background: rgba(var(--accent-rgb), 0.14);
   border-color: rgba(var(--accent-rgb), 0.4);
@@ -804,6 +852,61 @@ html[data-theme="dark"] .theme-toggle-thumb {
 
   .main-content {
     margin-left: 0 !important;
+  }
+
+  .topbar {
+    padding: 14px 16px;
+  }
+
+  .topbar-left,
+  .topbar-right {
+    width: 100%;
+    min-width: 0;
+  }
+
+  .topbar-left h1 {
+    font-size: 21px;
+  }
+
+  .topbar-right {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+
+  .topbar-right > .user-info {
+    flex: 1 0 100%;
+    border: 0;
+    margin: 0;
+    padding: 0;
+  }
+
+  .topbar-right > .upload-btn,
+  .topbar-right > .secondary-btn,
+  .topbar-right > .logout-btn {
+    flex: 1 1 calc(50% - 8px);
+    min-width: 0;
+    max-width: 100%;
+    padding: 9px 8px;
+    text-align: center;
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+
+  .controls {
+    padding: 16px 16px 0;
+  }
+
+  #searchBox {
+    width: 100%;
+    max-width: none;
+  }
+
+  .shortcut-hint {
+    bottom: 12px;
+    max-width: calc(100vw - 24px);
+    white-space: normal;
+    text-align: center;
   }
 
   .sidebar-collapse-toggle {

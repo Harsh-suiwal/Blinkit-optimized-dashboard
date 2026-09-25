@@ -4,10 +4,26 @@
 
 ```
 npm install
+cd client && npm install && cd ..
 npm start
 ```
 
 Then open **http://localhost:3000**
+
+## Frontend structure
+
+The login screen remains a deliberately lightweight static page at
+`/login`. After the existing session-based login succeeds, it redirects to
+the Angular application at `/app/`.
+
+- `public/login.html` and `public/login.js` are the only login assets.
+- `client/` is the Angular 20 frontend (standalone components and routes).
+- `npm start` compiles the Angular client into `client/dist/client/browser`
+  and then starts Express.
+- Express protects `/app/*` with the existing session middleware and serves
+  the Angular entry file for direct links such as `/app/sales-performance`.
+- All `/api/*` routes, Supabase-backed authentication, uploads, parsers, and
+  Excel exports remain on the existing Node/Express backend.
 
 ## How it works
 

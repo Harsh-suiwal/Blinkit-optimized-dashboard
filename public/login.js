@@ -9,7 +9,7 @@ const spinner = document.getElementById('loginSpinner');
   try {
     const res = await fetch('/api/me');
     if (res.ok) {
-      window.location.href = '/';
+      window.location.href = '/app/';
     }
   } catch (_) { /* not logged in, stay on login page */ }
 })();
@@ -38,7 +38,7 @@ form.addEventListener('submit', async (e) => {
     }
 
     // Success — redirect to dashboard
-    window.location.href = '/';
+    window.location.href = '/app/';
   } catch (err) {
     errorEl.textContent = err.message;
     errorEl.style.display = 'block';

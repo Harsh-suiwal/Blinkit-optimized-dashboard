@@ -38,6 +38,7 @@ const UPLOAD_DIR = path.join(__dirname, 'uploads');
 const DATA_PATH = path.join(__dirname, 'data', 'latest.json');
 const SALES_DATA_PATH = path.join(__dirname, 'data', 'salesLatest.json');
 const PRODUCT_SALES_PATH = path.join(__dirname, 'data', 'salesByProduct.json');
+const ANGULAR_DIST_PATH = path.join(__dirname, 'client', 'dist', 'client', 'browser');
 const LOW_STOCK_THRESHOLD = 10; // change this one number to adjust the "low stock" line
 
 if (!fs.existsSync(UPLOAD_DIR)) fs.mkdirSync(UPLOAD_DIR, { recursive: true });
@@ -77,7 +78,8 @@ app.get('/login.js', (req, res) => {
 
 // --- Auth gate: everything below requires login ---------------------------
 
-// Serve static files, but redirect to /login if not authenticated
+// The login page deliberately remains a small, static page. The authenticated
+// dashboard is served as the Angular single-page application under /app.
 app.use((req, res, next) => {
   // Allow style.css through without auth (needed by login page)
   if (req.path === '/style.css') {
@@ -94,7 +96,19 @@ app.use((req, res, next) => {
     return res.redirect('/login');
   }
 
-  express.static(path.join(__dirname, 'public'))(req, res, next);
+  next();
+});
+
+// Preserve useful legacy URLs while moving the actual dashboard to Angular.
+app.get(['/', '/index.html'], (_req, res) => res.redirect('/app/'));
+app.get('/sales-performance.html', (_req, res) => res.redirect('/app/sales-performance'));
+app.get('/campaign-analysis.html', (_req, res) => res.redirect('/app/campaign-analysis'));
+
+// The static middleware handles hashed JS/CSS files. The fallback is required
+// for direct loads and browser refreshes of Angular client-side routes.
+app.use('/app', express.static(ANGULAR_DIST_PATH));
+app.get(['/app', '/app/*'], (_req, res) => {
+  res.sendFile(path.join(ANGULAR_DIST_PATH, 'index.html'));
 });
 
 /**

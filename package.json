@@ -4,13 +4,19 @@
   "description": "Phase 1 MVP - Blinkit inventory report dashboard",
   "main": "server.js",
   "scripts": {
-    "start": "node server.js",
-    "dev": "nodemon server.js",
-    "seed": "node db/seed-admin.js"
+    "serve": "node server.js",
+    "server": "node server.js",
+    "dev": "concurrently \"nodemon server.js\" \"npm run dev:client\"",
+    "build": "npm run build:client",
+    "start": "npm run build && node server.js",
+    "seed": "node db/seed-admin.js",
+    "build:client": "npm --prefix client run build",
+    "dev:client": "npm --prefix client run start"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.117.1",
     "bcrypt": "^6.0.0",
+    "concurrently": "^9.2.1",
     "dotenv": "^18.0.3",
     "express": "^4.19.2",
     "express-session": "^1.19.0",
