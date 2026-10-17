@@ -1,12 +1,12 @@
 {
   "name": "blinkit-dashboard",
   "version": "1.0.0",
-  "description": "Phase 1 MVP - Blinkit inventory report dashboard",
+  "description": "Blinkit optimized analytics dashboard — inventory, sales, and campaign reporting",
   "main": "server.js",
   "scripts": {
     "serve": "node server.js",
     "server": "node server.js",
-    "dev": "concurrently \"nodemon server.js\" \"npm run dev:client\"",
+    "dev": "npx concurrently \"npx nodemon server.js\" \"npm run dev:client\"",
     "install:client": "npm --prefix client ci --include=dev",
     "build": "npm run install:client && npm run build:client",
     "start": "npm run build && node server.js",
@@ -17,12 +17,14 @@
   "dependencies": {
     "@supabase/supabase-js": "^2.117.1",
     "bcrypt": "^6.0.0",
-    "concurrently": "^9.2.1",
     "dotenv": "^18.0.3",
-    "express": "^4.19.2",
-    "express-session": "^1.19.0",
+    "express": "^4.21.2",
+    "express-session": "^1.19.1",
     "multer": "^1.4.5-lts.1",
-    "nodemon": "^3.1.14",
-    "xlsx": "^0.18.5"
+    "xlsx": "https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz"
+  },
+  "devDependencies": {
+    "concurrently": "^9.2.1",
+    "nodemon": "^3.1.14"
   }
 }

@@ -6,6 +6,10 @@ yarn-debug.log*
 yarn-error.log*
 pnpm-debug.log*
 
+# excel sheets
+.xls
+.xlsx
+
 # Environment files
 .env
 .env.*

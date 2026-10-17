@@ -68,33 +68,75 @@ export interface CampaignPeriod {
   periodLabel: string;
 }
 
-export interface CampaignRow {
-  storeIndex: number;
-  campaignName: string;
-  campaignDetail: string;
-  status: string;
-  brandName?: string;
+export type CampaignSheetType = 'PRODUCT_BOOSTING' | 'PRODUCT_RECOMMENDATION';
+export type CampaignSheetFilter = CampaignSheetType | 'ALL';
+
+/** Summed metrics; ratios are recomputed from the sums on the server. */
+export interface CampaignMetrics {
   adSpend: number;
   sales: number;
+  directSales: number;
+  indirectSales: number;
   roas: number | null;
+  directRoas: number | null;
   roiPct: number | null;
   rosPerUnit: number | null;
+  cpm: number | null;
   impressions: number;
+  directAtc: number;
+  indirectAtc: number;
   atc: number;
+  directQtySold: number;
+  indirectQtySold: number;
   qtySold: number;
-  tier?: 'top' | 'low' | string;
+  newUsersAcquired: number;
+}
+
+export interface CampaignRow extends CampaignMetrics {
+  campaignId: string;
+  campaignName: string;
+  brandName: string;
+  sheetType: CampaignSheetType;
+  targetingTypes: string[];
+  activeDays: number;
+  tier?: 'top' | 'low' | 'mid' | string;
+}
+
+export interface CampaignBrandRow extends CampaignMetrics {
+  brandName: string;
+  campaignCount: number;
+}
+
+export interface CampaignTargetingRow extends CampaignMetrics {
+  targetingType: string;
+  targetingValue: string;
+}
+
+export interface CampaignDailyRow extends CampaignMetrics {
+  date: string;
 }
 
 export interface CampaignSummary {
   totalAdSpend: number;
   totalSales: number;
   overallRoas: number | null;
+  directRoas: number | null;
   roiPct: number | null;
   totalUnits: number;
-  activeCampaigns: number;
   totalCampaigns: number;
   bestCampaign: { name: string; roas: number } | null;
   worstCampaign: { name: string; roas: number } | null;
   totalImpressions: number;
   totalAtc: number;
+  totalDirectAtc: number;
+  totalIndirectAtc: number;
+  totalNewUsers: number;
+}
+
+export interface CampaignUploadPlanItem {
+  periodKey: string;
+  periodLabel: string;
+  sheetType: CampaignSheetType;
+  incoming: { rowCount: number; from: string; to: string };
+  existing: { rowCount: number; from: string; to: string } | null;
 }

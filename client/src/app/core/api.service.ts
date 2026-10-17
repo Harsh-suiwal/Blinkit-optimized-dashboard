@@ -2,9 +2,15 @@ import { HttpClient, HttpErrorResponse } from '@angular/common/http';
 import { Injectable, inject } from '@angular/core';
 import { firstValueFrom, Observable } from 'rxjs';
 import {
+  CampaignBrandRow,
+  CampaignDailyRow,
   CampaignPeriod,
   CampaignRow,
+  CampaignSheetFilter,
+  CampaignSheetType,
   CampaignSummary,
+  CampaignTargetingRow,
+  CampaignUploadPlanItem,
   CityRow,
   InventorySummary,
   ProductRow,
@@ -91,25 +97,51 @@ export class ApiService {
     return this.delete<{ ok: boolean }>('/api/sales-history');
   }
 
-  campaignData(periodKey?: string) {
-    const suffix = periodKey ? `?periodKey=${encodeURIComponent(periodKey)}` : '';
-    return this.get<{ date: string | null; periods: CampaignPeriod[]; periodKey: string | null; latestPeriodKey: string | null; rows: CampaignRow[] }>(`/api/campaign-analysis${suffix}`);
+  campaignData(periodKey?: string, brand?: string, sheetType?: CampaignSheetFilter) {
+    return this.get<{ date: string | null; periods: CampaignPeriod[]; periodKey: string | null; latestPeriodKey: string | null; campaigns: CampaignRow[]; brandSummaries: CampaignBrandRow[] }>(`/api/campaign-analysis${this.campaignQuery(periodKey, brand, sheetType)}`);
   }
 
-  campaignSummary(periodKey: string) {
-    return this.get<CampaignSummary>(`/api/campaign-summary?periodKey=${encodeURIComponent(periodKey)}`);
+  campaignSummary(periodKey: string, brand?: string, sheetType?: CampaignSheetFilter) {
+    return this.get<CampaignSummary>(`/api/campaign-summary${this.campaignQuery(periodKey, brand, sheetType)}`);
+  }
+
+  campaignBrands(periodKey?: string, sheetType?: CampaignSheetFilter) {
+    return this.get<{ periodKey: string | null; brands: { brandName: string; adSpend: number; campaignCount: number }[] }>(`/api/campaign-brands${this.campaignQuery(periodKey, undefined, sheetType)}`);
+  }
+
+  campaignDetail(periodKey: string, sheetType: CampaignSheetType, campaignId: string) {
+    const query = new URLSearchParams({ periodKey, sheetType, campaignId });
+    return this.get<{ periodKey: string | null; targeting: CampaignTargetingRow[]; daily: CampaignDailyRow[] }>(`/api/campaign-detail?${query}`);
+  }
+
+  /** Dry run: what an upload would replace, without storing anything. */
+  previewCampaignUpload(file: File) {
+    return this.upload<{ ok: boolean; dryRun: true; plan: CampaignUploadPlanItem[]; rowCount: number }>('/api/campaign-upload?dryRun=1', file);
   }
 
   uploadCampaign(file: File) {
-    return this.upload<{ ok: boolean; periodCount: number; campaignCount: number; latestPeriodKey: string }>('/api/campaign-upload', file);
+    return this.upload<{ ok: boolean; periodKeys: string[]; sheetTypes: CampaignSheetType[]; rowCount: number; latestPeriodKey: string }>('/api/campaign-upload', file);
   }
 
-  deleteCampaign(periodKey: string, storeIndex: number) {
-    return this.delete<{ ok: boolean; removed: CampaignRow }>('/api/campaign-analysis', { periodKey, storeIndex });
+  deleteCampaign(periodKey: string, sheetType: CampaignSheetType, campaignId: string) {
+    return this.delete<{ ok: boolean; removedRows: number; undoToken: string }>('/api/campaign-analysis', { periodKey, sheetType, campaignId });
   }
 
-  restoreCampaign(periodKey: string, storeIndex: number, campaign: CampaignRow) {
-    return this.post<{ ok: boolean }>('/api/campaign-analysis/restore', { periodKey, storeIndex, campaign });
+  restoreCampaign(undoToken: string) {
+    return this.post<{ ok: boolean; restoredRows: number }>('/api/campaign-analysis/restore', { undoToken });
+  }
+
+  addBrandAlias(raw: string, canonical: string) {
+    return this.post<{ ok: boolean }>('/api/brand-alias', { raw, canonical });
+  }
+
+  private campaignQuery(periodKey?: string, brand?: string, sheetType?: CampaignSheetFilter) {
+    const query = new URLSearchParams();
+    if (periodKey) query.set('periodKey', periodKey);
+    if (brand) query.set('brand', brand);
+    if (sheetType && sheetType !== 'ALL') query.set('sheetType', sheetType);
+    const text = query.toString();
+    return text ? `?${text}` : '';
   }
 
   private async get<T>(url: string): Promise<T> {

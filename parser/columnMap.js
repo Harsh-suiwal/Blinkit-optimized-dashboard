@@ -58,3 +58,46 @@ module.exports.REQUIRED_RAW_COLUMNS = [
   'Last 15 days',
   'Last 30 days',
 ];
+
+// --- Campaign (Blinkit ad export: one row per day x campaign x targeting) ---
+// The workbook has two sheets with different layouts. The type is detected
+// from the header row, not the sheet name (Blinkit has used both
+// PRODUCT_BOOSTING and PRODUCT_LISTING for the first one).
+const CAMPAIGN_COMMON_COLUMNS = {
+  'Date': 'date',
+  'Campaign ID': 'campaignId',
+  'Campaign Name': 'campaignName',
+  'Targeting Type': 'targetingType',
+  'Pacing Type': 'pacingType',
+  'CPM': 'cpm',
+  'Impressions': 'impressions',
+  'Direct ATC': 'directAtc',
+  'Indirect ATC': 'indirectAtc',
+  'Direct Quantities Sold': 'directQtySold',
+  'Indirect Quantities Sold': 'indirectQtySold',
+  'Direct Sales': 'directSales',
+  'Indirect Sales': 'indirectSales',
+  'New Users Acquired': 'newUsersAcquired',
+  'Estimated Budget Consumed': 'estimatedBudgetConsumed',
+  'Direct RoAS': 'directRoas',
+  'Total RoAS': 'totalRoas',
+};
+
+module.exports.CAMPAIGN_PB_COLUMNS = {
+  ...CAMPAIGN_COMMON_COLUMNS,
+  'Targeting Value': 'targetingValue',
+  'Match Type': 'matchType',
+  'Most Viewed Position': 'mostViewedPosition',
+};
+
+module.exports.CAMPAIGN_RC_COLUMNS = { ...CAMPAIGN_COMMON_COLUMNS };
+
+module.exports.REQUIRED_CAMPAIGN_PB_COLUMNS = [
+  'Date', 'Campaign ID', 'Campaign Name', 'Targeting Type', 'Targeting Value',
+  'Impressions', 'Estimated Budget Consumed', 'Direct Sales', 'Indirect Sales',
+];
+
+module.exports.REQUIRED_CAMPAIGN_RC_COLUMNS = [
+  'Date', 'Campaign ID', 'Campaign Name', 'Targeting Type',
+  'Impressions', 'Estimated Budget Consumed', 'Direct Sales', 'Indirect Sales',
+];

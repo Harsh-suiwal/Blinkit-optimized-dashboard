@@ -1,87 +1,314 @@
 const fs = require('fs');
 const path = require('path');
+const { periodLabelFor } = require('./parseCampaign');
 
 const STORE_PATH = path.join(__dirname, '..', 'data', 'campaignData.json');
+const LEGACY_PATH = path.join(__dirname, '..', 'data', 'campaignData.v1.json');
 
+const EMPTY_STORE = () => ({ uploads: [], rows: [] });
+
+// --- Persistence -------------------------------------------------------------
+
+/**
+ * Reads the store. The first read of a pre-rewrite file (aggregated
+ * `periods` shape, no `rows`) moves it aside to campaignData.v1.json and
+ * starts empty - the admin re-uploads the raw Blinkit export.
+ */
 function loadStore() {
-  if (!fs.existsSync(STORE_PATH)) return { periods: {}, fileName: null, uploadedDate: null };
+  if (!fs.existsSync(STORE_PATH)) return EMPTY_STORE();
   const raw = fs.readFileSync(STORE_PATH, 'utf-8');
-  if (!raw.trim()) return { periods: {}, fileName: null, uploadedDate: null };
-  return JSON.parse(raw);
+  if (!raw.trim()) return EMPTY_STORE();
+
+  const parsed = JSON.parse(raw);
+  if (!Array.isArray(parsed.rows)) {
+    if (!fs.existsSync(LEGACY_PATH)) fs.renameSync(STORE_PATH, LEGACY_PATH);
+    else fs.unlinkSync(STORE_PATH);
+    return EMPTY_STORE();
+  }
+  return { uploads: parsed.uploads || [], rows: parsed.rows };
 }
 
 function saveStore(store) {
-  fs.writeFileSync(STORE_PATH, JSON.stringify(store, null, 2));
+  fs.writeFileSync(STORE_PATH, JSON.stringify(store));
+}
+
+// --- Uploads -----------------------------------------------------------------
+
+/**
+ * Describes what an upload would replace, without writing anything: for each
+ * (periodKey, sheetType) in the parsed file, the row count and date range
+ * already stored versus the new one.
+ */
+function planUpload(parsed) {
+  const store = loadStore();
+  return parsed.uploads.map((u) => {
+    const existingUpload = store.uploads.find((e) => e.periodKey === u.periodKey && e.sheetType === u.sheetType);
+    const existingRows = store.rows.filter((r) => r.periodKey === u.periodKey && r.sheetType === u.sheetType);
+    return {
+      periodKey: u.periodKey,
+      periodLabel: u.periodLabel,
+      sheetType: u.sheetType,
+      incoming: { rowCount: u.rowCount, from: u.dateRange.from, to: u.dateRange.to },
+      existing: existingRows.length
+        ? {
+            rowCount: existingRows.length,
+            from: existingUpload?.dateRange.from ?? existingRows.reduce((m, r) => (r.date < m ? r.date : m), existingRows[0].date),
+            to: existingUpload?.dateRange.to ?? existingRows.reduce((m, r) => (r.date > m ? r.date : m), existingRows[0].date),
+          }
+        : null,
+    };
+  });
 }
 
 /**
- * Adds or replaces each period found in this upload. Re-uploading a sheet
- * that includes a month we've already seen overwrites that month with the
- * newer numbers, rather than duplicating it.
+ * Stores a parsed upload. Every (periodKey, sheetType) it contains replaces
+ * what was stored for that pair, because Blinkit exports the whole month each
+ * time; other months / sheet types are untouched.
  */
-function upsertPeriods(parsedPeriods, fileName, uploadedDate) {
+function upsertUpload(parsed) {
   const store = loadStore();
-  parsedPeriods.forEach((p) => {
-    store.periods[p.periodKey] = {
-      periodKey: p.periodKey,
-      periodLabel: p.periodLabel,
-      campaigns: p.campaigns,
-    };
-  });
-  store.fileName = fileName;
-  store.uploadedDate = uploadedDate;
+  const replaced = new Set(parsed.uploads.map((u) => `${u.periodKey}|${u.sheetType}`));
+  const keep = (x) => !replaced.has(`${x.periodKey}|${x.sheetType}`);
+
+  store.uploads = store.uploads.filter(keep).concat(parsed.uploads);
+  store.rows = store.rows.filter(keep).concat(parsed.rows);
   saveStore(store);
   return store;
 }
 
-function getLatestPeriodKey(store) {
-  const keys = Object.keys(store.periods);
-  if (keys.length === 0) return null;
-  return keys.sort().pop(); // "YYYY-MM" sorts correctly as a plain string
-}
+// --- Periods -----------------------------------------------------------------
 
 function listPeriods(store) {
-  return Object.values(store.periods)
-    .map((p) => ({ periodKey: p.periodKey, periodLabel: p.periodLabel }))
-    .sort((a, b) => a.periodKey.localeCompare(b.periodKey));
+  const keys = new Set(store.rows.map((r) => r.periodKey));
+  return Array.from(keys)
+    .sort()
+    .map((periodKey) => ({ periodKey, periodLabel: periodLabelFor(periodKey) }));
 }
 
-/**
- * Removes one campaign (by its position in the period's campaigns array)
- * from a period. Returns the removed campaign, or null if the period or
- * index doesn't exist. Position (rather than name) is used as the key
- * because campaign names aren't guaranteed unique within a period.
- */
-function removeCampaignAt(periodKey, index) {
-  const store = loadStore();
-  const period = store.periods[periodKey];
-  if (!period || index < 0 || index >= period.campaigns.length) return null;
+function getLatestPeriodKey(store) {
+  const periods = listPeriods(store);
+  return periods.length ? periods[periods.length - 1].periodKey : null;
+}
 
-  const [removed] = period.campaigns.splice(index, 1);
+function resolvePeriodKey(store, requested) {
+  const keys = new Set(store.rows.map((r) => r.periodKey));
+  return requested && keys.has(requested) ? requested : getLatestPeriodKey(store);
+}
+
+function getLastUploadedDate(store, periodKey) {
+  const dates = store.uploads.filter((u) => !periodKey || u.periodKey === periodKey).map((u) => u.uploadedDate);
+  return dates.length ? dates.sort().pop() : null;
+}
+
+// --- Delete / restore (campaign level) ---------------------------------------
+
+function sameCampaign(row, periodKey, sheetType, campaignId) {
+  return row.periodKey === periodKey && row.sheetType === sheetType && String(row.campaignId) === String(campaignId);
+}
+
+/** Removes every daily row of one campaign in a period; returns the removed rows. */
+function removeCampaignRows(periodKey, sheetType, campaignId) {
+  const store = loadStore();
+  const removed = store.rows.filter((r) => sameCampaign(r, periodKey, sheetType, campaignId));
+  if (!removed.length) return [];
+  store.rows = store.rows.filter((r) => !sameCampaign(r, periodKey, sheetType, campaignId));
   saveStore(store);
   return removed;
 }
 
-/**
- * Re-inserts a previously-removed campaign back into its period at (as
- * close as possible to) its original position. Used by undo/Ctrl+Z.
- */
-function restoreCampaignAt(periodKey, index, campaign) {
+/** Puts previously removed rows back (undo). Returns how many were restored. */
+function restoreCampaignRows(rows) {
+  if (!Array.isArray(rows) || !rows.length) return 0;
   const store = loadStore();
-  if (!store.periods[periodKey]) return false;
-
-  const campaigns = store.periods[periodKey].campaigns;
-  const clampedIndex = Math.max(0, Math.min(index, campaigns.length));
-  campaigns.splice(clampedIndex, 0, campaign);
+  const first = rows[0];
+  // Guard against double-restore: drop any rows already present for this campaign.
+  store.rows = store.rows.filter((r) => !sameCampaign(r, first.periodKey, first.sheetType, first.campaignId));
+  store.rows = store.rows.concat(rows);
   saveStore(store);
-  return true;
+  return rows.length;
+}
+
+// --- Aggregation -------------------------------------------------------------
+
+const r2 = (n) => Math.round(n * 100) / 100;
+
+function emptyTotals() {
+  return {
+    adSpend: 0, directSales: 0, indirectSales: 0, impressions: 0,
+    directAtc: 0, indirectAtc: 0, directQtySold: 0, indirectQtySold: 0, newUsersAcquired: 0,
+  };
+}
+
+function addRow(t, row) {
+  t.adSpend += row.estimatedBudgetConsumed;
+  t.directSales += row.directSales;
+  t.indirectSales += row.indirectSales;
+  t.impressions += row.impressions;
+  t.directAtc += row.directAtc;
+  t.indirectAtc += row.indirectAtc;
+  t.directQtySold += row.directQtySold;
+  t.indirectQtySold += row.indirectQtySold;
+  t.newUsersAcquired += row.newUsersAcquired;
+}
+
+/**
+ * Turns summed raw totals into display metrics. Ratios (ROAS, ROI, CPM) are
+ * always recomputed from the sums - never averaged from per-row ratios.
+ */
+function finalizeTotals(t) {
+  const sales = t.directSales + t.indirectSales;
+  const qtySold = t.directQtySold + t.indirectQtySold;
+  return {
+    adSpend: r2(t.adSpend),
+    sales: r2(sales),
+    directSales: r2(t.directSales),
+    indirectSales: r2(t.indirectSales),
+    roas: t.adSpend > 0 ? r2(sales / t.adSpend) : null,
+    directRoas: t.adSpend > 0 ? r2(t.directSales / t.adSpend) : null,
+    roiPct: t.adSpend > 0 ? Math.round(((sales - t.adSpend) / t.adSpend) * 1000) / 10 : null,
+    rosPerUnit: qtySold > 0 ? r2(sales / qtySold) : null,
+    cpm: t.impressions > 0 ? r2((t.adSpend / t.impressions) * 1000) : null,
+    impressions: t.impressions,
+    directAtc: t.directAtc,
+    indirectAtc: t.indirectAtc,
+    atc: t.directAtc + t.indirectAtc,
+    directQtySold: t.directQtySold,
+    indirectQtySold: t.indirectQtySold,
+    qtySold,
+    newUsersAcquired: t.newUsersAcquired,
+  };
+}
+
+/** Rows for a period, narrowed by optional brand and sheet type ('ALL' / empty = no narrowing). */
+function selectRows(store, { periodKey, brand, sheetType }) {
+  const wantBrand = brand ? brand.toLowerCase() : '';
+  const wantSheet = sheetType && sheetType !== 'ALL' ? sheetType : '';
+  return store.rows.filter(
+    (r) =>
+      r.periodKey === periodKey &&
+      (!wantSheet || r.sheetType === wantSheet) &&
+      (!wantBrand || r.brandName.toLowerCase() === wantBrand)
+  );
+}
+
+function aggregateTotals(rows) {
+  const t = emptyTotals();
+  rows.forEach((r) => addRow(t, r));
+  return finalizeTotals(t);
+}
+
+/** One entry per campaign (sheetType + campaignId), tiered by ROAS. */
+function aggregateByCampaign(rows) {
+  const groups = new Map();
+  for (const row of rows) {
+    const key = `${row.sheetType}|${row.campaignId}`;
+    if (!groups.has(key)) {
+      groups.set(key, {
+        campaignId: row.campaignId,
+        campaignName: row.campaignName,
+        brandName: row.brandName,
+        sheetType: row.sheetType,
+        targetingTypes: new Set(),
+        dates: new Set(),
+        totals: emptyTotals(),
+      });
+    }
+    const g = groups.get(key);
+    g.targetingTypes.add(row.targetingType);
+    g.dates.add(row.date);
+    addRow(g.totals, row);
+  }
+
+  const campaigns = Array.from(groups.values()).map((g) => ({
+    campaignId: g.campaignId,
+    campaignName: g.campaignName,
+    brandName: g.brandName,
+    sheetType: g.sheetType,
+    targetingTypes: Array.from(g.targetingTypes).filter(Boolean).sort(),
+    activeDays: g.dates.size,
+    ...finalizeTotals(g.totals),
+  }));
+  return assignPerformanceTiers(campaigns);
+}
+
+function aggregateByBrand(rows) {
+  const groups = new Map();
+  for (const row of rows) {
+    if (!groups.has(row.brandName)) {
+      groups.set(row.brandName, { campaigns: new Set(), totals: emptyTotals() });
+    }
+    const g = groups.get(row.brandName);
+    g.campaigns.add(`${row.sheetType}|${row.campaignId}`);
+    addRow(g.totals, row);
+  }
+  return Array.from(groups.entries())
+    .map(([brandName, g]) => ({ brandName, campaignCount: g.campaigns.size, ...finalizeTotals(g.totals) }))
+    .sort((a, b) => b.adSpend - a.adSpend);
+}
+
+/** Drill-down for one campaign: per keyword/category totals plus a daily series. */
+function getCampaignDetail(store, { periodKey, sheetType, campaignId }) {
+  const rows = store.rows.filter((r) => sameCampaign(r, periodKey, sheetType, campaignId));
+
+  const targeting = new Map();
+  const daily = new Map();
+  for (const row of rows) {
+    const tKey = `${row.targetingType}|${row.targetingValue}`;
+    if (!targeting.has(tKey)) {
+      targeting.set(tKey, { targetingType: row.targetingType, targetingValue: row.targetingValue, totals: emptyTotals() });
+    }
+    addRow(targeting.get(tKey).totals, row);
+
+    if (!daily.has(row.date)) daily.set(row.date, emptyTotals());
+    addRow(daily.get(row.date), row);
+  }
+
+  return {
+    targeting: Array.from(targeting.values())
+      .map((g) => ({ targetingType: g.targetingType, targetingValue: g.targetingValue, ...finalizeTotals(g.totals) }))
+      .sort((a, b) => b.adSpend - a.adSpend),
+    daily: Array.from(daily.entries())
+      .map(([date, t]) => ({ date, ...finalizeTotals(t) }))
+      .sort((a, b) => a.date.localeCompare(b.date)),
+  };
+}
+
+/**
+ * Tags campaigns 'top' (top 25% by ROAS), 'low' (bottom 25%) or 'mid'.
+ * Campaigns with no spend have no real ROAS and are left out of the ranking.
+ */
+function assignPerformanceTiers(campaigns) {
+  const ranked = campaigns.filter((c) => c.adSpend > 0 && c.roas !== null);
+  const sorted = [...ranked].sort((a, b) => b.roas - a.roas);
+  const n = sorted.length;
+  const cutoff = Math.max(1, Math.ceil(n * 0.25));
+
+  const tiers = new Map();
+  sorted.forEach((c, idx) => {
+    tiers.set(`${c.sheetType}|${c.campaignId}`, idx < cutoff ? 'top' : idx >= n - cutoff ? 'low' : 'mid');
+  });
+  return campaigns.map((c) => ({ ...c, tier: tiers.get(`${c.sheetType}|${c.campaignId}`) || 'mid' }));
+}
+
+/** Distinct brands across all stored campaign rows (any period). */
+function listCampaignBrands(store) {
+  return Array.from(new Set(store.rows.map((r) => r.brandName).filter(Boolean)));
 }
 
 module.exports = {
   loadStore,
-  upsertPeriods,
-  getLatestPeriodKey,
+  planUpload,
+  upsertUpload,
   listPeriods,
-  removeCampaignAt,
-  restoreCampaignAt,
+  getLatestPeriodKey,
+  resolvePeriodKey,
+  getLastUploadedDate,
+  removeCampaignRows,
+  restoreCampaignRows,
+  selectRows,
+  aggregateTotals,
+  aggregateByCampaign,
+  aggregateByBrand,
+  getCampaignDetail,
+  listCampaignBrands,
 };

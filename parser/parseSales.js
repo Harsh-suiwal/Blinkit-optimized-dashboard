@@ -1,4 +1,5 @@
 const XLSX = require('xlsx');
+const { normalizeBrand, loadAliases } = require('./brandResolver');
 
 const REQUIRED_COLUMNS = [
   'Order Id',
@@ -40,13 +41,14 @@ function parseSalesRows(filePath) {
     throw new Error(`Missing expected column(s): ${missing.join(', ')}`);
   }
 
+  const aliases = loadAliases();
   return rows
     .filter((r) => r['Order Id'] !== '' && r['Order Id'] !== undefined)
     .map((r) => ({
       orderId: String(r['Order Id']).trim(),
       orderDate: String(r['Order Date']).trim(),
       productName: String(r['Product Name'] || '').trim(),
-      brandName: String(r['Brand Name'] || '').trim(),
+      brandName: normalizeBrand(String(r['Brand Name'] || ''), aliases),
       customerCity: String(r['Customer City'] || 'Unknown').trim(),
       quantity: toNumber(r['Quantity']),
       revenue: toNumber(r['Total Gross Bill Amount']),

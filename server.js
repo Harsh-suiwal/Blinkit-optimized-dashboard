@@ -18,15 +18,25 @@ const {
   getSnapshotsForCity,
   restoreSnapshotsForCity,
 } = require('./parser/salesHistory');
-const { parseCampaignSheet, assignPerformanceTiers: assignCampaignTiers } = require('./parser/parseCampaign');
+const { parseCampaignFile } = require('./parser/parseCampaign');
 const {
   loadStore: loadCampaignStore,
-  upsertPeriods,
-  getLatestPeriodKey,
-  listPeriods,
-  removeCampaignAt,
-  restoreCampaignAt,
+  planUpload: planCampaignUpload,
+  upsertUpload: upsertCampaignUpload,
+  listPeriods: listCampaignPeriods,
+  getLatestPeriodKey: getLatestCampaignPeriodKey,
+  resolvePeriodKey: resolveCampaignPeriod,
+  getLastUploadedDate: getCampaignUploadedDate,
+  removeCampaignRows,
+  restoreCampaignRows,
+  selectRows: selectCampaignRows,
+  aggregateTotals: aggregateCampaignTotals,
+  aggregateByCampaign: aggregateCampaigns,
+  aggregateByBrand: aggregateCampaignsByBrand,
+  getCampaignDetail,
+  listCampaignBrands,
 } = require('./parser/campaignStore');
+const { resolveBrand, saveAlias, loadAliases } = require('./parser/brandResolver');
 
 const { requireAuth, requireAdmin } = require('./middleware/auth');
 const authRoutes = require('./routes/auth');
@@ -183,7 +193,10 @@ app.post('/api/upload', requireAdmin, upload.single('report'), (req, res) => {
 app.get('/api/products', requireAuth, (req, res) => {
   const latest = loadLatest();
   if (!latest) return res.json({ date: null, rows: [] });
-  res.json(latest);
+  // Stamp the resolved brand so the client never has to guess it.
+  const aliases = loadAliases();
+  const rows = latest.rows.map((r) => ({ ...r, brandName: brandOf(r.productName, r.brandName, aliases) }));
+  res.json({ ...latest, rows });
 });
 
 app.get('/api/summary', requireAuth, (req, res) => {
@@ -260,51 +273,53 @@ app.get('/api/product-names', requireAuth, (req, res) => {
 
 // --- Brand Filter (cross-tab brand dropdown) --------------------------------
 
-function extractBrand(name, explicitBrand) {
-  if (explicitBrand && typeof explicitBrand === 'string' && explicitBrand.trim()) {
-    return explicitBrand.trim();
-  }
-  if (!name || typeof name !== 'string') return '';
-  const clean = name.trim();
-  if (clean.toLowerCase().includes('oicia')) return 'Oicia';
-  if (clean.toLowerCase().includes('smarteez')) return 'Smarteez';
-  const match = clean.match(/^([A-Za-z0-9&'-]+)/);
-  if (!match) return '';
-  let b = match[1];
-  if (b.includes('_')) b = b.split('_')[0];
-  if (b.includes('-')) b = b.split('-')[0];
-  return b.charAt(0).toUpperCase() + b.slice(1).toLowerCase();
+// Single source of truth is parser/brandResolver.js. Returns '' when the brand
+// can't be determined (so callers can skip it instead of showing "Unknown").
+function brandOf(name, explicitBrand, aliases) {
+  const { brand } = resolveBrand(name, explicitBrand, aliases);
+  return brand === 'Unknown' ? '' : brand;
 }
 
-// Distinct brand names across all uploaded data (inventory + sales).
+// Distinct brand names across all uploaded data (inventory + sales + campaigns).
 app.get('/api/brand-names', requireAuth, (req, res) => {
   const brands = new Set();
+  const aliases = loadAliases();
+  const add = (name, explicit) => {
+    const b = brandOf(name, explicit, aliases);
+    if (b) brands.add(b);
+  };
 
   const inventory = loadLatest();
   if (inventory && Array.isArray(inventory.rows)) {
-    inventory.rows.forEach((r) => {
-      const b = extractBrand(r.productName, r.brandName);
-      if (b) brands.add(b);
-    });
+    inventory.rows.forEach((r) => add(r.productName, r.brandName));
   }
 
   const productSales = loadProductSalesLatest();
   if (productSales && Array.isArray(productSales.productRows)) {
-    productSales.productRows.forEach((r) => {
-      const b = extractBrand(r.productName, r.brandName);
-      if (b) brands.add(b);
-    });
+    productSales.productRows.forEach((r) => add(r.productName, r.brandName));
   }
 
   const salesLatest = loadSalesLatest();
   if (salesLatest && Array.isArray(salesLatest.cityRows)) {
-    salesLatest.cityRows.forEach((r) => {
-      const b = extractBrand(r.topProduct, r.brandName);
-      if (b) brands.add(b);
-    });
+    salesLatest.cityRows.forEach((r) => add(r.topProduct, r.brandName));
   }
 
-  res.json({ brands: Array.from(brands).sort((a, b) => a.localeCompare(b)) });
+  listCampaignBrands(loadCampaignStore()).forEach((b) => {
+    if (b !== 'Unknown') brands.add(b);
+  });
+
+  res.json({ brands: Array.from(brands).sort((x, y) => x.localeCompare(y)) });
+});
+
+// Teaches the brand resolver a new mapping, e.g. { raw: 'Knife PB', canonical: 'Oicia' }.
+// Applies to files parsed from now on; already-stored campaign rows keep their brand.
+app.post('/api/brand-alias', requireAdmin, (req, res) => {
+  const { raw, canonical } = req.body || {};
+  if (typeof raw !== 'string' || typeof canonical !== 'string' || !raw.trim() || !canonical.trim()) {
+    return res.status(400).json({ error: 'raw and canonical are required.' });
+  }
+  saveAlias(raw, canonical);
+  res.json({ ok: true });
 });
 
 // --- Export (any authenticated user) ----------------------------------------
@@ -496,9 +511,9 @@ app.get('/api/brand-sales', requireAuth, (req, res) => {
   const latest = loadProductSalesLatest();
   if (!latest) return res.json({ date: null, cityRows: [] });
 
+  const aliases = loadAliases();
   const brandProducts = latest.productRows.filter((r) => {
-    const b = extractBrand(r.productName, r.brandName);
-    return b.toLowerCase() === brand.toLowerCase();
+    return brandOf(r.productName, r.brandName, aliases).toLowerCase() === brand.toLowerCase();
   });
   const cityAgg = new Map();
 
@@ -575,6 +590,22 @@ function buildSalesWorksheet() {
 }
 
 // --- Campaign Analysis ----------------------------------------------------
+// Raw daily rows are stored as uploaded; every figure below is aggregated at
+// request time (see parser/campaignStore.js).
+
+const SHEET_TYPES = ['PRODUCT_BOOSTING', 'PRODUCT_RECOMMENDATION'];
+
+// Rows removed by DELETE are held here so undo can restore them by token
+// instead of the browser re-posting thousands of daily rows. Lost on restart.
+const campaignTrash = new Map();
+const TRASH_LIMIT = 20;
+
+function campaignFilters(req, store) {
+  const periodKey = resolveCampaignPeriod(store, req.query.periodKey);
+  const sheetType = SHEET_TYPES.includes(req.query.sheetType) ? req.query.sheetType : 'ALL';
+  const brand = typeof req.query.brand === 'string' ? req.query.brand.trim() : '';
+  return { periodKey, sheetType, brand };
+}
 
 app.post('/api/campaign-upload', requireAdmin, upload.single('report'), (req, res) => {
   if (!req.file) {
@@ -582,21 +613,23 @@ app.post('/api/campaign-upload', requireAdmin, upload.single('report'), (req, re
   }
 
   try {
-    const parsedPeriods = parseCampaignSheet(req.file.path);
-    if (parsedPeriods.length === 0) {
-      throw new Error('No campaign period blocks were found in this file.');
+    const parsed = parseCampaignFile(req.file.path, {
+      fileName: req.file.originalname,
+      defaultBrand: req.body && typeof req.body.defaultBrand === 'string' ? req.body.defaultBrand : '',
+    });
+
+    // Dry run: report what this upload would replace, write nothing.
+    if (req.query.dryRun === '1') {
+      return res.json({ ok: true, dryRun: true, plan: planCampaignUpload(parsed), rowCount: parsed.rows.length });
     }
 
-    const uploadedDate = todayDateString();
-    const store = upsertPeriods(parsedPeriods, req.file.originalname, uploadedDate);
-    const latestPeriodKey = getLatestPeriodKey(store);
-    const latestCampaigns = store.periods[latestPeriodKey].campaigns;
-
+    const store = upsertCampaignUpload(parsed);
     res.json({
       ok: true,
-      periodCount: Object.keys(store.periods).length,
-      campaignCount: latestCampaigns.length,
-      latestPeriodKey,
+      periodKeys: Array.from(new Set(parsed.uploads.map((u) => u.periodKey))),
+      sheetTypes: Array.from(new Set(parsed.uploads.map((u) => u.sheetType))),
+      rowCount: parsed.rows.length,
+      latestPeriodKey: getLatestCampaignPeriodKey(store),
     });
   } catch (err) {
     res.status(400).json({ error: err.message });
@@ -607,131 +640,155 @@ app.post('/api/campaign-upload', requireAdmin, upload.single('report'), (req, re
 
 app.get('/api/campaign-analysis', requireAuth, (req, res) => {
   const store = loadCampaignStore();
-  const periods = listPeriods(store);
-  const latestPeriodKey = getLatestPeriodKey(store);
-  const periodKey =
-    req.query.periodKey && store.periods[req.query.periodKey] ? req.query.periodKey : latestPeriodKey;
+  const periods = listCampaignPeriods(store);
+  const latestPeriodKey = getLatestCampaignPeriodKey(store);
+  const { periodKey, sheetType, brand } = campaignFilters(req, store);
 
   if (!periodKey) {
-    return res.json({ date: null, periods: [], periodKey: null, latestPeriodKey: null, rows: [] });
+    return res.json({ date: null, periods: [], periodKey: null, latestPeriodKey: null, campaigns: [], brandSummaries: [] });
   }
 
-  // storeIndex records each campaign's position in the underlying store
-  // array (independent of however the client sorts/filters for display)
-  // so a delete or undo can target the exact right campaign.
-  const rows = assignCampaignTiers(store.periods[periodKey].campaigns).map((c, i) => ({ ...c, storeIndex: i }));
+  // Brand summaries ignore the brand filter so the chip bar always lists every brand.
+  const periodRows = selectCampaignRows(store, { periodKey, sheetType });
+  const brandSummaries = aggregateCampaignsByBrand(periodRows);
+  const rows = brand ? periodRows.filter((r) => r.brandName.toLowerCase() === brand.toLowerCase()) : periodRows;
+  const campaigns = aggregateCampaigns(rows);
 
-  res.json({ date: store.uploadedDate, periods, periodKey, latestPeriodKey, rows });
+  res.json({ date: getCampaignUploadedDate(store, periodKey), periods, periodKey, latestPeriodKey, campaigns, brandSummaries });
 });
 
-// Removes one campaign from a period.
+app.get('/api/campaign-brands', requireAuth, (req, res) => {
+  const store = loadCampaignStore();
+  const periodKey = resolveCampaignPeriod(store, req.query.periodKey);
+  if (!periodKey) return res.json({ periodKey: null, brands: [] });
+  const sheetType = SHEET_TYPES.includes(req.query.sheetType) ? req.query.sheetType : 'ALL';
+  const brands = aggregateCampaignsByBrand(selectCampaignRows(store, { periodKey, sheetType }));
+  res.json({ periodKey, brands: brands.map((b) => ({ brandName: b.brandName, adSpend: b.adSpend, campaignCount: b.campaignCount })) });
+});
+
+app.get('/api/campaign-detail', requireAuth, (req, res) => {
+  const { campaignId, sheetType } = req.query;
+  if (!campaignId || !SHEET_TYPES.includes(sheetType)) {
+    return res.status(400).json({ error: 'campaignId and a valid sheetType are required.' });
+  }
+  const store = loadCampaignStore();
+  const periodKey = resolveCampaignPeriod(store, req.query.periodKey);
+  if (!periodKey) return res.json({ periodKey: null, targeting: [], daily: [] });
+  res.json({ periodKey, ...getCampaignDetail(store, { periodKey, sheetType, campaignId }) });
+});
+
+// Removes every daily row of one campaign in a period. Returns an undo token.
 app.delete('/api/campaign-analysis', requireAdmin, (req, res) => {
-  const { periodKey, storeIndex } = req.body || {};
-  if (!periodKey || typeof storeIndex !== 'number') {
-    return res.status(400).json({ error: 'periodKey and storeIndex are required.' });
+  const { periodKey, sheetType, campaignId } = req.body || {};
+  if (!periodKey || !SHEET_TYPES.includes(sheetType) || !campaignId) {
+    return res.status(400).json({ error: 'periodKey, sheetType and campaignId are required.' });
   }
 
-  const removed = removeCampaignAt(periodKey, storeIndex);
-  if (!removed) return res.status(404).json({ error: 'Campaign not found.' });
+  const removed = removeCampaignRows(periodKey, sheetType, campaignId);
+  if (!removed.length) return res.status(404).json({ error: 'Campaign not found.' });
 
-  res.json({ ok: true, removed });
+  const undoToken = `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+  campaignTrash.set(undoToken, removed);
+  while (campaignTrash.size > TRASH_LIMIT) campaignTrash.delete(campaignTrash.keys().next().value);
+
+  res.json({ ok: true, removedRows: removed.length, undoToken });
 });
 
-// Re-inserts a previously deleted campaign (Ctrl+Z / undo) at its
-// original position within its period.
+// Re-inserts a previously deleted campaign (Ctrl+Z / undo) using its token.
 app.post('/api/campaign-analysis/restore', requireAdmin, (req, res) => {
-  const { periodKey, storeIndex, campaign } = req.body || {};
-  if (!periodKey || typeof storeIndex !== 'number' || !campaign) {
-    return res.status(400).json({ error: 'periodKey, storeIndex and campaign are required.' });
-  }
+  const { undoToken } = req.body || {};
+  const rows = undoToken ? campaignTrash.get(undoToken) : null;
+  if (!rows) return res.status(404).json({ error: 'Nothing to restore - the undo window has expired.' });
 
-  // Strip display-only fields (tier, storeIndex) added by the read API
-  // before writing the campaign back into the store.
-  const { tier, storeIndex: _ignored, ...cleanCampaign } = campaign;
-
-  const ok = restoreCampaignAt(periodKey, storeIndex, cleanCampaign);
-  if (!ok) return res.status(404).json({ error: 'Period not found.' });
-
-  res.json({ ok: true });
+  restoreCampaignRows(rows);
+  campaignTrash.delete(undoToken);
+  res.json({ ok: true, restoredRows: rows.length });
 });
 
 app.get('/api/campaign-summary', requireAuth, (req, res) => {
   const store = loadCampaignStore();
-  const latestPeriodKey = getLatestPeriodKey(store);
-  const periodKey =
-    req.query.periodKey && store.periods[req.query.periodKey] ? req.query.periodKey : latestPeriodKey;
+  const { periodKey, sheetType, brand } = campaignFilters(req, store);
 
-  if (!periodKey) {
-    return res.json({
-      totalAdSpend: 0,
-      totalSales: 0,
-      overallRoas: null,
-      roiPct: null,
-      totalUnits: 0,
-      activeCampaigns: 0,
-      totalCampaigns: 0,
-      bestCampaign: null,
-      worstCampaign: null,
-      totalImpressions: 0,
-      totalAtc: 0,
-    });
-  }
+  const empty = {
+    totalAdSpend: 0, totalSales: 0, overallRoas: null, directRoas: null, roiPct: null,
+    totalUnits: 0, totalCampaigns: 0, bestCampaign: null, worstCampaign: null,
+    totalImpressions: 0, totalAtc: 0, totalDirectAtc: 0, totalIndirectAtc: 0, totalNewUsers: 0,
+  };
+  if (!periodKey) return res.json(empty);
 
-  const campaigns = store.periods[periodKey].campaigns;
-  const totalAdSpend = campaigns.reduce((s, c) => s + c.adSpend, 0);
-  const totalSales = campaigns.reduce((s, c) => s + c.sales, 0);
-  const totalUnits = campaigns.reduce((s, c) => s + c.qtySold, 0);
-  const totalImpressions = campaigns.reduce((s, c) => s + c.impressions, 0);
-  const totalAtc = campaigns.reduce((s, c) => s + c.atc, 0);
-  const activeCampaigns = campaigns.filter((c) => c.status.toLowerCase() === 'active').length;
-
+  const rows = selectCampaignRows(store, { periodKey, sheetType, brand });
+  const totals = aggregateCampaignTotals(rows);
+  const campaigns = aggregateCampaigns(rows);
   const ranked = campaigns.filter((c) => c.adSpend > 0 && c.roas !== null);
   const best = ranked.length ? ranked.reduce((a, b) => (b.roas > a.roas ? b : a)) : null;
   const worst = ranked.length ? ranked.reduce((a, b) => (b.roas < a.roas ? b : a)) : null;
 
   res.json({
-    totalAdSpend: Math.round(totalAdSpend * 100) / 100,
-    totalSales: Math.round(totalSales * 100) / 100,
-    overallRoas: totalAdSpend > 0 ? Math.round((totalSales / totalAdSpend) * 100) / 100 : null,
-    roiPct: totalAdSpend > 0 ? Math.round(((totalSales - totalAdSpend) / totalAdSpend) * 1000) / 10 : null,
-    totalUnits,
-    activeCampaigns,
+    totalAdSpend: totals.adSpend,
+    totalSales: totals.sales,
+    overallRoas: totals.roas,
+    directRoas: totals.directRoas,
+    roiPct: totals.roiPct,
+    totalUnits: totals.qtySold,
     totalCampaigns: campaigns.length,
     bestCampaign: best ? { name: best.campaignName, roas: best.roas } : null,
     worstCampaign: worst ? { name: worst.campaignName, roas: worst.roas } : null,
-    totalImpressions,
-    totalAtc,
+    totalImpressions: totals.impressions,
+    totalAtc: totals.atc,
+    totalDirectAtc: totals.directAtc,
+    totalIndirectAtc: totals.indirectAtc,
+    totalNewUsers: totals.newUsersAcquired,
   });
 });
 
-/** Builds the Campaign Analysis worksheet for a period, or null if nothing has been uploaded. */
-function buildCampaignWorksheet(requestedPeriodKey) {
+/** Builds the Campaign workbook sheets (summary + daily data) for a period, or null if nothing is stored. */
+function buildCampaignWorksheets(requestedPeriodKey, brand, sheetType) {
   const store = loadCampaignStore();
-  const latestPeriodKey = getLatestPeriodKey(store);
-  const periodKey = requestedPeriodKey && store.periods[requestedPeriodKey] ? requestedPeriodKey : latestPeriodKey;
+  const periodKey = resolveCampaignPeriod(store, requestedPeriodKey);
   if (!periodKey) return null;
 
-  const campaigns = store.periods[periodKey].campaigns;
-  const headers = [
-    'Campaign', 'Type', 'Status', 'Ad Spend', 'Sales', 'ROAS', 'ROI %', 'ROS / Unit', 'Impressions', 'ATC', 'Qty Sold',
-  ];
-  const dataRows = campaigns.map((c) => [
-    c.campaignName, c.campaignDetail, c.status, c.adSpend, c.sales, c.roas, c.roiPct, c.rosPerUnit, c.impressions, c.atc, c.qtySold,
-  ]);
+  const rows = selectCampaignRows(store, { periodKey, sheetType, brand });
+  const campaigns = aggregateCampaigns(rows).sort((a, b) => b.adSpend - a.adSpend);
 
-  const ws = XLSX.utils.aoa_to_sheet([headers, ...dataRows]);
-  ws['!cols'] = [
-    { wch: 45 }, { wch: 20 }, { wch: 12 }, { wch: 14 }, { wch: 14 }, { wch: 10 }, { wch: 10 }, { wch: 14 }, { wch: 14 }, { wch: 10 }, { wch: 10 },
+  const summaryHeaders = [
+    'Campaign', 'Brand', 'Type', 'Targeting Types', 'Ad Spend', 'Sales', 'Direct Sales', 'Indirect Sales',
+    'ROAS', 'Direct ROAS', 'ROI %', 'ROS / Unit', 'Impressions', 'Direct ATC', 'Indirect ATC',
+    'Direct Qty Sold', 'Indirect Qty Sold', 'New Users',
   ];
-  return { ws, periodKey };
+  const summaryRows = campaigns.map((c) => [
+    c.campaignName, c.brandName, c.sheetType, c.targetingTypes.join(', '), c.adSpend, c.sales, c.directSales, c.indirectSales,
+    c.roas, c.directRoas, c.roiPct, c.rosPerUnit, c.impressions, c.directAtc, c.indirectAtc,
+    c.directQtySold, c.indirectQtySold, c.newUsersAcquired,
+  ]);
+  const summaryWs = XLSX.utils.aoa_to_sheet([summaryHeaders, ...summaryRows]);
+  summaryWs['!cols'] = [{ wch: 45 }, { wch: 14 }, { wch: 24 }, { wch: 30 }, ...Array(14).fill({ wch: 14 })];
+
+  const dailyHeaders = [
+    'Date', 'Campaign ID', 'Campaign', 'Brand', 'Type', 'Targeting Type', 'Targeting Value', 'Match Type',
+    'Most Viewed Position', 'CPM', 'Impressions', 'Direct ATC', 'Indirect ATC', 'Direct Qty Sold', 'Indirect Qty Sold',
+    'Direct Sales', 'Indirect Sales', 'New Users', 'Ad Spend', 'Direct RoAS', 'Total RoAS',
+  ];
+  const dailyRows = [...rows]
+    .sort((a, b) => a.date.localeCompare(b.date) || a.campaignName.localeCompare(b.campaignName))
+    .map((r) => [
+      r.date, r.campaignId, r.campaignName, r.brandName, r.sheetType, r.targetingType, r.targetingValue, r.matchType,
+      r.mostViewedPosition ?? '', r.cpm, r.impressions, r.directAtc, r.indirectAtc, r.directQtySold, r.indirectQtySold,
+      r.directSales, r.indirectSales, r.newUsersAcquired, r.estimatedBudgetConsumed, r.directRoas, r.totalRoas,
+    ]);
+  const dailyWs = XLSX.utils.aoa_to_sheet([dailyHeaders, ...dailyRows]);
+  dailyWs['!cols'] = [{ wch: 12 }, { wch: 12 }, { wch: 45 }, { wch: 14 }, { wch: 24 }, { wch: 18 }, { wch: 28 }, ...Array(14).fill({ wch: 12 })];
+
+  return { summaryWs, dailyWs, periodKey };
 }
 
 app.get('/api/export-campaign', requireAuth, (req, res) => {
-  const built = buildCampaignWorksheet(req.query.periodKey);
+  const sheetType = SHEET_TYPES.includes(req.query.sheetType) ? req.query.sheetType : 'ALL';
+  const built = buildCampaignWorksheets(req.query.periodKey, req.query.brand, sheetType);
   if (!built) return res.status(400).json({ error: 'No campaign report uploaded yet.' });
 
   const wb = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb, built.ws, 'Campaign Analysis');
+  XLSX.utils.book_append_sheet(wb, built.summaryWs, 'Campaign Summary');
+  XLSX.utils.book_append_sheet(wb, built.dailyWs, 'Daily Data');
 
   const buffer = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
   res.setHeader('Content-Disposition', `attachment; filename="Campaign_Analysis_${built.periodKey}.xlsx"`);
@@ -744,7 +801,7 @@ app.get('/api/export-campaign', requireAuth, (req, res) => {
 app.get('/api/export-all', requireAuth, (req, res) => {
   const inventory = buildInventoryWorksheet();
   const sales = buildSalesWorksheet();
-  const campaign = buildCampaignWorksheet(req.query.periodKey);
+  const campaign = buildCampaignWorksheets(req.query.periodKey, '', 'ALL');
 
   if (!inventory && !sales && !campaign) {
     return res.status(400).json({ error: 'Nothing to export yet — upload at least one report first.' });
@@ -753,7 +810,10 @@ app.get('/api/export-all', requireAuth, (req, res) => {
   const wb = XLSX.utils.book_new();
   if (inventory) XLSX.utils.book_append_sheet(wb, inventory.ws, 'Inventory');
   if (sales) XLSX.utils.book_append_sheet(wb, sales.ws, 'Sales by City');
-  if (campaign) XLSX.utils.book_append_sheet(wb, campaign.ws, 'Campaign Analysis');
+  if (campaign) {
+    XLSX.utils.book_append_sheet(wb, campaign.summaryWs, 'Campaign Summary');
+    XLSX.utils.book_append_sheet(wb, campaign.dailyWs, 'Campaign Daily Data');
+  }
 
   const buffer = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
   const dateStamp = inventory?.date || sales?.date || todayDateString();

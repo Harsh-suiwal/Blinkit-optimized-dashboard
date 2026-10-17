@@ -1,5 +1,6 @@
 const XLSX = require('xlsx');
 const columnMap = require('./columnMap');
+const { normalizeBrand, loadAliases } = require('./brandResolver');
 
 /**
  * Turns a raw cell value into a clean number.
@@ -57,6 +58,7 @@ function parseReport(filePath) {
   }
 
   const dataRows = rows.slice(headerRowIndex + 1);
+  const aliases = loadAliases();
 
   const parsed = [];
   for (const row of dataRows) {
@@ -74,7 +76,7 @@ function parseReport(filePath) {
     parsed.push({
       itemId: String(record.itemId).trim(),
       productName: String(record.productName || '').trim(),
-      brandName: String(record.brandName || '').trim(),
+      brandName: normalizeBrand(String(record.brandName || ''), aliases),
       warehouseId: String(record.warehouseId).trim(),
       warehouseName: String(record.warehouseName || '').trim(),
 

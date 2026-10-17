@@ -1,12 +1,11 @@
 /* ==========================================================================
-   Blinkit Dashboard — playful redesign
-   Display face: Fredoka (bubbly, energetic — headlines, brand, big numbers)
-   Body face:    Poppins (geometric, friendly — everything else)
-   Signature move: grape -> coral -> mango gradient clipped onto headline
-   text and big KPI numbers, echoed in button glows on hover.
+   Blinkit Dashboard — Apple-style liquid glass
+   Type: Apple system stack (SF Pro), Inter as cross-platform fallback.
+   Surfaces: translucent blurred glass over a soft grape/coral/mint backdrop.
+   Gradient-clip text is reserved for the brand and campaign highlights.
    ========================================================================== */
 
-@import url('https://fonts.googleapis.com/css2?family=Fredoka:wght@500;600;700&family=Poppins:ital,wght@0,400;0,500;0,600;0,700;0,800;1,500&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
 
 * {
   box-sizing: border-box;
@@ -49,7 +48,18 @@
   --text-muted: #6b6478;
   --shadow: rgba(124, 58, 237, 0.1);
 
-  --sidebar-bg: rgba(26, 21, 35, 0.92);
+  /* Liquid-glass tokens (Apple-style translucent surfaces) */
+  --glass-bg: rgba(255, 255, 255, 0.38);
+  --glass-bg-strong: rgba(255, 255, 255, 0.86);
+  --glass-border: rgba(255, 255, 255, 0.7);
+  --glass-highlight: rgba(255, 255, 255, 0.9);
+  --glass-shadow: 0 10px 30px -12px rgba(31, 20, 60, 0.22);
+  --glass-blur: blur(30px) saturate(190%);
+
+  --font-sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Inter", "Segoe UI", system-ui, sans-serif;
+  --font-display: -apple-system, BlinkMacSystemFont, "SF Pro Display", "Inter", system-ui, sans-serif;
+
+  --sidebar-bg: rgba(26, 21, 35, 0.78);
   --sidebar-text: rgba(255, 255, 255, 0.68);
   --sidebar-text-active: #ffffff;
   --sidebar-border: rgba(255, 255, 255, 0.1);
@@ -67,6 +77,12 @@ html[data-theme="dark"] {
   --text-muted: #a99cc2;
   --shadow: rgba(0, 0, 0, 0.45);
 
+  --glass-bg: rgba(32, 24, 48, 0.38);
+  --glass-bg-strong: rgba(32, 24, 48, 0.88);
+  --glass-border: rgba(255, 255, 255, 0.12);
+  --glass-highlight: rgba(255, 255, 255, 0.08);
+  --glass-shadow: 0 10px 30px -12px rgba(0, 0, 0, 0.55);
+
   --accent: #a875ff;
   --accent-rgb: 168, 117, 255;
   --accent-hover: #bd93ff;
@@ -82,6 +98,47 @@ html[data-theme="dark"] {
   --sidebar-border: rgba(255, 255, 255, 0.06);
 
   color-scheme: dark;
+}
+
+/* Glass fallbacks: opaque surfaces when blur or transparency is unsupported/unwanted */
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  :root,
+  html[data-theme="dark"] {
+    --glass-bg: var(--glass-bg-strong);
+  }
+}
+
+@media (prefers-reduced-transparency: reduce) {
+  :root,
+  html[data-theme="dark"] {
+    --glass-bg: var(--glass-bg-strong);
+    --glass-blur: none;
+  }
+}
+
+/* Accessibility and readability */
+td,
+.card-value {
+  font-variant-numeric: tabular-nums;
+}
+
+button:focus-visible,
+select:focus-visible,
+input:focus-visible,
+a:focus-visible {
+  outline: 2px solid rgba(var(--accent-rgb), 0.75);
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
 }
 
 ::selection {
@@ -114,21 +171,25 @@ html[data-theme="dark"] {
 }
 
 body {
-  font-family: 'Poppins', -apple-system, BlinkMacSystemFont, Segoe UI, Roboto, Arial, sans-serif;
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  letter-spacing: -0.005em;
   margin: 0;
-  background: var(--bg);
+  background:
+    radial-gradient(circle at 12% 8%, rgba(var(--grape-rgb), 0.24), transparent 42%),
+    radial-gradient(circle at 88% 18%, rgba(var(--coral-rgb), 0.18), transparent 40%),
+    radial-gradient(circle at 55% 100%, rgba(var(--mint-rgb), 0.16), transparent 45%),
+    var(--bg);
+  background-attachment: fixed;
   color: var(--text);
   transition: background-color 0.25s ease, color 0.25s ease;
 }
 
-/* Gradient-clip text: the one signature move, reused everywhere a
-   headline or hero number appears. */
+/* Gradient-clip text: reserved for the brand and campaign highlights. */
 .gradient-text,
-.topbar-left h1,
-.card-value,
 .sidebar-brand,
 .highlight-name {
-  font-family: 'Fredoka', 'Poppins', sans-serif;
+  font-family: var(--font-display);
   font-weight: 600;
   background: var(--gradient);
   -webkit-background-clip: text;
@@ -139,8 +200,13 @@ body {
 }
 
 .topbar {
-  background: var(--surface);
-  border-bottom: 1px solid var(--border);
+  position: sticky;
+  top: 0;
+  z-index: 50;
+  background: var(--glass-bg);
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
+  border-bottom: 1px solid var(--glass-border);
   padding: 16px 24px;
   display: flex;
   justify-content: space-between;
@@ -151,9 +217,12 @@ body {
 }
 
 .topbar-left h1 {
+  font-family: var(--font-display);
   font-size: 24px;
+  font-weight: 700;
   margin: 0;
-  letter-spacing: 0.01em;
+  letter-spacing: -0.02em;
+  color: var(--text);
 }
 
 .topbar-left {
@@ -193,7 +262,7 @@ body {
 .upload-btn,
 .secondary-btn,
 button {
-  font-family: 'Poppins', inherit;
+  font-family: inherit;
 }
 
 .upload-btn,
@@ -325,46 +394,73 @@ html[data-theme="dark"] .secondary-btn:hover {
 }
 
 .card {
-  background: var(--surface);
-  border-radius: 18px;
-  padding: 18px 20px;
-  border: 1px solid var(--border);
-  border-top: 3px solid var(--grape);
+  --card-accent-rgb: var(--grape-rgb);
+  position: relative;
+  overflow: hidden;
+  background-color: var(--glass-bg);
+  background-image: radial-gradient(circle at 100% 0%, rgba(var(--card-accent-rgb), 0.22), transparent 60%);
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
+  border-radius: 20px;
+  padding: 18px 20px 20px;
+  border: 1px solid var(--glass-border);
+  box-shadow: var(--glass-shadow), inset 0 1px 0 var(--glass-highlight);
   transition: background-color 0.25s ease, border-color 0.25s ease,
-    transform 0.25s cubic-bezier(0.34, 1.56, 0.64, 1), box-shadow 0.25s ease;
+    transform 0.25s ease, box-shadow 0.25s ease;
+}
+
+/* Accent pill, coloured per card variant */
+.card::before {
+  content: '';
+  position: absolute;
+  top: 14px;
+  left: 20px;
+  width: 28px;
+  height: 4px;
+  border-radius: 980px;
+  background: rgb(var(--card-accent-rgb));
 }
 
 .card:hover {
-  transform: translateY(-3px);
-  box-shadow: 0 14px 26px -10px var(--shadow);
+  transform: translateY(-2px);
+  box-shadow: var(--glass-shadow), 0 16px 32px -14px var(--shadow),
+    inset 0 1px 0 var(--glass-highlight);
 }
 
 .card:nth-of-type(4n+1) {
-  border-top-color: var(--grape);
+  --card-accent-rgb: var(--grape-rgb);
 }
 
 .card:nth-of-type(4n+2) {
-  border-top-color: var(--mango);
+  --card-accent-rgb: var(--mango-rgb);
 }
 
 .card:nth-of-type(4n+3) {
-  border-top-color: var(--mint);
+  --card-accent-rgb: var(--mint-rgb);
 }
 
 .card:nth-of-type(4n+4) {
-  border-top-color: var(--coral);
+  --card-accent-rgb: var(--coral-rgb);
 }
 
 .card-label {
-  font-size: 13px;
-  color: var(--text-muted);
+  margin-top: 12px;
   margin-bottom: 6px;
-  font-weight: 500;
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-muted);
 }
 
 .card-value {
-  font-size: 30px;
-  letter-spacing: 0.01em;
+  font-family: var(--font-display);
+  font-size: 32px;
+  font-weight: 700;
+  line-height: 1.1;
+  letter-spacing: -0.02em;
+  color: var(--text);
+  overflow-wrap: anywhere;
 }
 
 .controls {
@@ -389,8 +485,10 @@ html[data-theme="dark"] .secondary-btn:hover {
   max-width: 100%;
   padding: 9px 36px 9px 14px;
   border: 1px solid var(--border);
-  border-radius: 10px;
-  background: var(--surface);
+  border-radius: 980px;
+  background: var(--glass-bg);
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
   color: var(--text);
   font: inherit;
 }
@@ -413,7 +511,7 @@ html[data-theme="dark"] .secondary-btn:hover {
   backdrop-filter: blur(20px) saturate(180%);
   -webkit-backdrop-filter: blur(20px) saturate(180%);
   color: var(--text);
-  font-family: 'Poppins', inherit;
+  font-family: inherit;
   transition: border-color 0.2s ease, box-shadow 0.2s ease;
 }
 
@@ -424,17 +522,19 @@ html[data-theme="dark"] .secondary-btn:hover {
   box-shadow: 0 0 0 4px rgba(var(--accent-rgb), 0.15);
 }
 
+/* The wrapper is the scroll container, so the table header can stick inside it */
 .table-wrap {
   padding: 16px 24px 40px;
-  overflow-x: auto;
+  max-height: calc(100vh - 160px);
+  overflow: auto;
 }
 
 table {
   width: 100%;
-  border-collapse: collapse;
-  background: var(--surface);
+  border-collapse: separate;
+  border-spacing: 0;
+  background: var(--glass-bg-strong);
   border-radius: 18px;
-  overflow: hidden;
   min-width: 900px;
   border: 1px solid var(--border);
 }
@@ -448,25 +548,74 @@ td {
   white-space: nowrap;
 }
 
+td {
+  height: 44px;
+}
+
+tbody tr:last-child td {
+  border-bottom: none;
+}
+
+tbody tr:last-child td:first-child {
+  border-bottom-left-radius: 18px;
+}
+
+tbody tr:last-child td:last-child {
+  border-bottom-right-radius: 18px;
+}
+
+/* Header stays opaque so scrolled rows never show through */
 th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
   background: var(--surface-alt);
   color: var(--accent);
+  font-size: 12px;
   font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
   cursor: pointer;
   user-select: none;
   transition: background-color 0.15s ease;
 }
 
+th:first-child {
+  border-top-left-radius: 18px;
+}
+
+th:last-child {
+  border-top-right-radius: 18px;
+}
+
 th:hover {
-  background: rgba(var(--accent-rgb), 0.12);
+  background: linear-gradient(rgba(var(--accent-rgb), 0.12), rgba(var(--accent-rgb), 0.12)),
+    var(--surface-alt);
 }
 
 tbody tr {
   transition: background-color 0.15s ease;
 }
 
-tbody tr:hover {
+tbody tr:nth-child(even):not(.row-top):not(.row-low) {
+  background: rgba(var(--accent-rgb), 0.035);
+}
+
+tbody tr:not(.row-top):not(.row-low):hover {
   background: var(--surface-alt);
+}
+
+/* Numeric columns right-aligned (column order matches each table's thead) */
+#productTable :is(th, td):nth-child(n+3):nth-child(-n+9),
+#feederProductTable :is(th, td):nth-child(n+3):nth-child(-n+6),
+#cityTable :is(th, td):nth-child(n+3):nth-child(-n+6),
+#campaignTable :is(th, td):nth-child(n+5):nth-child(-n+12) {
+  text-align: right;
+}
+
+#cityTable :is(th, td):first-child:not([colspan]),
+#campaignTable :is(th, td):first-child:not([colspan]) {
+  text-align: center;
 }
 
 .status-pill {
@@ -685,7 +834,7 @@ tr.row-low:hover {
   background: rgba(255, 255, 255, 0.08);
   border: 1px solid rgba(255, 255, 255, 0.15);
   color: #ffffff;
-  font-family: 'Poppins', inherit;
+  font-family: inherit;
   font-size: 12.5px;
   outline: none;
   cursor: pointer;
@@ -735,7 +884,7 @@ tr.row-low:hover {
   background: rgba(255, 255, 255, 0.06);
   border: 1px solid rgba(255, 255, 255, 0.1);
   color: var(--sidebar-text);
-  font-family: 'Poppins', inherit;
+  font-family: inherit;
   font-size: 12.5px;
   cursor: pointer;
   transition: background-color 0.15s ease;
@@ -885,7 +1034,12 @@ html[data-theme="dark"] .theme-toggle-thumb {
   }
 
   .topbar {
+    position: static;
     padding: 14px 16px;
+  }
+
+  .table-wrap {
+    max-height: none;
   }
 
   .topbar-left,
@@ -1037,6 +1191,8 @@ html[data-theme="dark"] .theme-toggle-thumb {
 /* Focus Banner (Across Tabs) */
 .focus-banner {
   background: linear-gradient(135deg, rgba(var(--grape-rgb), 0.14) 0%, rgba(var(--coral-rgb), 0.12) 100%);
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
   border-bottom: 1px solid rgba(var(--grape-rgb), 0.2);
   padding: 10px 24px;
   display: flex;
@@ -1120,7 +1276,9 @@ html[data-theme="dark"] .theme-toggle-thumb {
 }
 
 .login-card {
-  background: var(--surface);
+  background: var(--glass-bg-strong);
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
   border-radius: 24px;
   padding: 40px 36px;
   box-shadow: 0 20px 60px rgba(0, 0, 0, 0.08), 0 0 0 1px var(--border);
@@ -1158,7 +1316,7 @@ html[data-theme="dark"] .login-card {
   background: var(--gradient);
   border-radius: 14px;
   color: white;
-  font-family: 'Fredoka', sans-serif;
+  font-family: var(--font-display);
   font-size: 26px;
   font-weight: 700;
   box-shadow: 0 8px 16px rgba(124, 58, 237, 0.25);
@@ -1168,7 +1326,7 @@ html[data-theme="dark"] .login-card {
   font-size: 24px;
   margin: 0 0 6px;
   color: var(--text);
-  font-family: 'Fredoka', sans-serif;
+  font-family: var(--font-display);
 }
 
 .login-header .muted {
@@ -1263,5 +1421,192 @@ html[data-theme="dark"] .login-card {
 @keyframes spin {
   to {
     transform: rotate(360deg);
+  }
+}
+
+/* Campaign Analysis: brand-first layout */
+.sheet-tabs {
+  display: inline-flex;
+  gap: 4px;
+  padding: 3px;
+  border: 1px solid var(--border);
+  border-radius: 980px;
+  background: var(--surface-alt);
+}
+
+.sheet-tab {
+  border: 0;
+  background: transparent;
+  color: var(--text-muted);
+  padding: 5px 14px;
+  border-radius: 980px;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.sheet-tab.active {
+  background: var(--accent);
+  color: #fff;
+}
+
+.brand-bar {
+  padding: 4px 24px 0;
+}
+
+.brand-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.brand-chip {
+  position: relative;
+  overflow: hidden;
+  display: inline-flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 8px 16px;
+  border: 1px solid var(--border);
+  border-radius: 980px;
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.brand-chip-fill {
+  position: absolute;
+  inset: 0 auto 0 0;
+  background: rgba(var(--accent-rgb), 0.14);
+  pointer-events: none;
+}
+
+.brand-chip-name,
+.brand-chip-spend {
+  position: relative;
+}
+
+.brand-chip-spend {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-muted);
+}
+
+.brand-chip.active {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px rgba(var(--accent-rgb), 0.25);
+}
+
+.brand-chip.unknown {
+  border-style: dashed;
+}
+
+.brand-note {
+  padding: 8px 24px 0;
+  font-size: 13px;
+}
+
+.section-title {
+  margin: 4px 0 10px;
+  font-size: 15px;
+}
+
+.compare-card {
+  margin: 16px 24px 0;
+  padding: 16px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 18px;
+  overflow-x: auto;
+}
+
+#brandTable .num,
+#campaignListTable .num,
+.compare-card .num,
+.detail-table .num {
+  text-align: right;
+}
+
+tr.clickable {
+  cursor: pointer;
+}
+
+tr.row-selected td {
+  background: rgba(var(--accent-rgb), 0.1);
+}
+
+tr.detail-row > td {
+  white-space: normal;
+  background: var(--surface-alt);
+}
+
+.detail-grid {
+  display: grid;
+  grid-template-columns: minmax(260px, 1fr) minmax(420px, 2fr);
+  gap: 24px;
+  padding: 8px 4px;
+}
+
+.sparkline {
+  width: 100%;
+  height: 90px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+}
+
+.sparkline polyline {
+  fill: none;
+  stroke-width: 2;
+  vector-effect: non-scaling-stroke;
+}
+
+.spark-sales {
+  stroke: var(--mint);
+}
+
+.spark-spend {
+  stroke: var(--coral);
+}
+
+.spark-legend {
+  display: flex;
+  gap: 14px;
+  align-items: center;
+  margin-top: 6px;
+  font-size: 12px;
+}
+
+.spark-key::before {
+  content: '';
+  display: inline-block;
+  width: 10px;
+  height: 3px;
+  margin-right: 5px;
+  vertical-align: middle;
+  border-radius: 2px;
+}
+
+.spark-key-sales::before {
+  background: var(--mint);
+}
+
+.spark-key-spend::before {
+  background: var(--coral);
+}
+
+.funnel-arrow small {
+  display: block;
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+@media (max-width: 900px) {
+  .detail-grid {
+    grid-template-columns: 1fr;
   }
 }

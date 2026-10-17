@@ -1,9 +1,14 @@
 const XLSX = require('xlsx');
+const columnMap = require('./columnMap');
+const { resolveBrand, loadAliases } = require('./brandResolver');
 
 const MONTH_NAMES = [
-  'january', 'february', 'march', 'april', 'may', 'june',
-  'july', 'august', 'september', 'october', 'november', 'december',
+  'January', 'February', 'March', 'April', 'May', 'June',
+  'July', 'August', 'September', 'October', 'November', 'December',
 ];
+
+const SHEET_PRODUCT_BOOSTING = 'PRODUCT_BOOSTING';
+const SHEET_PRODUCT_RECOMMENDATION = 'PRODUCT_RECOMMENDATION';
 
 function toNumber(value) {
   if (value === undefined || value === null || value === '') return 0;
@@ -14,128 +19,183 @@ function toNumber(value) {
   return Number.isNaN(n) ? 0 : n;
 }
 
-/**
- * Turns a period label like "1st June - 30th June 2026" into a sortable
- * key like "2026-06", using the first month name found plus the year.
- */
-function derivePeriodKey(periodLabel) {
-  const lower = String(periodLabel).toLowerCase();
-  const yearMatch = lower.match(/(\d{4})/);
-  const year = yearMatch ? yearMatch[1] : 'unknown';
-  const monthIdx = MONTH_NAMES.findIndex((m) => lower.includes(m));
-  const month = monthIdx >= 0 ? String(monthIdx + 1).padStart(2, '0') : '00';
-  return `${year}-${month}`;
+function round(value, digits = 2) {
+  const factor = 10 ** digits;
+  return Math.round(toNumber(value) * factor) / factor;
 }
 
 /**
- * Parses the Oicia Campaign Sheet. The file stacks one "period block" per
- * month vertically down column A. Inside each block, campaigns run across
- * COLUMNS (not rows) under a "Campaign Performance" header, with each
- * metric (Budget Spent, Impressions, ATC, Qty Sold, Sales, ROAS) as its
- * own row underneath.
+ * Blinkit writes dates as "DD-MM-YYYY" strings. Split them by hand:
+ * new Date("01-09-2026") would read that as 9 January. Excel serial numbers
+ * are accepted too. Returns "YYYY-MM-DD" or null.
  */
-function parseCampaignSheet(filePath) {
-  const workbook = XLSX.readFile(filePath);
-  const sheetName = workbook.SheetNames[0];
-  const sheet = workbook.Sheets[sheetName];
-  const rows = XLSX.utils.sheet_to_json(sheet, { header: 1, raw: true, defval: '' });
+function parseDate(value) {
+  if (value === undefined || value === null || value === '') return null;
 
-  // A new period block starts on any row where column A is non-empty.
-  const blockStarts = [];
-  rows.forEach((row, idx) => {
-    if (String(row[0]).trim() !== '') blockStarts.push(idx);
-  });
-
-  if (blockStarts.length === 0) {
-    throw new Error("Couldn't find any period blocks - is this the Oicia Campaign Sheet?");
+  if (typeof value === 'number') {
+    const parts = XLSX.SSF.parse_date_code(value);
+    if (!parts) return null;
+    return `${parts.y}-${String(parts.m).padStart(2, '0')}-${String(parts.d).padStart(2, '0')}`;
   }
 
-  const periods = [];
+  const text = String(value).trim();
+  let m = text.match(/^(\d{1,2})[-/.](\d{1,2})[-/.](\d{4})$/);
+  if (m) return isoDate(Number(m[3]), Number(m[2]), Number(m[1]));
+  m = text.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
+  if (m) return isoDate(Number(m[1]), Number(m[2]), Number(m[3]));
+  return null;
+}
 
-  blockStarts.forEach((startIdx, i) => {
-    const endIdx = i + 1 < blockStarts.length ? blockStarts[i + 1] : rows.length;
-    const block = rows.slice(startIdx, endIdx);
+function isoDate(year, month, day) {
+  if (month < 1 || month > 12 || day < 1 || day > 31) return null;
+  return `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+}
 
-    const periodLabel = String(block[0][0]).trim();
-    const periodKey = derivePeriodKey(periodLabel);
+function periodLabelFor(periodKey) {
+  const [year, month] = periodKey.split('-');
+  return `${MONTH_NAMES[Number(month) - 1]} ${year}`;
+}
 
-    const nameRowIdx = block.findIndex((r) => String(r[1]).trim() === 'Campaign Performance');
-    if (nameRowIdx === -1) return; // no campaign table in this block, skip rather than fail the whole upload
-
-    const nameRow = block[nameRowIdx];
-    const campaignCols = [];
-    for (let c = 3; c < nameRow.length; c++) {
-      if (String(nameRow[c]).trim() !== '') campaignCols.push(c);
-    }
-
-    const findRow = (label) =>
-      block.find((row, idx) => idx > nameRowIdx && String(row[2]).trim().toLowerCase() === label) || [];
-
-    const detailRow = findRow('campaign detail');
-    const durationRow = findRow('duration');
-    const statusRow = findRow('status');
-    const spendRow = findRow('budget spent');
-    const impressionsRow = findRow('impressions');
-    const atcRow = findRow('atc');
-    const salesRow = findRow('sales');
-    const roasRow = findRow('roas');
-    // "Qty Sold" appears as both "Qty Sold" and "Qty. Sold" across blocks
-    const qtyRow =
-      block.find(
-        (row, idx) => idx > nameRowIdx && String(row[2]).trim().toLowerCase().replace(/\./g, '') === 'qty sold'
-      ) || [];
-
-    const campaigns = campaignCols.map((c) => {
-      const adSpend = toNumber(spendRow[c]);
-      const sales = toNumber(salesRow[c]);
-      const qtySold = toNumber(qtyRow[c]);
-      const roas = roasRow[c] === '' || roasRow[c] === undefined ? null : toNumber(roasRow[c]);
-
-      return {
-        periodKey,
-        periodLabel,
-        campaignName: String(nameRow[c] || '').trim(),
-        campaignDetail: String(detailRow[c] || '').trim(),
-        duration: String(durationRow[c] || '').trim(),
-        status: String(statusRow[c] || '').trim(),
-        adSpend,
-        impressions: toNumber(impressionsRow[c]),
-        atc: toNumber(atcRow[c]),
-        qtySold,
-        sales,
-        roas,
-        // ROI% and ROS/unit aren't given directly - derived from spend/sales/units
-        roiPct: adSpend > 0 ? Math.round(((sales - adSpend) / adSpend) * 1000) / 10 : null,
-        rosPerUnit: qtySold > 0 ? Math.round((sales / qtySold) * 100) / 100 : null,
-      };
-    });
-
-    periods.push({ periodKey, periodLabel, campaigns });
-  });
-
-  return periods;
+/** Decides the sheet type from its header row; null if it isn't a campaign sheet. */
+function detectSheetType(headers) {
+  const has = (cols) => cols.every((c) => headers.includes(c));
+  if (has(columnMap.REQUIRED_CAMPAIGN_PB_COLUMNS)) return SHEET_PRODUCT_BOOSTING;
+  if (has(columnMap.REQUIRED_CAMPAIGN_RC_COLUMNS)) return SHEET_PRODUCT_RECOMMENDATION;
+  return null;
 }
 
 /**
- * Ranks campaigns by ROAS within a period and tags each as 'top' (top 25%),
- * 'low' (bottom 25%) or 'mid'. Campaigns with no spend (and so no real ROAS)
- * are left out of the ranking entirely rather than skewing it.
+ * Parses a Blinkit campaign export (.xls or .xlsx). Every sheet is read
+ * independently; each data row is one day x campaign x targeting value.
+ *
+ * @param {string} filePath
+ * @param {{ fileName?: string, defaultBrand?: string }} [options]
+ *   defaultBrand is used (as the "explicit" brand) for campaigns whose name
+ *   can't be resolved; otherwise the upload's file name is tried before
+ *   falling back to "Unknown".
+ * @returns {{ uploads: object[], rows: object[] }}
  */
-function assignPerformanceTiers(campaigns) {
-  const ranked = campaigns.filter((c) => c.adSpend > 0 && c.roas !== null);
-  const sorted = [...ranked].sort((a, b) => b.roas - a.roas);
-  const n = sorted.length;
-  const cutoff = Math.max(1, Math.ceil(n * 0.25));
+function parseCampaignFile(filePath, options = {}) {
+  const { fileName = '', defaultBrand = '' } = options;
+  const workbook = XLSX.readFile(filePath);
+  const aliases = loadAliases();
+  const fileBrand = resolveBrand(fileName.replace(/\.[^.]+$/, ''), '', aliases);
+  const brandCache = new Map();
 
-  const tierByName = new Map();
-  sorted.forEach((c, idx) => {
-    let tier = 'mid';
-    if (idx < cutoff) tier = 'top';
-    else if (idx >= n - cutoff) tier = 'low';
-    tierByName.set(c.campaignName, tier);
-  });
+  const brandFor = (campaignName) => {
+    if (brandCache.has(campaignName)) return brandCache.get(campaignName);
+    let result = resolveBrand(campaignName, '', aliases);
+    if (result.brand === 'Unknown') {
+      if (defaultBrand.trim()) result = resolveBrand('', defaultBrand, aliases);
+      else if (fileBrand.brand !== 'Unknown') result = { brand: fileBrand.brand, confidence: 'parsed' };
+    }
+    brandCache.set(campaignName, result.brand);
+    return result.brand;
+  };
 
-  return campaigns.map((c) => ({ ...c, tier: tierByName.get(c.campaignName) || 'mid' }));
+  const rows = [];
+  const unrecognised = [];
+
+  for (const sheetName of workbook.SheetNames) {
+    const grid = XLSX.utils.sheet_to_json(workbook.Sheets[sheetName], { header: 1, raw: true, defval: '' });
+    if (grid.length === 0) continue;
+
+    const headers = grid[0].map((h) => String(h).trim());
+    const sheetType = detectSheetType(headers);
+    if (!sheetType) {
+      unrecognised.push(sheetName);
+      continue;
+    }
+
+    const map = sheetType === SHEET_PRODUCT_BOOSTING ? columnMap.CAMPAIGN_PB_COLUMNS : columnMap.CAMPAIGN_RC_COLUMNS;
+
+    for (const raw of grid.slice(1)) {
+      const record = {};
+      headers.forEach((header, idx) => {
+        const key = map[header];
+        if (key) record[key] = raw[idx];
+      });
+
+      const date = parseDate(record.date);
+      const campaignName = String(record.campaignName ?? '').trim();
+      if (!date || record.campaignId === '' || record.campaignId === undefined || !campaignName) continue;
+
+      const isPb = sheetType === SHEET_PRODUCT_BOOSTING;
+      rows.push({
+        periodKey: date.slice(0, 7),
+        sheetType,
+        date,
+        campaignId: String(record.campaignId).trim(),
+        campaignName,
+        brandName: brandFor(campaignName),
+        targetingType: String(record.targetingType ?? '').trim(),
+        targetingValue: isPb ? String(record.targetingValue ?? '').trim() : '',
+        matchType: isPb ? String(record.matchType ?? '').trim() : '',
+        mostViewedPosition: isPb ? toNumber(record.mostViewedPosition) : null,
+        pacingType: String(record.pacingType ?? '').trim(),
+        cpm: round(record.cpm),
+        impressions: toNumber(record.impressions),
+        directAtc: toNumber(record.directAtc),
+        indirectAtc: toNumber(record.indirectAtc),
+        directQtySold: toNumber(record.directQtySold),
+        indirectQtySold: toNumber(record.indirectQtySold),
+        directSales: round(record.directSales),
+        indirectSales: round(record.indirectSales),
+        newUsersAcquired: toNumber(record.newUsersAcquired),
+        estimatedBudgetConsumed: round(record.estimatedBudgetConsumed),
+        directRoas: round(record.directRoas),
+        totalRoas: round(record.totalRoas),
+      });
+    }
+  }
+
+  if (unrecognised.length && rows.length === 0) {
+    throw new Error(
+      `Sheet(s) ${unrecognised.map((s) => `"${s}"`).join(', ')} don't look like a Blinkit campaign export ` +
+      '(expected Date, Campaign ID, Campaign Name, Targeting Type, ... columns).'
+    );
+  }
+  if (rows.length === 0) {
+    throw new Error('No campaign data rows were found in this file.');
+  }
+
+  return { uploads: summariseUploads(rows, fileName), rows };
 }
 
-module.exports = { parseCampaignSheet, assignPerformanceTiers, toNumber, derivePeriodKey };
+/** One upload entry per (periodKey, sheetType) present in the parsed rows. */
+function summariseUploads(rows, fileName) {
+  const groups = new Map();
+  for (const row of rows) {
+    const key = `${row.periodKey}|${row.sheetType}`;
+    if (!groups.has(key)) {
+      groups.set(key, { periodKey: row.periodKey, sheetType: row.sheetType, from: row.date, to: row.date, rowCount: 0 });
+    }
+    const g = groups.get(key);
+    if (row.date < g.from) g.from = row.date;
+    if (row.date > g.to) g.to = row.date;
+    g.rowCount += 1;
+  }
+
+  const uploadedAt = new Date().toISOString();
+  return Array.from(groups.values())
+    .sort((a, b) => a.periodKey.localeCompare(b.periodKey) || a.sheetType.localeCompare(b.sheetType))
+    .map((g) => ({
+      uploadId: `${uploadedAt}|${g.periodKey}|${g.sheetType}`,
+      fileName,
+      uploadedDate: uploadedAt.slice(0, 10),
+      dateRange: { from: g.from, to: g.to },
+      periodKey: g.periodKey,
+      periodLabel: periodLabelFor(g.periodKey),
+      sheetType: g.sheetType,
+      rowCount: g.rowCount,
+    }));
+}
+
+module.exports = {
+  parseCampaignFile,
+  parseDate,
+  periodLabelFor,
+  toNumber,
+  SHEET_PRODUCT_BOOSTING,
+  SHEET_PRODUCT_RECOMMENDATION,
+};

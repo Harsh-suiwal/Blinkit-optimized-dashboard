@@ -1,14 +1,6 @@
-export function brandFor(row: { brandName?: string; productName?: string; topProduct?: string; campaignName?: string }): string {
-  if (row.brandName?.trim()) return row.brandName.trim();
-  const name = row.productName || row.topProduct || row.campaignName || '';
-  if (!name) return '';
-  const clean = name.trim();
-  if (clean.toLowerCase().includes('oicia')) return 'Oicia';
-  if (clean.toLowerCase().includes('smarteez')) return 'Smarteez';
-  const match = clean.match(/^([A-Za-z0-9&'-]+)/);
-  if (!match) return '';
-  const value = match[1].split(/[_-]/)[0];
-  return value.charAt(0).toUpperCase() + value.slice(1).toLowerCase();
+/** Brand shown for a row. The server resolves it (parser/brandResolver.js); the client never guesses. */
+export function brandFor(row: { brandName?: string }): string {
+  return row.brandName?.trim() || 'Unknown';
 }
 
 export function money(value: number | null | undefined, digits = 2): string {
