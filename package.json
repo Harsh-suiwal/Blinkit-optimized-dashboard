@@ -6,7 +6,8 @@
   "scripts": {
     "start": "npm run build",
     "build": "npm run install:client && npm run build:client && node server.js",
-    "deploy": "node scripts/require-build.js && node server.js",
+    "render-build": "npm ci --omit=dev && npm run install:client && npm run build:client",
+    "deploy":"node scripts/require-build.js && node server.js",
     "dev": "npx concurrently \"npx nodemon server.js\" \"npm run dev:client\"",
     "serve": "node server.js",
     "server": "node server.js",
