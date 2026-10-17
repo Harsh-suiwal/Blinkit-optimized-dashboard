@@ -14,6 +14,7 @@ const {
   appendCitySnapshot,
   attachTrend,
   clearHistory,
+  removeBrandFromHistory,
   removeCityFromHistory,
   getSnapshotsForCity,
   restoreSnapshotsForCity,
@@ -21,6 +22,8 @@ const {
 const { parseCampaignFile } = require('./parser/parseCampaign');
 const {
   loadStore: loadCampaignStore,
+  clearStore: clearCampaignStore,
+  removeBrandRows: removeCampaignBrandRows,
   planUpload: planCampaignUpload,
   upsertUpload: upsertCampaignUpload,
   listPeriods: listCampaignPeriods,
@@ -131,6 +134,7 @@ function buildConsolidatedRows(parsedRows, date) {
       itemId: row.itemId,
       warehouseId: row.warehouseId,
       latestDate: date,
+      latestUnitsSold15: row.unitsSold15,
       latestUnitsSold30: row.unitsSold30,
     });
 
@@ -153,13 +157,27 @@ function buildConsolidatedRows(parsedRows, date) {
   });
 }
 
-function saveLatest(rows, date, fileName) {
-  fs.writeFileSync(DATA_PATH, JSON.stringify({ date, fileName, rows }, null, 2));
+// Inventory is stored per brand so uploading one brand never removes another:
+//   { date, fileName, rows, brandUploads: { "<Brand>": { date, fileName } } }
+// `date`/`fileName` mirror the most recent upload for older callers.
+function saveLatest(store) {
+  fs.writeFileSync(DATA_PATH, JSON.stringify(store, null, 2));
 }
 
 function loadLatest() {
   if (!fs.existsSync(DATA_PATH)) return null;
-  return JSON.parse(fs.readFileSync(DATA_PATH, 'utf-8'));
+  const latest = JSON.parse(fs.readFileSync(DATA_PATH, 'utf-8'));
+  if (latest.brandUploads) return latest;
+
+  // Pre-per-brand file: attribute every row to its brand with the old date/file name.
+  const brandUploads = {};
+  (latest.rows || []).forEach((r) => {
+    r.brandName = r.brandName || 'Unknown';
+    brandUploads[r.brandName] = { date: latest.date, fileName: latest.fileName };
+  });
+  const migrated = { ...latest, brandUploads };
+  saveLatest(migrated);
+  return migrated;
 }
 
 // --- Upload (admin only) --------------------------------------------------
@@ -173,14 +191,29 @@ app.post('/api/upload', requireAdmin, upload.single('report'), (req, res) => {
     const parsedRows = parseReport(req.file.path);
     const date = todayDateString();
 
+    // Rows with an empty Brand Name column fall back to the file name, then "Unknown".
+    const fileBrand = resolveBrand(req.file.originalname.replace(/.[^.]+$/, '')).brand;
+    parsedRows.forEach((row) => {
+      if (!row.brandName) row.brandName = fileBrand;
+    });
+
     // Save this upload into the history log BEFORE computing 45/60 day
     // windows for it, so today's own snapshot is available for future uploads.
     appendSnapshot(parsedRows, date);
 
-    const rows = buildConsolidatedRows(parsedRows, date);
-    saveLatest(rows, date, req.file.originalname);
+    const newRows = buildConsolidatedRows(parsedRows, date);
 
-    res.json({ ok: true, date, rowCount: rows.length });
+    // Replace only the brands present in this file; every other brand stays.
+    const brands = Array.from(new Set(newRows.map((r) => r.brandName)));
+    const previous = loadLatest() || { rows: [], brandUploads: {} };
+    const brandUploads = { ...previous.brandUploads };
+    brands.forEach((b) => {
+      brandUploads[b] = { date, fileName: req.file.originalname };
+    });
+    const rows = previous.rows.filter((r) => !brands.includes(r.brandName)).concat(newRows);
+    saveLatest({ date, fileName: req.file.originalname, rows, brandUploads });
+
+    res.json({ ok: true, date, rowCount: newRows.length, totalRowCount: rows.length, brands });
   } catch (err) {
     res.status(400).json({ error: err.message });
   } finally {
@@ -213,6 +246,28 @@ app.get('/api/summary', requireAuth, (req, res) => {
   res.json({ date: latest.date, totalUnitsSold30, totalStock, productCount, lowOrOutCount });
 });
 
+// Wipes the current inventory view for one brand (?brand=) or for every brand. The upload history log
+// (data/history.json) is kept on purpose: it is what the 45/60-day figures
+// are computed from, and it cannot be rebuilt.
+app.delete('/api/inventory-data', requireAdmin, (req, res) => {
+  const brand = typeof req.query.brand === 'string' ? req.query.brand.trim() : '';
+  const latest = brand ? loadLatest() : null;
+
+  if (brand && latest) {
+    latest.rows = latest.rows.filter((r) => !sameBrand(r.brandName, brand));
+    Object.keys(latest.brandUploads).forEach((b) => {
+      if (sameBrand(b, brand)) delete latest.brandUploads[b];
+    });
+    if (latest.rows.length) {
+      saveLatest(latest);
+      return res.json({ ok: true, brand });
+    }
+  }
+
+  if (fs.existsSync(DATA_PATH)) fs.unlinkSync(DATA_PATH);
+  res.json({ ok: true });
+});
+
 // Removes one product+warehouse row from the current inventory view.
 // Kept intentionally simple: this only touches the current view (not the
 // 45/60 day snapshot history), since that history is shared across
@@ -234,7 +289,7 @@ app.delete('/api/products', requireAdmin, (req, res) => {
   }
 
   const [removedRow] = latest.rows.splice(index, 1);
-  saveLatest(latest.rows, latest.date, latest.fileName);
+  saveLatest(latest);
 
   res.json({ ok: true, removedRow, index, rowCount: latest.rows.length });
 });
@@ -250,7 +305,7 @@ app.post('/api/products/restore', requireAdmin, (req, res) => {
 
   const clampedIndex = Math.max(0, Math.min(typeof index === 'number' ? index : latest.rows.length, latest.rows.length));
   latest.rows.splice(clampedIndex, 0, row);
-  saveLatest(latest.rows, latest.date, latest.fileName);
+  saveLatest(latest);
 
   res.json({ ok: true, rowCount: latest.rows.length });
 });
@@ -301,7 +356,7 @@ app.get('/api/brand-names', requireAuth, (req, res) => {
 
   const salesLatest = loadSalesLatest();
   if (salesLatest && Array.isArray(salesLatest.cityRows)) {
-    salesLatest.cityRows.forEach((r) => add(r.topProduct, r.brandName));
+    salesLatest.cityRows.forEach((r) => add('', r.brandName));
   }
 
   listCampaignBrands(loadCampaignStore()).forEach((b) => {
@@ -372,14 +427,33 @@ app.get('/api/export', requireAuth, (req, res) => {
 });
 
 // --- Sales / City Performance -------------------------------------------
+// Stored per brand, like inventory, so uploading one brand never removes another:
+//   salesLatest.json    { date, fileName, brandUploads: { "<Brand>": { date, fileName } }, cityRows }
+//                       cityRows = one row per (brandName, city), each with its own trend vs that
+//                       brand's previous upload
+//   salesByProduct.json { date, fileName, productRows }   (each product row carries brandName)
+// Reads combine the brand rows per city (see combineCityRows).
 
-function saveSalesLatest(cityRows, date, fileName) {
-  fs.writeFileSync(SALES_DATA_PATH, JSON.stringify({ date, fileName, cityRows }, null, 2));
+function saveSalesLatest(store) {
+  fs.writeFileSync(SALES_DATA_PATH, JSON.stringify(store, null, 2));
 }
 
 function loadSalesLatest() {
   if (!fs.existsSync(SALES_DATA_PATH)) return null;
-  return JSON.parse(fs.readFileSync(SALES_DATA_PATH, 'utf-8'));
+  const latest = JSON.parse(fs.readFileSync(SALES_DATA_PATH, 'utf-8'));
+  if (latest.brandUploads) return latest;
+
+  // Pre-per-brand file: its city rows were totalled across brands. Attribute each row to
+  // its single brand (or "Unknown") and keep the old date / file name.
+  const brandUploads = {};
+  const cityRows = (latest.cityRows || []).map((r) => {
+    const brandName = r.brandName || (r.brands && r.brands.length === 1 ? r.brands[0] : 'Unknown');
+    brandUploads[brandName] = { date: latest.date, fileName: latest.fileName };
+    return { ...r, brandName };
+  });
+  const migrated = { ...latest, cityRows, brandUploads };
+  saveSalesLatest(migrated);
+  return migrated;
 }
 
 function saveProductSalesLatest(productRows, date, fileName) {
@@ -391,6 +465,74 @@ function loadProductSalesLatest() {
   return JSON.parse(fs.readFileSync(PRODUCT_SALES_PATH, 'utf-8'));
 }
 
+const sameBrand = (a, b) => String(a || 'Unknown').toLowerCase() === String(b || 'Unknown').toLowerCase();
+
+/**
+ * Merges per-brand city rows into one row per city. Ratios are recomputed from sums;
+ * the trend compares only the brand rows that have a previous upload, so a brand
+ * uploaded for the first time doesn't distort it. Orders are summed per brand (an
+ * order containing two brands' products counts once in each).
+ */
+function combineCityRows(rows) {
+  const byCity = new Map();
+  for (const r of rows) {
+    if (!byCity.has(r.city)) {
+      byCity.set(r.city, {
+        city: r.city, revenue: 0, units: 0, orderCount: 0, topProduct: null, topProductRevenue: 0,
+        brands: [], currentWithPrev: 0, previous: 0, hasPrev: false,
+      });
+    }
+    const g = byCity.get(r.city);
+    g.revenue += r.revenue;
+    g.units += r.units;
+    g.orderCount += r.orderCount || 0;
+    if ((r.topProductRevenue || 0) > g.topProductRevenue) {
+      g.topProduct = r.topProduct;
+      g.topProductRevenue = r.topProductRevenue;
+    }
+    if (r.brandName && !g.brands.includes(r.brandName)) g.brands.push(r.brandName);
+    if (r.previousRevenue !== null && r.previousRevenue !== undefined) {
+      g.currentWithPrev += r.revenue;
+      g.previous += r.previousRevenue;
+      g.hasPrev = true;
+    }
+  }
+
+  const round2 = (n) => Math.round(n * 100) / 100;
+  const combined = Array.from(byCity.values()).map((g) => ({
+    city: g.city,
+    revenue: round2(g.revenue),
+    units: g.units,
+    orderCount: g.orderCount,
+    avgOrderValue: g.orderCount > 0 ? round2(g.revenue / g.orderCount) : 0,
+    topProduct: g.topProduct,
+    topProductRevenue: round2(g.topProductRevenue),
+    brands: g.brands,
+    revenueChangePct: g.hasPrev && g.previous > 0 ? Math.round(((g.currentWithPrev - g.previous) / g.previous) * 1000) / 10 : null,
+    previousRevenue: g.hasPrev ? round2(g.previous) : null,
+  }));
+  return assignPerformanceTiers(combined).sort((a, b) => b.revenue - a.revenue);
+}
+
+/** One entry per brand with its total revenue/units, biggest first (for the brand chips). */
+function salesBrandSummaries(cityRows) {
+  const byBrand = new Map();
+  for (const r of cityRows) {
+    const name = r.brandName || 'Unknown';
+    if (!byBrand.has(name)) byBrand.set(name, { brandName: name, revenue: 0, units: 0 });
+    const b = byBrand.get(name);
+    b.revenue += r.revenue;
+    b.units += r.units;
+  }
+  return Array.from(byBrand.values())
+    .map((b) => ({ ...b, revenue: Math.round(b.revenue * 100) / 100 }))
+    .sort((a, b) => b.revenue - a.revenue);
+}
+
+function salesRowsForBrand(store, brand) {
+  return brand ? store.cityRows.filter((r) => sameBrand(r.brandName, brand)) : store.cityRows;
+}
+
 app.post('/api/sales-upload', requireAdmin, upload.single('report'), (req, res) => {
   if (!req.file) {
     return res.status(400).json({ error: 'No file uploaded.' });
@@ -400,26 +542,45 @@ app.post('/api/sales-upload', requireAdmin, upload.single('report'), (req, res) 
     const salesRows = parseSalesRows(req.file.path);
     const date = todayDateString();
 
-    const cityAgg = aggregateByCity(salesRows);
+    // Orders with an empty Brand Name fall back to the file name, then "Unknown".
+    const fileBrand = resolveBrand(req.file.originalname.replace(/\.[^.]+$/, '')).brand;
+    salesRows.forEach((row) => {
+      if (!row.brandName) row.brandName = fileBrand;
+    });
 
-    // Log today's per-city totals BEFORE computing trend, so this
-    // upload becomes available as a comparison point for the next one.
+    const brands = Array.from(new Set(salesRows.map((r) => r.brandName)));
+    const cityAgg = brands.flatMap((brandName) =>
+      aggregateByCity(salesRows.filter((r) => r.brandName === brandName)).map((row) => ({ ...row, brandName }))
+    );
+
+    // Log this upload's per-brand city totals BEFORE computing the trend, so it
+    // becomes the comparison point for that brand's next upload.
     appendCitySnapshot(cityAgg, date);
-
     const withTrend = attachTrend(cityAgg, date);
-    const withTiers = assignPerformanceTiers(withTrend);
 
-    // Highest revenue first by default
-    withTiers.sort((a, b) => b.revenue - a.revenue);
+    // Replace only the brands in this file; every other brand stays.
+    const previous = loadSalesLatest() || { cityRows: [], brandUploads: {} };
+    const brandUploads = { ...previous.brandUploads };
+    brands.forEach((b) => {
+      brandUploads[b] = { date, fileName: req.file.originalname };
+    });
+    const cityRows = previous.cityRows.filter((r) => !brands.includes(r.brandName)).concat(withTrend);
+    saveSalesLatest({ date, fileName: req.file.originalname, brandUploads, cityRows });
 
-    saveSalesLatest(withTiers, date, req.file.originalname);
-
-    // Also aggregate per-product (across all cities), so the product
-    // focus dropdown can show one product's performance everywhere.
+    // Per-product breakdown (powers the feeder view); same replace-by-brand rule.
     const productAgg = aggregateByProduct(salesRows);
-    saveProductSalesLatest(productAgg, date, req.file.originalname);
+    const oldProducts = loadProductSalesLatest();
+    const keptProducts = oldProducts ? oldProducts.productRows.filter((p) => !brands.some((b) => sameBrand(p.brandName, b))) : [];
+    saveProductSalesLatest(keptProducts.concat(productAgg), date, req.file.originalname);
 
-    res.json({ ok: true, date, cityCount: withTiers.length, orderRowCount: salesRows.length });
+    res.json({
+      ok: true,
+      date,
+      brands,
+      cityCount: new Set(withTrend.map((r) => r.city)).size,
+      totalCityCount: new Set(cityRows.map((r) => r.city)).size,
+      orderRowCount: salesRows.length,
+    });
   } catch (err) {
     res.status(400).json({ error: err.message });
   } finally {
@@ -427,59 +588,83 @@ app.post('/api/sales-upload', requireAdmin, upload.single('report'), (req, res) 
   }
 });
 
+// ?brand= narrows the city table to one brand; brandSummaries always lists every brand.
 app.get('/api/city-performance', requireAuth, (req, res) => {
   const latest = loadSalesLatest();
-  if (!latest) return res.json({ date: null, cityRows: [] });
-  res.json(latest);
+  if (!latest) return res.json({ date: null, brandUploads: {}, cityRows: [], brandSummaries: [] });
+  const brand = typeof req.query.brand === 'string' ? req.query.brand.trim() : '';
+  res.json({
+    date: latest.date,
+    brandUploads: latest.brandUploads,
+    cityRows: combineCityRows(salesRowsForBrand(latest, brand)),
+    brandSummaries: salesBrandSummaries(latest.cityRows),
+  });
 });
 
-// Wipes the current sales snapshot AND the trend history log.
+// Wipes sales data: one brand (?brand=) or everything. Trend history for the removed
+// scope goes with it so it can't resurface as a stale "previous" comparison.
 app.delete('/api/sales-history', requireAdmin, (req, res) => {
+  const brand = typeof req.query.brand === 'string' ? req.query.brand.trim() : '';
+  const latest = brand ? loadSalesLatest() : null;
+
+  if (brand && latest) {
+    latest.cityRows = latest.cityRows.filter((r) => !sameBrand(r.brandName, brand));
+    Object.keys(latest.brandUploads).forEach((b) => {
+      if (sameBrand(b, brand)) delete latest.brandUploads[b];
+    });
+    const products = loadProductSalesLatest();
+    if (products) {
+      saveProductSalesLatest(products.productRows.filter((p) => !sameBrand(p.brandName, brand)), products.date, products.fileName);
+    }
+    removeBrandFromHistory(brand);
+    if (latest.cityRows.length) {
+      saveSalesLatest(latest);
+      return res.json({ ok: true, brand });
+    }
+  }
+
   if (fs.existsSync(SALES_DATA_PATH)) fs.unlinkSync(SALES_DATA_PATH);
   if (fs.existsSync(PRODUCT_SALES_PATH)) fs.unlinkSync(PRODUCT_SALES_PATH);
   clearHistory();
   res.json({ ok: true });
 });
 
-// Removes one city row from the current view and purges its history
-// so it doesn't resurface as a "previous" comparison point later.
-// Returns everything needed to fully undo the delete (Ctrl+Z), including
-// the trend-history snapshots that would otherwise be lost.
+// Removes one city (all brands) from the current view and purges its history so it
+// doesn't resurface as a "previous" comparison point later. Returns everything needed
+// to fully undo the delete (Ctrl+Z), including the trend-history snapshots.
 app.delete('/api/city-performance/:city', requireAdmin, (req, res) => {
   const { city } = req.params;
   const latest = loadSalesLatest();
   if (!latest) return res.status(404).json({ error: 'No sales data to delete from.' });
 
-  const index = latest.cityRows.findIndex((c) => c.city === city);
-  if (index === -1) {
+  const removedRows = latest.cityRows.filter((c) => c.city === city);
+  if (!removedRows.length) {
     return res.status(404).json({ error: `City "${city}" not found.` });
   }
 
   const removedHistorySnapshots = getSnapshotsForCity(city);
-  const [removedRow] = latest.cityRows.splice(index, 1);
+  latest.cityRows = latest.cityRows.filter((c) => c.city !== city);
 
-  saveSalesLatest(latest.cityRows, latest.date, latest.fileName);
+  saveSalesLatest(latest);
   removeCityFromHistory(city);
 
-  res.json({ ok: true, cityCount: latest.cityRows.length, removedRow, index, removedHistorySnapshots });
+  res.json({ ok: true, removedRows, removedHistorySnapshots });
 });
 
-// Re-inserts a previously deleted city row (Ctrl+Z / undo), including its
-// trend-history snapshots.
+// Re-inserts a previously deleted city (Ctrl+Z / undo), including its trend-history snapshots.
 app.post('/api/city-performance/restore', requireAdmin, (req, res) => {
-  const { cityRow, index, historySnapshots } = req.body || {};
-  if (!cityRow) return res.status(400).json({ error: 'cityRow is required.' });
+  const { cityRows, historySnapshots } = req.body || {};
+  if (!Array.isArray(cityRows) || !cityRows.length) return res.status(400).json({ error: 'cityRows is required.' });
 
   const latest = loadSalesLatest();
   if (!latest) return res.status(404).json({ error: 'No sales data to restore into.' });
 
-  const clampedIndex = Math.max(0, Math.min(typeof index === 'number' ? index : latest.cityRows.length, latest.cityRows.length));
-  latest.cityRows.splice(clampedIndex, 0, cityRow);
-  saveSalesLatest(latest.cityRows, latest.date, latest.fileName);
+  latest.cityRows = latest.cityRows.concat(cityRows);
+  saveSalesLatest(latest);
 
   restoreSnapshotsForCity(historySnapshots);
 
-  res.json({ ok: true, cityCount: latest.cityRows.length });
+  res.json({ ok: true });
 });
 
 // Product-focus: a single product's totals + per-city breakdown, drawn
@@ -495,11 +680,13 @@ app.get('/api/product-sales', requireAuth, (req, res) => {
   res.json({ date: latest.date, row });
 });
 
-// Full product-by-city breakdown used by feeder-scoped Sales Performance.
+// Product-by-city breakdown used by feeder-scoped Sales Performance (?brand= narrows it).
 app.get('/api/product-city-sales', requireAuth, (req, res) => {
   const latest = loadProductSalesLatest();
   if (!latest) return res.json({ date: null, productRows: [] });
-  res.json({ date: latest.date, productRows: latest.productRows || [] });
+  const brand = typeof req.query.brand === 'string' ? req.query.brand.trim() : '';
+  const productRows = (latest.productRows || []).filter((p) => !brand || sameBrand(p.brandName, brand));
+  res.json({ date: latest.date, productRows });
 });
 
 // Brand-focus: a single brand's totals + per-city breakdown, aggregated
@@ -511,10 +698,7 @@ app.get('/api/brand-sales', requireAuth, (req, res) => {
   const latest = loadProductSalesLatest();
   if (!latest) return res.json({ date: null, cityRows: [] });
 
-  const aliases = loadAliases();
-  const brandProducts = latest.productRows.filter((r) => {
-    return brandOf(r.productName, r.brandName, aliases).toLowerCase() === brand.toLowerCase();
-  });
+  const brandProducts = latest.productRows.filter((r) => sameBrand(r.brandName, brand));
   const cityAgg = new Map();
 
   for (const p of brandProducts) {
@@ -525,9 +709,6 @@ app.get('/api/brand-sales', requireAuth, (req, res) => {
       const agg = cityAgg.get(c.city);
       agg.revenue += c.revenue;
       agg.units += c.units;
-      // We don't have accurate distinct order count per city across products here,
-      // so we omit it or leave it as 0.
-      
       if (c.revenue > agg.topProductRevenue) {
         agg.topProductRevenue = c.revenue;
         agg.topProduct = p.productName;
@@ -541,29 +722,31 @@ app.get('/api/brand-sales', requireAuth, (req, res) => {
 
 app.get('/api/sales-summary', requireAuth, (req, res) => {
   const latest = loadSalesLatest();
-  if (!latest) {
+  const brand = typeof req.query.brand === 'string' ? req.query.brand.trim() : '';
+  const rows = latest ? combineCityRows(salesRowsForBrand(latest, brand)) : [];
+  if (!rows.length) {
     return res.json({ totalRevenue: 0, totalUnits: 0, totalOrders: 0, cityCount: 0, topCity: null });
   }
 
-  const totalRevenue = latest.cityRows.reduce((sum, c) => sum + c.revenue, 0);
-  const totalUnits = latest.cityRows.reduce((sum, c) => sum + c.units, 0);
-  const totalOrders = latest.cityRows.reduce((sum, c) => sum + c.orderCount, 0);
-  const topCity = latest.cityRows[0] ? latest.cityRows[0].city : null;
+  const totalRevenue = rows.reduce((sum, c) => sum + c.revenue, 0);
+  const totalUnits = rows.reduce((sum, c) => sum + c.units, 0);
+  const totalOrders = rows.reduce((sum, c) => sum + c.orderCount, 0);
 
   res.json({
     date: latest.date,
     totalRevenue: Math.round(totalRevenue * 100) / 100,
     totalUnits,
     totalOrders,
-    cityCount: latest.cityRows.length,
-    topCity,
+    cityCount: rows.length,
+    topCity: rows[0].city,
   });
 });
 
 /** Builds the Sales by City worksheet, or null if nothing has been uploaded. */
-function buildSalesWorksheet() {
+function buildSalesWorksheet(brand = '') {
   const latest = loadSalesLatest();
   if (!latest) return null;
+  const cityRows = combineCityRows(salesRowsForBrand(latest, brand));
 
   const headers = [
     'City', 'Revenue', 'Units Sold', 'Order Count', 'Avg Order Value',
@@ -571,7 +754,7 @@ function buildSalesWorksheet() {
     'Performance Tier', 'Revenue Change % (vs last upload)', 'Previous Revenue',
   ];
 
-  const dataRows = latest.cityRows.map((c) => [
+  const dataRows = cityRows.map((c) => [
     c.city,
     c.revenue,
     c.units,
@@ -588,6 +771,19 @@ function buildSalesWorksheet() {
   ws['!cols'] = [{ wch: 22 }, { wch: 14 }, { wch: 12 }, { wch: 12 }, { wch: 16 }, { wch: 40 }, { wch: 22 }, { wch: 14 }, { wch: 22 }, { wch: 16 }];
   return { ws, date: latest.date };
 }
+
+app.get('/api/export-sales', requireAuth, (req, res) => {
+  const built = buildSalesWorksheet(typeof req.query.brand === 'string' ? req.query.brand.trim() : '');
+  if (!built) return res.status(400).json({ error: 'No sales report uploaded yet.' });
+
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, built.ws, 'Sales by City');
+
+  const buffer = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
+  res.setHeader('Content-Disposition', `attachment; filename="Sales_by_City_${built.date}.xlsx"`);
+  res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+  res.send(buffer);
+});
 
 // --- Campaign Analysis ----------------------------------------------------
 // Raw daily rows are stored as uploaded; every figure below is aggregated at
@@ -645,7 +841,7 @@ app.get('/api/campaign-analysis', requireAuth, (req, res) => {
   const { periodKey, sheetType, brand } = campaignFilters(req, store);
 
   if (!periodKey) {
-    return res.json({ date: null, periods: [], periodKey: null, latestPeriodKey: null, campaigns: [], brandSummaries: [] });
+    return res.json({ date: null, periods: [], periodKey: null, latestPeriodKey: null, campaigns: [], brandSummaries: [], allBrands: [] });
   }
 
   // Brand summaries ignore the brand filter so the chip bar always lists every brand.
@@ -654,7 +850,7 @@ app.get('/api/campaign-analysis', requireAuth, (req, res) => {
   const rows = brand ? periodRows.filter((r) => r.brandName.toLowerCase() === brand.toLowerCase()) : periodRows;
   const campaigns = aggregateCampaigns(rows);
 
-  res.json({ date: getCampaignUploadedDate(store, periodKey), periods, periodKey, latestPeriodKey, campaigns, brandSummaries });
+  res.json({ date: getCampaignUploadedDate(store, periodKey), periods, periodKey, latestPeriodKey, campaigns, brandSummaries, allBrands: listCampaignBrands(store).sort() });
 });
 
 app.get('/api/campaign-brands', requireAuth, (req, res) => {
@@ -675,6 +871,15 @@ app.get('/api/campaign-detail', requireAuth, (req, res) => {
   const periodKey = resolveCampaignPeriod(store, req.query.periodKey);
   if (!periodKey) return res.json({ periodKey: null, targeting: [], daily: [] });
   res.json({ periodKey, ...getCampaignDetail(store, { periodKey, sheetType, campaignId }) });
+});
+
+// Wipes stored campaign data: one brand across every period (?brand=), or everything.
+app.delete('/api/campaign-data', requireAdmin, (req, res) => {
+  const brand = typeof req.query.brand === 'string' ? req.query.brand.trim() : '';
+  if (brand) removeCampaignBrandRows(brand);
+  else clearCampaignStore();
+  campaignTrash.clear();
+  res.json({ ok: true });
 });
 
 // Removes every daily row of one campaign in a period. Returns an undo token.

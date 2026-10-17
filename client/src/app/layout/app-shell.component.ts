@@ -1,11 +1,10 @@
-import { Component, HostListener, OnInit, inject, signal } from '@angular/core';
+import { Component, HostListener, OnInit, effect, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { Router, RouterLink, RouterLinkActive, RouterOutlet } from '@angular/router';
 import { ApiService } from '../core/api.service';
 import { AuthService } from '../core/auth.service';
 import { UiStateService } from '../core/ui-state.service';
 import { BrandMarkComponent } from '../shared/brand-mark.component';
-import { FEEDER_CITY_MAP } from '../core/feeder-map';
 
 @Component({
   selector: 'app-shell',
@@ -21,26 +20,18 @@ import { FEEDER_CITY_MAP } from '../core/feeder-map';
 
       <div class="sidebar-focus">
         <label class="sidebar-focus-label" for="brandFocusSelect">Brand Filter</label>
-        <select id="brandFocusSelect" class="sidebar-focus-select" [ngModel]="ui.focusedBrand()" (ngModelChange)="selectBrand($event)">
+        <select id="brandFocusSelect" class="sidebar-focus-select" [ngModel]="ui.focusedBrand()" (ngModelChange)="ui.setBrand($event)">
           <option value="">All brands</option>
           @for (brand of brands(); track brand) { <option [value]="brand">{{ brand }}</option> }
-        </select>
-        <label class="sidebar-focus-label" for="productFocusSelect">Product Focus</label>
-        <select id="productFocusSelect" class="sidebar-focus-select" [ngModel]="ui.focusedProduct()" (ngModelChange)="ui.setFocus($event)">
-          <option value="">All products</option>
-          @for (product of filteredProducts(); track product) { <option [value]="product">{{ product }}</option> }
-        </select>
-        <label class="sidebar-focus-label" for="feederFocusSelect">Feeder City</label>
-        <select id="feederFocusSelect" class="sidebar-focus-select" [ngModel]="ui.focusedFeeder()" (ngModelChange)="ui.setFeeder($event)">
-          <option value="">All feeder cities</option>
-          @for (feeder of feederNames; track feeder) { <option [value]="feeder">{{ feeder }}</option> }
         </select>
       </div>
 
       <div class="sidebar-footer">
-        <button type="button" class="theme-toggle" (click)="ui.toggleTheme()" aria-label="Toggle dark mode" title="Toggle theme (Alt+T)">
-          <span class="theme-toggle-icon">{{ ui.theme() === 'dark' ? '☀️' : '🌙' }}</span>
+        <button type="button" class="theme-switch" role="switch" [attr.aria-checked]="ui.theme() === 'dark'" (click)="ui.toggleTheme()" aria-label="Dark mode" title="Toggle theme (Alt+T)">
+          <span class="theme-switch-thumb"></span>
+          <span class="theme-switch-icon">☀️</span><span class="theme-switch-icon">🌙</span>
         </button>
+        <button type="button" class="sidebar-logout" (click)="auth.logout()" title="Log out" aria-label="Log out">Logout</button>
       </div>
       <div class="sidebar-resize-handle" title="Drag to resize" (mousedown)="startResize($event)"></div>
     </nav>
@@ -56,44 +47,38 @@ import { FEEDER_CITY_MAP } from '../core/feeder-map';
     }
 
     <main class="main-content" [class.sidebar-collapsed]="ui.collapsed()">
-      @if (ui.focusedProduct() || ui.focusedBrand() || ui.focusedFeeder()) {
-        <div class="focus-banner">
-          <span>🎯 Focus filters: @if (ui.focusedBrand()) { brand <strong>{{ ui.focusedBrand() }}</strong> } @if (ui.focusedProduct()) { product <strong>{{ ui.focusedProduct() }}</strong> } @if (ui.focusedFeeder()) { feeder hub <strong>{{ ui.focusedFeeder() }}</strong> }</span>
-          <button type="button" class="focus-banner-clear" (click)="ui.clearFocus()">Exit focus ×</button>
-        </div>
-      }
       <router-outlet />
     </main>
   `,
 })
 export class AppShellComponent implements OnInit {
   private readonly router = inject(Router);
-  readonly api = inject(ApiService);
   readonly auth = inject(AuthService);
+  readonly api = inject(ApiService);
   readonly ui = inject(UiStateService);
   readonly brands = signal<string[]>([]);
-  readonly products = signal<string[]>([]);
-  readonly filteredProducts = signal<string[]>([]);
-  readonly feederNames = Object.keys(FEEDER_CITY_MAP);
   readonly leaderActive = signal(false);
   private resizing = false;
   private leaderTimer?: ReturnType<typeof setTimeout>;
 
-  async ngOnInit() {
-    await this.auth.loadSession();
-    try {
-      const [brands, products] = await Promise.all([this.api.brandNames(), this.api.productNames()]);
-      this.brands.set(brands.brands);
-      this.products.set(products.names);
-      this.refreshProductOptions();
-    } catch {
-      // Empty select controls are expected before the first upload.
-    }
+  constructor() {
+    effect(() => {
+      // Re-read the brand list after an upload / clear, without a page reload.
+      if (this.ui.lookupsVersion() > 0) void this.loadBrands();
+    });
   }
 
-  selectBrand(brand: string) {
-    this.ui.setBrand(brand);
-    this.refreshProductOptions();
+  async ngOnInit() {
+    await this.auth.loadSession();
+    await this.loadBrands();
+  }
+
+  private async loadBrands() {
+    try {
+      this.brands.set((await this.api.brandNames()).brands);
+    } catch {
+      // An empty list is expected before the first upload.
+    }
   }
 
   startResize(event: MouseEvent) {
@@ -148,10 +133,5 @@ export class AppShellComponent implements OnInit {
       clearTimeout(this.leaderTimer);
       this.leaderTimer = setTimeout(() => this.leaderActive.set(false), 1500);
     }
-  }
-
-  private refreshProductOptions() {
-    const brand = this.ui.focusedBrand().toLowerCase();
-    this.filteredProducts.set(brand ? this.products().filter((item) => item.toLowerCase().includes(brand)) : this.products());
   }
 }

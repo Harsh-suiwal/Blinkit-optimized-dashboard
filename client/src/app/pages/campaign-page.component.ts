@@ -8,7 +8,8 @@ import {
   CampaignSheetType, CampaignSummary, CampaignTargetingRow, CampaignUploadPlanItem,
 } from '../core/models';
 import { UiStateService } from '../core/ui-state.service';
-import { BrandFilterComponent } from '../shared/brand-filter.component';
+import { BrandFilterComponent, mergeKnownBrands } from '../shared/brand-filter.component';
+import { ClearDataDialogComponent } from '../shared/clear-data-dialog.component';
 
 const SHEET_LABELS: Record<CampaignSheetFilter, string> = {
   ALL: 'All',
@@ -18,13 +19,14 @@ const SHEET_LABELS: Record<CampaignSheetFilter, string> = {
 
 @Component({
   selector: 'app-campaign-page',
-  imports: [FormsModule, BrandFilterComponent],
+  imports: [FormsModule, BrandFilterComponent, ClearDataDialogComponent],
   template: `
     <header class="topbar">
       <div class="topbar-left"><div><h1>Campaign Analysis</h1><span class="muted">{{ lastUpdated() }}</span></div></div>
-      <div class="topbar-right"><span class="user-info muted">{{ auth.user()?.email }}</span>
+      <div class="topbar-right">
         @if (isAdmin()) { <label class="upload-btn">Upload Campaign Sheet<input type="file" accept=".xls,.xlsx" hidden (change)="upload($event)"></label> }
-        <button class="secondary-btn" (click)="exportCampaign()">Export Sheet</button>
+        <button class="secondary-btn" (click)="exportCampaign()">Get Sheet</button>
+        @if (isAdmin()) { <button class="secondary-btn danger-btn" (click)="clearOpen.set(true)">🗑️ Clear Data</button> }
       </div>
     </header>
     <div class="upload-status" [class.success]="statusType() === 'success'" [class.error]="statusType() === 'error'">{{ status() }}</div>
@@ -33,11 +35,10 @@ const SHEET_LABELS: Record<CampaignSheetFilter, string> = {
       <label class="filter-label" for="periodSelect">Period</label>
       <select id="periodSelect" [ngModel]="selectedPeriod()" (ngModelChange)="changePeriod($event)">@for (period of periods(); track period.periodKey) { <option [value]="period.periodKey">{{ period.periodLabel }}</option> }</select>
       <div class="sheet-tabs" role="tablist">@for (tab of sheetTabs; track tab) { <button type="button" role="tab" class="sheet-tab" [class.active]="sheetType() === tab" (click)="changeSheetType(tab)">{{ sheetLabel(tab) }}</button> }</div>
-      <input type="text" [ngModel]="query()" (ngModelChange)="query.set($event)" placeholder="Search campaign..."><span class="muted undo-hint">Tip: Ctrl+Z undoes the last delete</span>
-    </section>
+      <input id="campaignSearch" type="search" aria-label="Search campaigns" [ngModel]="query()" (ngModelChange)="query.set($event)" placeholder="Search campaign...">    </section>
 
-    @if (brandSummaries().length) {
-      <section class="brand-bar"><app-brand-filter [brands]="brandSummaries()" [selected]="ui.focusedBrand()" (select)="ui.setBrand($event)" /></section>
+    @if (brandChips().length) {
+      <section class="brand-bar"><app-brand-filter [brands]="brandChips()" [selected]="ui.focusedBrand()" (select)="ui.setBrand($event)" /></section>
     }
     @if (hasUnknownBrand() && isAdmin()) {
       <p class="muted brand-note">Some campaigns couldn't be matched to a brand ("Unknown"). Teach the resolver with <code>POST /api/brand-alias</code> or by editing <code>data/brandAliases.json</code>, then re-upload.</p>
@@ -98,7 +99,7 @@ const SHEET_LABELS: Record<CampaignSheetFilter, string> = {
       </section>
     }
 
-    <section class="legend"><span class="legend-item"><span class="dot dot-top"></span> Top performer (top 25% by ROAS)</span><span class="legend-item"><span class="dot dot-low"></span> Needs attention (bottom 25% by ROAS)</span><span class="legend-item muted">Click a campaign for its keyword/category breakdown and daily trend.</span></section>
+    <section class="legend"><span class="legend-item"><span class="dot dot-top"></span> Top 25%</span><span class="legend-item"><span class="dot dot-low"></span> Bottom 25%</span><span class="legend-item muted">Click a campaign for its keyword/category breakdown and daily trend.</span></section>
     <section class="table-wrap">
       <table id="campaignListTable"><thead><tr>
         <th>#</th>
@@ -141,6 +142,9 @@ const SHEET_LABELS: Record<CampaignSheetFilter, string> = {
       </tbody></table>
       @if (!displayedRows().length) { <p class="muted">{{ emptyMessage() }}</p> }
     </section>
+    @if (clearOpen()) {
+      <app-clear-data-dialog scope="campaign" note="Applies to every month." [brands]="allBrands()" [initialBrand]="ui.focusedBrand()" (confirm)="clearData($event)" (cancel)="clearOpen.set(false)" />
+    }
   `,
 })
 export class CampaignPageComponent implements OnInit {
@@ -169,6 +173,8 @@ export class CampaignPageComponent implements OnInit {
 
   readonly rows = signal<CampaignRow[]>([]);
   readonly brandSummaries = signal<CampaignBrandRow[]>([]);
+  readonly allBrands = signal<string[]>([]);
+  readonly clearOpen = signal(false);
   readonly periods = signal<CampaignPeriod[]>([]);
   readonly selectedPeriod = signal('');
   readonly sheetType = signal<CampaignSheetFilter>('ALL');
@@ -197,6 +203,8 @@ export class CampaignPageComponent implements OnInit {
       : { rows: this.rows(), note: `No campaign explicitly mentions "${this.ui.focusedProduct()}" - showing all campaigns instead.` };
   });
   readonly focusNote = computed(() => this.productMatch().note);
+  readonly knownBrands = signal<string[]>([]);
+  readonly brandChips = computed(() => mergeKnownBrands(this.brandSummaries().map((brand) => ({ brandName: brand.brandName, value: brand.adSpend })), this.knownBrands()));
   readonly hasUnknownBrand = computed(() => this.brandSummaries().some((brand) => brandFor(brand) === 'Unknown'));
   readonly displayedRows = computed(() => {
     const query = this.query().trim().toLowerCase();
@@ -291,9 +299,24 @@ export class CampaignPageComponent implements OnInit {
       this.setStatus('Uploading...', '');
       const result = await this.api.uploadCampaign(file);
       this.setStatus(`Uploaded successfully - ${result.rowCount} daily rows across ${result.periodKeys.length} period(s) and ${result.sheetTypes.length} sheet type(s).`, 'success');
+      this.ui.refreshLookups();
       await this.load(result.latestPeriodKey);
     } catch (error) { this.setStatus(this.message(error), 'error'); }
     finally { input.value = ''; }
+  }
+
+  /** Deletes one brand's campaign data across all months (or everything when brand is empty). */
+  async clearData(brand: string) {
+    this.clearOpen.set(false);
+    try {
+      await this.api.clearCampaignData(brand || undefined);
+      if (!brand || this.ui.focusedBrand().toLowerCase() === brand.toLowerCase()) this.ui.setBrand('');
+      this.ui.refreshLookups();
+      this.undoStack = [];
+      this.collapse();
+      await this.load();
+      this.setStatus(brand ? `Campaign data for ${brand} cleared.` : 'All campaign data cleared.', 'success');
+    } catch (error) { this.setStatus(this.message(error), 'error'); }
   }
 
   async deleteCampaign(row: CampaignRow) {
@@ -337,6 +360,8 @@ export class CampaignPageComponent implements OnInit {
       this.selectedPeriod.set(data.periodKey || data.latestPeriodKey || '');
       this.rows.set(data.campaigns || []);
       this.brandSummaries.set(data.brandSummaries || []);
+      this.allBrands.set(data.allBrands || []);
+      this.knownBrands.set((await this.api.brandNames()).brands);
       this.lastUpdated.set(data.date ? `Last updated: ${data.date}` : 'No campaign report uploaded yet');
     } catch (error) { this.setStatus(this.message(error), 'error'); }
   }

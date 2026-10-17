@@ -10,9 +10,10 @@ npm install && cd client && npm install && cd ..
 cp .env.example .env   # SUPABASE_URL, SUPABASE_SERVICE_KEY, SESSION_SECRET, ADMIN_EMAIL, ADMIN_PASSWORD, PORT=3000
 npm run seed           # create admin (needs db/schema.sql run in Supabase first)
 npm run dev            # express(nodemon) + ng serve
-npm start              # build client + express (prod)
+npm start              # install client deps + build client + express (prod); same as `npm run build`
+npm run deploy         # express only, reusing the existing build (errors if client/dist is missing)
 ```
-Other: `serve` (express only), `build:client`, `dev:client`, `install:client`. App: `localhost:3000` → `/login` (static) → `/app/` (Angular).
+Other: `serve` (express only, no build check), `build:client` (build only, does not start), `dev:client`, `install:client`. App: `localhost:3000` → `/login` (static) → `/app/` (Angular).
 
 ## Layout
 ```
@@ -67,3 +68,14 @@ Routes: `/app/inventory` (default), `/app/sales-performance`, `/app/campaign-ana
 
 ## Done checklist
 `npm run dev` boots and Angular compiles; parser changes tested with a real export (campaign: samples/Oicia Campaign Sheet.xls -> 1168 + 80 rows).
+
+## Inventory storage (per brand)
+- data/latest.json = { rows, brandUploads:{brand:{date,fileName}} }. An upload replaces only the brands in that file; other brands stay. Empty Brand Name -> file name -> "Unknown".
+- data/history.json keeps every upload (entries carry brandName). A same-day re-upload replaces only that item+warehouse; nothing else is ever deleted.
+- 45/60d sold: 45d = sold30(now)+sold15(snapshot ~30d back) or sold15(now)+sold30(snapshot ~15d back), whichever anchor is closest to its ideal date; 60d = sold30(now)+sold30(snapshot ~30d back). Anchors must be within +/-5 days (ANCHOR_TOLERANCE_DAYS). Otherwise "n/a". Computed at upload time.
+
+## Brand-first data model (all tabs)
+- Brand is the primary filter. The sidebar dropdown and each tab chip bar share `ui.focusedBrand`; every tab re-queries with it (server-side `?brand=`).
+- Inventory, Sales and Campaign data are all stored per brand and an upload replaces only the brands inside that file. Empty brand in a file -> file name -> "Unknown".
+- Sales: data/salesLatest.json = { brandUploads, cityRows } with one row per (brand, city) and its own trend vs that brand's previous upload (data/salesHistory.json entries carry brandName). `GET city-performance?brand=` combines brand rows per city (orders are summed per brand, so a mixed-brand order counts once per brand) and also returns brandSummaries for the chips. `DELETE city-performance/:city` removes the city for all brands (offered only in the unfiltered view).
+- Clear data always asks which brand (or all): `DELETE inventory-data?brand=` (history kept), `DELETE sales-history?brand=` (removes that brand's trend history), `DELETE campaign-data?brand=` (all months). Shared UI: shared/clear-data-dialog.component.ts.

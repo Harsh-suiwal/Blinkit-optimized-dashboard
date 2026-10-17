@@ -18,6 +18,11 @@ export interface ProductRow {
   stockStatus: 'ok' | 'low' | 'out';
 }
 
+export interface BrandUpload {
+  date: string;
+  fileName: string;
+}
+
 export interface InventorySummary {
   date?: string | null;
   totalUnitsSold30: number;
@@ -37,6 +42,12 @@ export interface CityRow {
   tier?: 'top' | 'low' | string;
   revenueChangePct?: number | null;
   previousRevenue?: number | null;
+}
+
+export interface SalesBrandRow {
+  brandName: string;
+  revenue: number;
+  units: number;
 }
 
 export interface SalesSummary {

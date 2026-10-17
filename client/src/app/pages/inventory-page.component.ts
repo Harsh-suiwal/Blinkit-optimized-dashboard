@@ -3,24 +3,29 @@ import { FormsModule } from '@angular/forms';
 import { ApiService } from '../core/api.service';
 import { AuthService } from '../core/auth.service';
 import { brandFor, compareValues } from '../core/formatters';
-import { InventorySummary, ProductRow } from '../core/models';
+import { BrandUpload, InventorySummary, ProductRow } from '../core/models';
 import { UiStateService } from '../core/ui-state.service';
+import { BrandFilterComponent, mergeKnownBrands } from '../shared/brand-filter.component';
+import { ClearDataDialogComponent } from '../shared/clear-data-dialog.component';
 
 @Component({
   selector: 'app-inventory-page',
-  imports: [FormsModule],
+  imports: [FormsModule, BrandFilterComponent, ClearDataDialogComponent],
   template: `
-    <header class="topbar">
+    <header class="topbar topbar-static">
       <div class="topbar-left"><div><h1>Blinkit Inventory Dashboard</h1><span class="muted">{{ lastUpdated() }}</span></div></div>
       <div class="topbar-right">
-        <span class="user-info muted">{{ auth.user()?.email }}</span>
-        @if (isAdmin()) { <label class="upload-btn">Upload Report<input type="file" accept=".xlsx" hidden (change)="upload($event)"></label> }
-        <button class="secondary-btn" (click)="download('/api/export')">Export Sheet</button>
+        @if (isAdmin()) { <label class="upload-btn">Upload Inventory<input type="file" accept=".xlsx" hidden (change)="upload($event)"></label> }
+        <button class="secondary-btn" (click)="download('/api/export')">Get Sheet</button>
         <button class="secondary-btn full-report-btn" (click)="download('/api/export-all')">📊 Full Report</button>
-        <button class="logout-btn" (click)="auth.logout()">Logout</button>
+        @if (isAdmin()) { <button class="secondary-btn danger-btn" (click)="clearOpen.set(true)">🗑️ Clear Data</button> }
       </div>
     </header>
     <div class="upload-status" [class.success]="statusType() === 'success'" [class.error]="statusType() === 'error'">{{ status() }}</div>
+
+    @if (brandChips().length) {
+      <section class="brand-bar"><app-brand-filter unit="units" [brands]="brandChips()" [selected]="ui.focusedBrand()" (select)="ui.setBrand($event)" /></section>
+    }
 
     <section class="cards">
       <div class="card"><div class="card-label">Units Sold (30 days)</div><div class="card-value">{{ summary().totalUnitsSold30 }}</div></div>
@@ -29,8 +34,8 @@ import { UiStateService } from '../core/ui-state.service';
       <div class="card"><div class="card-label">Low / Out of Stock</div><div class="card-value">{{ summary().lowOrOutCount }}</div></div>
     </section>
 
-    <section class="controls"><input id="searchBox" type="search" aria-label="Search products and warehouses" [ngModel]="query()" (ngModelChange)="query.set($event)" placeholder="Search product or warehouse..."><span class="muted undo-hint">Tip: Ctrl+Z undoes the last delete</span></section>
-    <section class="table-wrap">
+    <section class="controls"><input id="searchBox" type="search" aria-label="Search products and warehouses" [ngModel]="query()" (ngModelChange)="query.set($event)" placeholder="Search product or warehouse..."></section>
+    <section class="table-wrap table-wrap-page">
       <table id="productTable"><thead><tr>
         <th (click)="sortBy('productName')">Product {{ sortIndicator('productName') }}</th><th (click)="sortBy('warehouseName')">Warehouse {{ sortIndicator('warehouseName') }}</th><th (click)="sortBy('totalStockAvailable')">Stock {{ sortIndicator('totalStockAvailable') }}</th><th (click)="sortBy('unitsSold7')">Sold - 7d {{ sortIndicator('unitsSold7') }}</th><th (click)="sortBy('unitsSold15')">Sold - 15d {{ sortIndicator('unitsSold15') }}</th><th (click)="sortBy('unitsSold30')">Sold - 30d {{ sortIndicator('unitsSold30') }}</th><th (click)="sortBy('unitsSold45')">Sold - 45d {{ sortIndicator('unitsSold45') }}</th><th (click)="sortBy('unitsSold60')">Sold - 60d {{ sortIndicator('unitsSold60') }}</th><th (click)="sortBy('incomingInventory')">Incoming {{ sortIndicator('incomingInventory') }}</th><th>Status</th><th></th>
       </tr></thead><tbody>
@@ -42,6 +47,9 @@ import { UiStateService } from '../core/ui-state.service';
       </tbody></table>
       @if (!displayedRows().length) { <p class="muted">{{ emptyMessage() }}</p> }
     </section>
+    @if (clearOpen()) {
+      <app-clear-data-dialog scope="inventory" note="Upload history (used for 45/60-day sold) is kept." [brands]="brandNames()" [initialBrand]="ui.focusedBrand()" (confirm)="clearData($event)" (cancel)="clearOpen.set(false)" />
+    }
   `,
 })
 export class InventoryPageComponent implements OnInit {
@@ -49,8 +57,20 @@ export class InventoryPageComponent implements OnInit {
   readonly auth = inject(AuthService);
   readonly ui = inject(UiStateService);
   readonly rows = signal<ProductRow[]>([]);
+  readonly clearOpen = signal(false);
+  readonly brandUploads = signal<Record<string, BrandUpload>>({});
+  readonly lastDate = signal<string | null>(null);
+  // One chip per brand, weighted by total stock on hand.
+  readonly knownBrands = signal<string[]>([]);
+  private readonly brandStock = computed(() => {
+    const totals = new Map<string, number>();
+    for (const row of this.rows()) totals.set(brandFor(row), (totals.get(brandFor(row)) ?? 0) + row.totalStockAvailable);
+    return Array.from(totals, ([brandName, value]) => ({ brandName, value })).sort((a, b) => b.value - a.value);
+  });
+  readonly brandChips = computed(() => mergeKnownBrands(this.brandStock(), this.knownBrands()));
+  readonly brandNames = computed(() => this.brandStock().map((chip) => chip.brandName));
+  readonly lastUpdated = computed(() => this.describeUpdate());
   readonly summary = signal<InventorySummary>({ totalUnitsSold30: 0, totalStock: 0, productCount: 0, lowOrOutCount: 0 });
-  readonly lastUpdated = signal('No report uploaded yet');
   readonly status = signal('');
   readonly statusType = signal<'success' | 'error' | ''>('');
   readonly pendingDelete = signal('');
@@ -66,7 +86,6 @@ export class InventoryPageComponent implements OnInit {
     effect(() => {
       this.ui.focusedProduct();
       this.ui.focusedBrand();
-      this.ui.focusedFeeder();
       if (this.initialized) void this.load();
     });
   }
@@ -89,10 +108,25 @@ export class InventoryPageComponent implements OnInit {
     this.setStatus('Uploading...', '');
     try {
       const result = await this.api.uploadInventory(file);
-      this.setStatus(`Uploaded successfully - ${result.rowCount} rows processed.`, 'success');
+      this.setStatus(`Uploaded successfully - ${result.rowCount} rows for ${(result.brands ?? []).join(', ') || 'your brands'}.`, 'success');
+      this.ui.refreshLookups();
       await this.load();
     } catch (error) { this.setStatus(this.message(error), 'error'); }
     finally { input.value = ''; }
+  }
+
+  /** Deletes one brand's inventory (or all brands when brand is empty). */
+  async clearData(brand: string) {
+    this.clearOpen.set(false);
+    try {
+      await this.api.clearInventory(brand || undefined);
+      if (brand && this.ui.focusedBrand().toLowerCase() === brand.toLowerCase()) this.ui.setBrand('');
+      if (!brand) this.ui.setBrand('');
+      this.ui.refreshLookups();
+      this.undoStack = [];
+      await this.load();
+      this.setStatus(brand ? `Inventory data for ${brand} cleared.` : 'All inventory data cleared.', 'success');
+    } catch (error) { this.setStatus(this.message(error), 'error'); }
   }
 
   async deleteRow(row: ProductRow) {
@@ -140,21 +174,28 @@ export class InventoryPageComponent implements OnInit {
     try {
       const data = await this.api.products();
       this.rows.set(data.rows || []);
-      this.lastUpdated.set(data.date ? `Last updated: ${data.date}` : 'No report uploaded yet');
-      if (this.ui.focusedProduct() || this.ui.focusedBrand() || this.ui.focusedFeeder()) this.recalculateFocusedSummary();
+      this.brandUploads.set(data.brandUploads || {});
+      this.lastDate.set(data.date);
+      this.knownBrands.set((await this.api.brandNames()).brands);
+      if (this.ui.focusedProduct() || this.ui.focusedBrand()) this.recalculateFocusedSummary();
       else this.summary.set(await this.api.inventorySummary());
     } catch (error) { this.setStatus(this.message(error), 'error'); }
+  }
+
+  private describeUpdate() {
+    const uploads = this.brandUploads();
+    const brand = Object.keys(uploads).find((name) => name.toLowerCase() === this.ui.focusedBrand().toLowerCase());
+    if (brand) return `${brand} last updated: ${uploads[brand].date}`;
+    return this.lastDate() ? `Last updated: ${this.lastDate()}` : 'No report uploaded yet';
   }
 
   private filterRows() {
     const query = this.query().trim().toLowerCase();
     const brand = this.ui.focusedBrand().toLowerCase();
     const product = this.ui.focusedProduct();
-    const feeder = this.ui.focusedFeeder().toLowerCase();
     let values = this.rows().filter((row) => row.productName.toLowerCase().includes(query) || row.warehouseName.toLowerCase().includes(query));
     if (brand) values = values.filter((row) => brandFor(row).toLowerCase() === brand);
     if (product) values = values.filter((row) => row.productName === product);
-    if (feeder) values = values.filter((row) => row.warehouseName.trim().toLowerCase() === feeder);
     const sortKey = this.sortKey();
     if (sortKey) values = [...values].sort((a, b) => (this.sortAsc() ? 1 : -1) * compareValues(a, b, sortKey));
     return values;

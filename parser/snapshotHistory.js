@@ -30,21 +30,25 @@ function daysBetween(dateStrA, dateStrB) {
 }
 
 /**
- * Appends today's parsed rows to the history log as one snapshot entry
- * per product-warehouse combination. If today's date already has entries
- * (re-uploaded same day), those are replaced rather than duplicated.
+ * Appends this upload's parsed rows to the history log as one snapshot entry
+ * per product-warehouse combination. A same-day re-upload replaces the entries
+ * for the items it contains; entries for other items (other brands uploaded
+ * the same day) and for other dates are always kept.
  */
 function appendSnapshot(parsedRows, date = todayDateString()) {
   const history = loadHistory();
 
-  // Drop any existing entries for this date (handles re-upload same day)
-  history.snapshots = history.snapshots.filter((s) => s.date !== date);
+  const uploaded = new Set(parsedRows.map((row) => `${row.itemId}|${row.warehouseId}`));
+  history.snapshots = history.snapshots.filter(
+    (s) => s.date !== date || !uploaded.has(`${s.itemId}|${s.warehouseId}`)
+  );
 
   for (const row of parsedRows) {
     history.snapshots.push({
       date,
       itemId: row.itemId,
       warehouseId: row.warehouseId,
+      brandName: row.brandName || '',
       productName: row.productName,
       warehouseName: row.warehouseName,
       totalStockAvailable: row.totalStockAvailable,
@@ -65,8 +69,8 @@ function appendSnapshot(parsedRows, date = todayDateString()) {
  * snapshot becomes the anchor we use to extend 30-day coverage out to
  * 45 and 60 days, since Blinkit's report never gives us those directly.
  */
-function findAnchorSnapshot(history, itemId, warehouseId, latestDate) {
-  const target = daysBetween(latestDate, '1970-01-01') - 30; // days-since-epoch of (latestDate - 30)
+function findAnchorSnapshot(history, itemId, warehouseId, latestDate, daysBack = 30) {
+  const target = daysBetween(latestDate, '1970-01-01') - daysBack; // days-since-epoch of (latestDate - daysBack)
 
   const candidates = history.snapshots.filter(
     (s) => s.itemId === itemId && s.warehouseId === warehouseId && s.date !== latestDate
@@ -86,24 +90,34 @@ function findAnchorSnapshot(history, itemId, warehouseId, latestDate) {
 }
 
 /**
- * Computes 45-day and 60-day units sold for one product-warehouse,
- * using the current (latest) snapshot plus an anchor snapshot from
- * ~30 days earlier. Returns null for a window when there isn't enough
- * upload history yet to compute it.
+ * Computes 45-day and 60-day units sold for one product-warehouse from the
+ * latest snapshot plus an earlier one. Blinkit only reports 7/15/30-day
+ * windows, so windows are stitched together:
+ *   - anchor ~30 days back: 45d = sold30(now) + sold15(anchor)
+ *                           60d = sold30(now) + sold30(anchor)
+ *   - anchor ~15 days back: 45d = sold15(now) + sold30(anchor)
+ * 45d uses whichever anchor lands closest to its ideal date (ties prefer the
+ * 30-day anchor). Returns null for a window when there isn't enough upload
+ * history yet.
  */
-function computeExtendedWindows({ itemId, warehouseId, latestDate, latestUnitsSold30 }) {
+function computeExtendedWindows({ itemId, warehouseId, latestDate, latestUnitsSold15 = null, latestUnitsSold30 }) {
   const history = loadHistory();
-  const anchor = findAnchorSnapshot(history, itemId, warehouseId, latestDate);
+  const gap = (anchor, daysBack) =>
+    Math.abs(daysBetween(latestDate, anchor.date) - daysBack);
 
-  if (!anchor) {
-    return { unitsSold45: null, unitsSold60: null };
+  const anchor30 = findAnchorSnapshot(history, itemId, warehouseId, latestDate, 30);
+  const anchor15 = latestUnitsSold15 === null ? null : findAnchorSnapshot(history, itemId, warehouseId, latestDate, 15);
+
+  let unitsSold45 = null;
+  if (anchor30 && (!anchor15 || gap(anchor30, 30) <= gap(anchor15, 15))) {
+    unitsSold45 = latestUnitsSold30 + anchor30.unitsSold15;
+  } else if (anchor15) {
+    unitsSold45 = latestUnitsSold15 + anchor15.unitsSold30;
   }
 
   return {
-    // latest 30 days + anchor's 15-day window (covers ~day 31-45)
-    unitsSold45: latestUnitsSold30 + anchor.unitsSold15,
-    // latest 30 days + anchor's 30-day window (covers ~day 31-60)
-    unitsSold60: latestUnitsSold30 + anchor.unitsSold30,
+    unitsSold45,
+    unitsSold60: anchor30 ? latestUnitsSold30 + anchor30.unitsSold30 : null,
   };
 }
 

@@ -429,10 +429,11 @@ This mapping enables feeder-scoped views in the Sales Performance tab.
 
 | Command | Description |
 |---------|-------------|
-| `npm start` | Build the Angular client + start Express (production) |
+| `npm start` | Install client deps, build the Angular client, then start Express (same as `npm run build`) |
+| `npm run deploy` | Start Express using the existing build (fails with a hint if there is none) |
 | `npm run dev` | Start Express (nodemon) + Angular dev server (concurrently) |
 | `npm run serve` | Start Express only (no client build) |
-| `npm run build` | Install client deps + build Angular for production |
+| `npm run build` | Rebuild everything, then start Express |
 | `npm run build:client` | Build Angular client only |
 | `npm run dev:client` | Start Angular dev server only |
 | `npm run install:client` | Clean-install client dependencies |

@@ -4,13 +4,14 @@
   "description": "Blinkit optimized analytics dashboard — inventory, sales, and campaign reporting",
   "main": "server.js",
   "scripts": {
+    "start": "npm run build",
+    "build": "npm run install:client && npm run build:client && node server.js",
+    "deploy": "node scripts/require-build.js && node server.js",
+    "dev": "npx concurrently \"npx nodemon server.js\" \"npm run dev:client\"",
     "serve": "node server.js",
     "server": "node server.js",
-    "dev": "npx concurrently \"npx nodemon server.js\" \"npm run dev:client\"",
-    "install:client": "npm --prefix client ci --include=dev",
-    "build": "npm run install:client && npm run build:client",
-    "start": "npm run build && node server.js",
     "seed": "node db/seed-admin.js",
+    "install:client": "npm --prefix client ci --include=dev",
     "build:client": "npm --prefix client run build",
     "dev:client": "npm --prefix client run start"
   },

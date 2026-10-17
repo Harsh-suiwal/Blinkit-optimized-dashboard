@@ -32,6 +32,27 @@ function saveStore(store) {
   fs.writeFileSync(STORE_PATH, JSON.stringify(store));
 }
 
+/** Deletes every campaign row of one brand (all periods / sheet types); returns how many. */
+function removeBrandRows(brand) {
+  const store = loadStore();
+  const wanted = String(brand).toLowerCase();
+  const kept = store.rows.filter((r) => r.brandName.toLowerCase() !== wanted);
+  const removed = store.rows.length - kept.length;
+  if (removed) {
+    store.rows = kept;
+    // Drop upload records whose (period, sheetType) no longer has any rows.
+    const alive = new Set(kept.map((r) => `${r.periodKey}|${r.sheetType}`));
+    store.uploads = store.uploads.filter((u) => alive.has(`${u.periodKey}|${u.sheetType}`));
+    saveStore(store);
+  }
+  return removed;
+}
+
+/** Deletes every stored campaign row and upload record. */
+function clearStore() {
+  saveStore(EMPTY_STORE());
+}
+
 // --- Uploads -----------------------------------------------------------------
 
 /**
@@ -297,6 +318,8 @@ function listCampaignBrands(store) {
 
 module.exports = {
   loadStore,
+  clearStore,
+  removeBrandRows,
   planUpload,
   upsertUpload,
   listPeriods,

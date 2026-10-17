@@ -2,6 +2,7 @@ import { HttpClient, HttpErrorResponse } from '@angular/common/http';
 import { Injectable, inject } from '@angular/core';
 import { firstValueFrom, Observable } from 'rxjs';
 import {
+  BrandUpload,
   CampaignBrandRow,
   CampaignDailyRow,
   CampaignPeriod,
@@ -12,6 +13,7 @@ import {
   CampaignTargetingRow,
   CampaignUploadPlanItem,
   CityRow,
+  SalesBrandRow,
   InventorySummary,
   ProductRow,
   ProductCitySalesRow,
@@ -33,7 +35,7 @@ export class ApiService {
   }
 
   products() {
-    return this.get<{ date: string | null; rows: ProductRow[] }>('/api/products');
+    return this.get<{ date: string | null; brandUploads?: Record<string, BrandUpload>; rows: ProductRow[] }>('/api/products');
   }
 
   inventorySummary() {
@@ -41,7 +43,15 @@ export class ApiService {
   }
 
   uploadInventory(file: File) {
-    return this.upload<{ ok: boolean; date: string; rowCount: number }>('/api/upload', file);
+    return this.upload<{ ok: boolean; date: string; rowCount: number; totalRowCount: number; brands: string[] }>('/api/upload', file);
+  }
+
+  clearInventory(brand?: string) {
+    return this.delete<{ ok: boolean }>(`/api/inventory-data${this.brandQuery(brand)}`);
+  }
+
+  clearCampaignData(brand?: string) {
+    return this.delete<{ ok: boolean }>(`/api/campaign-data${this.brandQuery(brand)}`);
   }
 
   deleteProduct(row: ProductRow) {
@@ -61,20 +71,20 @@ export class ApiService {
     return this.get<{ brands: string[] }>('/api/brand-names');
   }
 
-  cityPerformance() {
-    return this.get<{ date: string | null; cityRows: CityRow[] }>('/api/city-performance');
+  cityPerformance(brand?: string) {
+    return this.get<{ date: string | null; brandUploads: Record<string, BrandUpload>; cityRows: CityRow[]; brandSummaries: SalesBrandRow[] }>(`/api/city-performance${this.brandQuery(brand)}`);
   }
 
-  salesSummary() {
-    return this.get<SalesSummary>('/api/sales-summary');
+  salesSummary(brand?: string) {
+    return this.get<SalesSummary>(`/api/sales-summary${this.brandQuery(brand)}`);
   }
 
   productSales(product: string) {
     return this.get<{ date: string | null; row: ProductSalesRow | null }>(`/api/product-sales?product=${encodeURIComponent(product)}`);
   }
 
-  productCitySales() {
-    return this.get<{ date: string | null; productRows: (ProductSalesRow & { cities: ProductCitySalesRow[] })[] }>('/api/product-city-sales');
+  productCitySales(brand?: string) {
+    return this.get<{ date: string | null; productRows: (ProductSalesRow & { cities: ProductCitySalesRow[] })[] }>(`/api/product-city-sales${this.brandQuery(brand)}`);
   }
 
   brandSales(brand: string) {
@@ -82,23 +92,24 @@ export class ApiService {
   }
 
   uploadSales(file: File) {
-    return this.upload<{ ok: boolean; date: string; cityCount: number; orderRowCount: number }>('/api/sales-upload', file);
+    return this.upload<{ ok: boolean; date: string; brands: string[]; cityCount: number; totalCityCount: number; orderRowCount: number }>('/api/sales-upload', file);
   }
 
   deleteCity(city: string) {
-    return this.delete<{ ok: boolean; removedRow: CityRow; index: number; removedHistorySnapshots: unknown[] }>(`/api/city-performance/${encodeURIComponent(city)}`);
+    return this.delete<{ ok: boolean; removedRows: CityRow[]; removedHistorySnapshots: unknown[] }>(`/api/city-performance/${encodeURIComponent(city)}`);
   }
 
-  restoreCity(cityRow: CityRow, index: number, historySnapshots: unknown[]) {
-    return this.post<{ ok: boolean }>('/api/city-performance/restore', { cityRow, index, historySnapshots });
+  restoreCity(cityRows: CityRow[], historySnapshots: unknown[]) {
+    return this.post<{ ok: boolean }>('/api/city-performance/restore', { cityRows, historySnapshots });
   }
 
-  clearSalesHistory() {
-    return this.delete<{ ok: boolean }>('/api/sales-history');
+  /** Clears one brand's sales data, or everything when no brand is given. */
+  clearSalesHistory(brand?: string) {
+    return this.delete<{ ok: boolean }>(`/api/sales-history${this.brandQuery(brand)}`);
   }
 
   campaignData(periodKey?: string, brand?: string, sheetType?: CampaignSheetFilter) {
-    return this.get<{ date: string | null; periods: CampaignPeriod[]; periodKey: string | null; latestPeriodKey: string | null; campaigns: CampaignRow[]; brandSummaries: CampaignBrandRow[] }>(`/api/campaign-analysis${this.campaignQuery(periodKey, brand, sheetType)}`);
+    return this.get<{ date: string | null; periods: CampaignPeriod[]; periodKey: string | null; latestPeriodKey: string | null; campaigns: CampaignRow[]; brandSummaries: CampaignBrandRow[]; allBrands: string[] }>(`/api/campaign-analysis${this.campaignQuery(periodKey, brand, sheetType)}`);
   }
 
   campaignSummary(periodKey: string, brand?: string, sheetType?: CampaignSheetFilter) {
@@ -133,6 +144,10 @@ export class ApiService {
 
   addBrandAlias(raw: string, canonical: string) {
     return this.post<{ ok: boolean }>('/api/brand-alias', { raw, canonical });
+  }
+
+  private brandQuery(brand?: string) {
+    return brand ? `?brand=${encodeURIComponent(brand)}` : '';
   }
 
   private campaignQuery(periodKey?: string, brand?: string, sheetType?: CampaignSheetFilter) {

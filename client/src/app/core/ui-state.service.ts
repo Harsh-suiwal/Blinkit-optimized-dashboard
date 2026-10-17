@@ -17,8 +17,11 @@ export class UiStateService {
   readonly focusedProduct = signal(this.read(PRODUCT_FOCUS_KEY));
   readonly focusedBrand = signal(this.read(BRAND_FILTER_KEY));
   readonly focusedFeeder = signal(this.read(FEEDER_FILTER_KEY));
+  /** Bumped after any upload / clear so the sidebar re-fetches its brand list. */
+  readonly lookupsVersion = signal(0);
 
   constructor() {
+    this.setFocus('');
     this.applyTheme(this.theme());
     this.applySidebarWidth(this.sidebarWidth());
   }
@@ -56,6 +59,10 @@ export class UiStateService {
   setFeeder(feeder: string) {
     this.focusedFeeder.set(feeder);
     this.write(FEEDER_FILTER_KEY, feeder);
+  }
+
+  refreshLookups() {
+    this.lookupsVersion.update((version) => version + 1);
   }
 
   clearFocus() {
