@@ -244,17 +244,10 @@ blinkit-dashboard/
 │   ├── salesHistory.js         City-level sales trend history
 │   └── campaignStore.js        Multi-period campaign data store
 │
-├── public/                     Legacy static frontend (kept for login page)
+├── public/                     Static login page (the dashboard itself is the Angular app)
 │   ├── login.html              Login page
 │   ├── login.js                Login form handler
-│   ├── style.css               Shared stylesheet (used by login)
-│   ├── index.html              Legacy dashboard (redirects to /app/)
-│   ├── app.js                  Legacy inventory JS
-│   ├── sales-performance.html  Legacy sales page (redirects to /app/sales-performance)
-│   ├── sales.js                Legacy sales JS
-│   ├── campaign-analysis.html  Legacy campaign page (redirects to /app/campaign-analysis)
-│   ├── campaign.js             Legacy campaign JS
-│   └── sidebar.js              Legacy sidebar JS
+│   └── style.css               Shared stylesheet (used by login)
 │
 ├── data/                       Generated data (gitignored)
 │   └── .gitkeep

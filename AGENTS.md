@@ -37,7 +37,7 @@ client/src/app/
   layout/  app-shell.component (sidebar+header+outlet)
   pages/   inventory-page | sales-page | campaign-page (.component.ts)
   shared/  brand-mark.component, brand-filter.component (brand chip bar)
-public/                legacy; only login.html, login.js, style.css are live. Don't extend the rest.
+public/                static login page only: login.html, login.js, style.css (legacy dashboard files removed)
 data/ (gitignored: latest.json, history.json...)   uploads/ (temp, auto-cleaned)
 ```
 Routes: `/app/inventory` (default), `/app/sales-performance`, `/app/campaign-analysis`.

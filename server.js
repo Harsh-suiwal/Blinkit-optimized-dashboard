@@ -153,9 +153,7 @@ app.use((req, res, next) => {
 });
 
 // Preserve useful legacy URLs while moving the actual dashboard to Angular.
-app.get(['/', '/index.html'], (_req, res) => res.redirect('/app/'));
-app.get('/sales-performance.html', (_req, res) => res.redirect('/app/sales-performance'));
-app.get('/campaign-analysis.html', (_req, res) => res.redirect('/app/campaign-analysis'));
+app.get('/', (_req, res) => res.redirect('/app/'));
 
 // The static middleware handles hashed JS/CSS files. The fallback is required
 // for direct loads and browser refreshes of Angular client-side routes.
