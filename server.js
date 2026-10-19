@@ -58,7 +58,24 @@ const LOW_STOCK_THRESHOLD = 10; // change this one number to adjust the "low sto
 if (!fs.existsSync(UPLOAD_DIR)) fs.mkdirSync(UPLOAD_DIR, { recursive: true });
 if (!fs.existsSync(path.join(__dirname, 'data'))) fs.mkdirSync(path.join(__dirname, 'data'), { recursive: true });
 
-const upload = multer({ dest: UPLOAD_DIR });
+const MAX_UPLOAD_BYTES = 25 * 1024 * 1024;
+const upload = multer({
+  dest: UPLOAD_DIR,
+  limits: { fileSize: MAX_UPLOAD_BYTES },
+  fileFilter: (_req, file, cb) => {
+    if (/\.xlsx?$/i.test(file.originalname)) return cb(null, true);
+    cb(new Error('Only .xls and .xlsx files are accepted.'));
+  },
+});
+
+// Wraps upload.single('report') so rejections come back as JSON 400 instead of Express's HTML 500.
+const uploadReport = (req, res, next) => {
+  upload.single('report')(req, res, (err) => {
+    if (!err) return next();
+    const message = err.code === 'LIMIT_FILE_SIZE' ? 'File too large (max 25 MB).' : err.message;
+    res.status(400).json({ error: message });
+  });
+};
 
 // --- Session setup --------------------------------------------------------
 
@@ -199,7 +216,7 @@ function loadLatest() {
 
 // --- Upload (admin only) --------------------------------------------------
 
-app.post('/api/upload', requireAdmin, upload.single('report'), (req, res) => {
+app.post('/api/upload', requireAdmin, uploadReport, (req, res) => {
   if (!req.file) {
     return res.status(400).json({ error: 'No file uploaded.' });
   }
@@ -550,7 +567,7 @@ function salesRowsForBrand(store, brand) {
   return brand ? store.cityRows.filter((r) => sameBrand(r.brandName, brand)) : store.cityRows;
 }
 
-app.post('/api/sales-upload', requireAdmin, upload.single('report'), (req, res) => {
+app.post('/api/sales-upload', requireAdmin, uploadReport, (req, res) => {
   if (!req.file) {
     return res.status(400).json({ error: 'No file uploaded.' });
   }
@@ -820,7 +837,7 @@ function campaignFilters(req, store) {
   return { periodKey, sheetType, brand };
 }
 
-app.post('/api/campaign-upload', requireAdmin, upload.single('report'), (req, res) => {
+app.post('/api/campaign-upload', requireAdmin, uploadReport, (req, res) => {
   if (!req.file) {
     return res.status(400).json({ error: 'No file uploaded.' });
   }
