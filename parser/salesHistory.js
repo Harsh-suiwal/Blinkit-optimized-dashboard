@@ -1,18 +1,17 @@
-const fs = require('fs');
-const path = require('path');
+const kv = require('../store/kv');
 const { todayDateString } = require('./snapshotHistory');
 
-const HISTORY_PATH = path.join(__dirname, '..', 'data', 'salesHistory.json');
+const HISTORY_KEY = 'salesHistory'; // kv key; { snapshots: [...] }
 
-function loadHistory() {
-  if (!fs.existsSync(HISTORY_PATH)) return { snapshots: [] };
-  const raw = fs.readFileSync(HISTORY_PATH, 'utf-8');
-  if (!raw.trim()) return { snapshots: [] };
-  return JSON.parse(raw);
+// readOnly: returns the cached object itself (no copy) - callers must not mutate it.
+function loadHistory({ readOnly = false } = {}) {
+  const history = readOnly ? kv.peek(HISTORY_KEY) : kv.get(HISTORY_KEY);
+  if (!history || !Array.isArray(history.snapshots)) return { snapshots: [] };
+  return history;
 }
 
-function saveHistory(history) {
-  fs.writeFileSync(HISTORY_PATH, JSON.stringify(history, null, 2));
+async function saveHistory(history) {
+  await kv.set(HISTORY_KEY, history);
 }
 
 
@@ -21,7 +20,7 @@ function saveHistory(history) {
  * (brand, city). Re-uploading on the same date replaces that date's entries for
  * the same brand + city only; other brands and other dates are kept.
  */
-function appendCitySnapshot(cityRows, date = todayDateString()) {
+async function appendCitySnapshot(cityRows, date = todayDateString()) {
   const history = loadHistory();
   const uploaded = new Set(cityRows.map((r) => `${r.brandName || ''}|${r.city}`));
   history.snapshots = history.snapshots.filter(
@@ -32,7 +31,7 @@ function appendCitySnapshot(cityRows, date = todayDateString()) {
     history.snapshots.push({ date, ...row });
   }
 
-  saveHistory(history);
+  await saveHistory(history);
   return history;
 }
 
@@ -65,7 +64,7 @@ function findPreviousSnapshot(history, city, beforeDate, brand) {
  * row. Returns null for cities with no earlier snapshot to compare to.
  */
 function attachTrend(cityRows, date) {
-  const history = loadHistory();
+  const history = loadHistory({ readOnly: true });
 
   return cityRows.map((row) => {
     const prev = findPreviousSnapshot(history, row.city, date, row.brandName || null);
@@ -80,19 +79,19 @@ function attachTrend(cityRows, date) {
 /**
  * Wipes the entire trend history log (used for "clear all data").
  */
-function clearHistory() {
-  saveHistory({ snapshots: [] });
+async function clearHistory() {
+  await saveHistory({ snapshots: [] });
 }
 
 /**
  * Removes every logged snapshot for one brand (used when that brand's sales
  * data is deleted).
  */
-function removeBrandFromHistory(brand) {
+async function removeBrandFromHistory(brand) {
   const history = loadHistory();
   const wanted = String(brand).toLowerCase();
   history.snapshots = history.snapshots.filter((s) => String(snapshotBrand(s) || '').toLowerCase() !== wanted);
-  saveHistory(history);
+  await saveHistory(history);
 }
 
 /**
@@ -100,10 +99,10 @@ function removeBrandFromHistory(brand) {
  * row doesn't linger and get picked up as a "previous" comparison
  * point on a future upload.
  */
-function removeCityFromHistory(city) {
+async function removeCityFromHistory(city) {
   const history = loadHistory();
   history.snapshots = history.snapshots.filter((s) => s.city !== city);
-  saveHistory(history);
+  await saveHistory(history);
 }
 
 /**
@@ -112,7 +111,7 @@ function removeCityFromHistory(city) {
  * the full trend history, not just the visible row).
  */
 function getSnapshotsForCity(city) {
-  const history = loadHistory();
+  const history = loadHistory({ readOnly: true });
   return history.snapshots.filter((s) => s.city === city);
 }
 
@@ -121,7 +120,7 @@ function getSnapshotsForCity(city) {
  * back into the history log, skipping any date+city pair that's
  * already present so an undo can't create duplicates.
  */
-function restoreSnapshotsForCity(snapshots) {
+async function restoreSnapshotsForCity(snapshots) {
   if (!snapshots || snapshots.length === 0) return;
   const history = loadHistory();
   const existingKeys = new Set(history.snapshots.map((s) => `${s.date}|${s.city}|${snapshotBrand(s) || ''}`));
@@ -132,7 +131,7 @@ function restoreSnapshotsForCity(snapshots) {
       existingKeys.add(key);
     }
   }
-  saveHistory(history);
+  await saveHistory(history);
 }
 
 module.exports = {
