@@ -1,5 +1,6 @@
 const fs = require('fs');
 const path = require('path');
+const { todayDateString } = require('./snapshotHistory');
 
 const HISTORY_PATH = path.join(__dirname, '..', 'data', 'salesHistory.json');
 
@@ -14,9 +15,6 @@ function saveHistory(history) {
   fs.writeFileSync(HISTORY_PATH, JSON.stringify(history, null, 2));
 }
 
-function todayDateString() {
-  return new Date().toISOString().slice(0, 10);
-}
 
 /**
  * Appends today's city-level aggregates to the history log, one entry per

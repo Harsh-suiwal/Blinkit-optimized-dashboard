@@ -19,8 +19,10 @@ function saveHistory(history) {
   fs.writeFileSync(HISTORY_PATH, JSON.stringify(history, null, 2));
 }
 
+// "Today" in the business timezone (Asia/Kolkata unless TZ names another IANA zone),
+// not UTC, so an upload at 1 AM IST is not dated the previous day.
 function todayDateString() {
-  return new Date().toISOString().slice(0, 10); // YYYY-MM-DD
+  return new Intl.DateTimeFormat('en-CA', { timeZone: process.env.TZ || 'Asia/Kolkata' }).format(new Date()); // YYYY-MM-DD
 }
 
 function daysBetween(dateStrA, dateStrB) {

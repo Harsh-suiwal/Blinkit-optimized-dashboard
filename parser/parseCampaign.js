@@ -1,6 +1,7 @@
 const XLSX = require('xlsx');
 const columnMap = require('./columnMap');
 const { resolveBrand, loadAliases } = require('./brandResolver');
+const { todayDateString } = require('./snapshotHistory');
 
 const MONTH_NAMES = [
   'January', 'February', 'March', 'April', 'May', 'June',
@@ -182,7 +183,7 @@ function summariseUploads(rows, fileName) {
     .map((g) => ({
       uploadId: `${uploadedAt}|${g.periodKey}|${g.sheetType}`,
       fileName,
-      uploadedDate: uploadedAt.slice(0, 10),
+      uploadedDate: todayDateString(),
       dateRange: { from: g.from, to: g.to },
       periodKey: g.periodKey,
       periodLabel: periodLabelFor(g.periodKey),
