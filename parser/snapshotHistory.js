@@ -1,22 +1,21 @@
-const fs = require('fs');
-const path = require('path');
+const kv = require('../store/kv');
 
-const HISTORY_PATH = path.join(__dirname, '..', 'data', 'history.json');
+const HISTORY_KEY = 'history'; // kv key; { snapshots: [...] }
 
 // How many days of slack we allow when looking for a snapshot uploaded
 // "around 30 days ago". Uploads won't land on the exact day, so we search
 // a small window instead of demanding an exact match.
 const ANCHOR_TOLERANCE_DAYS = 5;
 
-function loadHistory() {
-  if (!fs.existsSync(HISTORY_PATH)) return { snapshots: [] };
-  const raw = fs.readFileSync(HISTORY_PATH, 'utf-8');
-  if (!raw.trim()) return { snapshots: [] };
-  return JSON.parse(raw);
+// readOnly: returns the cached object itself (no copy) - callers must not mutate it.
+function loadHistory({ readOnly = false } = {}) {
+  const history = readOnly ? kv.peek(HISTORY_KEY) : kv.get(HISTORY_KEY);
+  if (!history || !Array.isArray(history.snapshots)) return { snapshots: [] };
+  return history;
 }
 
-function saveHistory(history) {
-  fs.writeFileSync(HISTORY_PATH, JSON.stringify(history, null, 2));
+async function saveHistory(history) {
+  await kv.set(HISTORY_KEY, history);
 }
 
 // "Today" in the business timezone (Asia/Kolkata unless TZ names another IANA zone),
@@ -37,7 +36,7 @@ function daysBetween(dateStrA, dateStrB) {
  * for the items it contains; entries for other items (other brands uploaded
  * the same day) and for other dates are always kept.
  */
-function appendSnapshot(parsedRows, date = todayDateString()) {
+async function appendSnapshot(parsedRows, date = todayDateString()) {
   const history = loadHistory();
 
   const uploaded = new Set(parsedRows.map((row) => `${row.itemId}|${row.warehouseId}`));
@@ -61,7 +60,7 @@ function appendSnapshot(parsedRows, date = todayDateString()) {
     });
   }
 
-  saveHistory(history);
+  await saveHistory(history);
   return history;
 }
 
@@ -102,8 +101,7 @@ function findAnchorSnapshot(history, itemId, warehouseId, latestDate, daysBack =
  * 30-day anchor). Returns null for a window when there isn't enough upload
  * history yet.
  */
-function computeExtendedWindows({ itemId, warehouseId, latestDate, latestUnitsSold15 = null, latestUnitsSold30 }) {
-  const history = loadHistory();
+function computeExtendedWindows({ itemId, warehouseId, latestDate, latestUnitsSold15 = null, latestUnitsSold30 }, history = loadHistory({ readOnly: true })) {
   const gap = (anchor, daysBack) =>
     Math.abs(daysBetween(latestDate, anchor.date) - daysBack);
 
