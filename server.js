@@ -305,7 +305,7 @@ app.get('/api/summary', requireAuth, (req, res) => {
 });
 
 // Wipes the current inventory view for one brand (?brand=) or for every brand. The upload history log
-// (data/history.json) is kept on purpose: it is what the 45/60-day figures
+// (kv "history") is kept on purpose: it is what the 45/60-day figures
 // are computed from, and it cannot be rebuilt.
 app.delete('/api/inventory-data', requireAdmin, mutating(async (req, res) => {
   const brand = typeof req.query.brand === 'string' ? req.query.brand.trim() : '';

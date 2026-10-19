@@ -61,7 +61,7 @@ Built with **Node.js / Express** on the backend and **Angular 20** on the fronte
 |---|---|
 | **Backend** | Node.js, Express 4, `express-session`, `multer`, `xlsx`, `bcrypt` |
 | **Frontend** | Angular 20 (standalone components, signals, `HttpClient`) |
-| **Database** | Supabase (PostgreSQL) — used for user auth; report data stored as local JSON files |
+| **Database** | Supabase (PostgreSQL) — login users plus all report data (table `kv_store`, one JSON document per key) |
 | **Parsers** | Custom Excel parsers (`xlsx` library) with configurable column mapping |
 | **Dev Tools** | `nodemon`, `concurrently`, TypeScript 5.9 |
 
@@ -97,8 +97,8 @@ Built with **Node.js / Express** on the backend and **Angular 20** on the fronte
          ┌────────────┼────────────┐
          ▼            ▼            ▼
    ┌──────────┐ ┌──────────┐ ┌──────────┐
-   │ Supabase │ │ data/*.  │ │ uploads/ │
-   │ (users)  │ │  json    │ │  (temp)  │
+   │ Supabase │ │ kv_store │ │ uploads/ │
+   │ (users)  │ │ (report) │ │  (temp)  │
    └──────────┘ └──────────┘ └──────────┘
 ```
 
@@ -124,7 +124,7 @@ cd Blinkit-optimized-dashboard
 ### 2. Set Up Supabase
 
 1. Create a free project at [supabase.com](https://supabase.com).
-2. Open the **SQL Editor** and run the contents of [`db/schema.sql`](db/schema.sql) to create the required tables (`admin_users`, `inventory_products`, `snapshot_history`, `upload_meta`).
+2. Open the **SQL Editor** and run the contents of [`db/schema.sql`](db/schema.sql) to create the required tables (`admin_users` for logins and `kv_store` for report data; the other tables in the file are currently unused).
 3. Copy your **Project URL** and **service_role key** from **Settings → API**.
 
 ### 3. Configure Environment Variables
@@ -165,6 +165,15 @@ npm run seed
 ```
 
 This creates (or updates) the first admin account in Supabase using the `ADMIN_EMAIL` and `ADMIN_PASSWORD` from `.env`.
+
+**Optional: import existing local data.** If you have report data from an older version in `data/*.json`, upload it once:
+
+```bash
+node scripts/migrate-json-to-kv.js --dry-run   # list keys and sizes, write nothing
+node scripts/migrate-json-to-kv.js             # upload (refuses if kv_store has rows; add --force to overwrite)
+```
+
+`node scripts/kv-smoke.js` checks that the server can write, read and delete in `kv_store`.
 
 ### 6. Run the Application
 
@@ -249,7 +258,8 @@ blinkit-dashboard/
 │   ├── login.js                Login form handler
 │   └── style.css               Shared stylesheet (used by login)
 │
-├── data/                       Generated data (gitignored)
+├── store/kv.js                 Report data persistence (Supabase kv_store + in-memory cache)
+├── data/                       Legacy local JSON, only read by scripts/migrate-json-to-kv.js (gitignored)
 │   └── .gitkeep
 │
 └── uploads/                    Temporary file storage (auto-cleaned)
@@ -259,14 +269,14 @@ blinkit-dashboard/
 
 ## How It Works
 
-> **Data storage (for now):** Supabase holds only the login users. All report data (inventory, sales, campaigns, history, brand aliases) is stored as local JSON files in `data/`. On a host with an ephemeral disk such as Render, those files are wiped on every redeploy, so re-upload your reports after deploying.
+> **Data storage:** all report data (inventory, sales, campaigns, history, brand aliases, upload hashes) is stored in the Supabase table `kv_store`, so it survives redeploys on hosts with an ephemeral disk such as Render. The server loads every key into memory at startup and refuses to start if it can't. Run a single server instance only: each instance has its own in-memory copy.
 
 ### Inventory Tracking
 
 1. **Upload** a Blinkit "Stock On Hand" `.xlsx` report from the Inventory tab.
 2. The server parses it via `parser/parseReport.js`, using the column map in `parser/columnMap.js` to translate raw Blinkit column headers to internal field names.
-3. Each upload is logged as a dated snapshot in `data/history.json` via `parser/snapshotHistory.js`. This history enables the 45-day and 60-day sold calculations.
-4. The processed data is cached in `data/latest.json` and served to the dashboard via `/api/products`.
+3. Each upload is logged as a dated snapshot in the `history` key via `parser/snapshotHistory.js`. This history enables the 45-day and 60-day sold calculations.
+4. The processed data is saved in the `latest` key and served to the dashboard via `/api/products`.
 5. Products are flagged as **Out** (stock = 0), **Low** (stock ≤ threshold), or **OK**.
 
 ### Sales Performance
