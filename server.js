@@ -9,7 +9,7 @@ const path = require('path');
 const XLSX = require('xlsx');
 
 const { parseReport } = require('./parser/parseReport');
-const { appendSnapshot, computeExtendedWindows, todayDateString } = require('./parser/snapshotHistory');
+const { appendSnapshot, computeExtendedWindows, loadHistory, todayDateString } = require('./parser/snapshotHistory');
 const { parseSalesRows, aggregateByCity, aggregateByProduct, assignPerformanceTiers } = require('./parser/parseSales');
 const {
   appendCitySnapshot,
@@ -83,6 +83,14 @@ const uploadReport = (req, res, next) => {
     res.status(400).json({ error: message });
   });
 };
+
+// Wraps every data-changing route: runs one at a time (so a concurrent request can't read
+// stale data mid-save and overwrite it), awaits all writes, answers 500 if a save fails.
+const mutating = (handler) => (req, res) =>
+  kv.withLock(() => handler(req, res)).catch((err) => {
+    console.error(`${req.method} ${req.path} failed:`, err.message);
+    if (!res.headersSent) res.status(500).json({ error: 'Saving failed. Please try again.' });
+  });
 
 // --- Session setup --------------------------------------------------------
 
@@ -168,6 +176,7 @@ app.get(['/app', '/app/*'], (_req, res) => {
  * the 45/60 day figures pulled from snapshot history.
  */
 function buildConsolidatedRows(parsedRows, date) {
+  const history = loadHistory({ readOnly: true }); // once per upload, not per row
   return parsedRows.map((row) => {
     const { unitsSold45, unitsSold60 } = computeExtendedWindows({
       itemId: row.itemId,
@@ -175,7 +184,7 @@ function buildConsolidatedRows(parsedRows, date) {
       latestDate: date,
       latestUnitsSold15: row.unitsSold15,
       latestUnitsSold30: row.unitsSold30,
-    });
+    }, history);
 
     const stockStatus =
       row.totalStockAvailable <= 0 ? 'out' : row.totalStockAvailable <= LOW_STOCK_THRESHOLD ? 'low' : 'ok';
@@ -221,7 +230,7 @@ function loadLatest() {
 
 // --- Upload (admin only) --------------------------------------------------
 
-app.post('/api/upload', requireAdmin, uploadReport, (req, res) => {
+app.post('/api/upload', requireAdmin, uploadReport, mutating(async (req, res) => {
   if (!req.file) {
     return res.status(400).json({ error: 'No file uploaded.' });
   }
@@ -244,7 +253,9 @@ app.post('/api/upload', requireAdmin, uploadReport, (req, res) => {
 
     // Save this upload into the history log BEFORE computing 45/60 day
     // windows for it, so today's own snapshot is available for future uploads.
-    appendSnapshot(parsedRows, date);
+    // Write order: history, then the current view, then the upload hash. Each step is
+    // idempotent on retry, and the hash is only recorded once the data is saved.
+    await appendSnapshot(parsedRows, date);
 
     const newRows = buildConsolidatedRows(parsedRows, date);
 
@@ -256,16 +267,17 @@ app.post('/api/upload', requireAdmin, uploadReport, (req, res) => {
       brandUploads[b] = { date, fileName: req.file.originalname };
     });
     const rows = previous.rows.filter((r) => !brands.includes(r.brandName)).concat(newRows);
-    saveLatest({ date, fileName: req.file.originalname, rows, brandUploads });
-    recordUpload('inventory', fileHash);
+    await saveLatest({ date, fileName: req.file.originalname, rows, brandUploads });
+    await recordUpload('inventory', fileHash);
 
     res.json({ ok: true, date, rowCount: newRows.length, totalRowCount: rows.length, brands });
   } catch (err) {
+    if (err.kvError) throw err; // save failed -> 500 from mutating()
     res.status(400).json({ error: err.message });
   } finally {
     fs.unlink(req.file.path, () => {});
   }
-});
+}));
 
 // --- Read APIs (any authenticated user) ------------------------------------
 
@@ -295,7 +307,7 @@ app.get('/api/summary', requireAuth, (req, res) => {
 // Wipes the current inventory view for one brand (?brand=) or for every brand. The upload history log
 // (data/history.json) is kept on purpose: it is what the 45/60-day figures
 // are computed from, and it cannot be rebuilt.
-app.delete('/api/inventory-data', requireAdmin, async (req, res) => {
+app.delete('/api/inventory-data', requireAdmin, mutating(async (req, res) => {
   const brand = typeof req.query.brand === 'string' ? req.query.brand.trim() : '';
   const latest = brand ? loadLatest() : null;
 
@@ -305,22 +317,22 @@ app.delete('/api/inventory-data', requireAdmin, async (req, res) => {
       if (sameBrand(b, brand)) delete latest.brandUploads[b];
     });
     if (latest.rows.length) {
-      saveLatest(latest);
-      clearUploadHashes('inventory');
+      await saveLatest(latest);
+      await clearUploadHashes('inventory');
       return res.json({ ok: true, brand });
     }
   }
 
   await kv.delete(LATEST_KEY);
-  clearUploadHashes('inventory');
+  await clearUploadHashes('inventory');
   res.json({ ok: true });
-});
+}));
 
 // Removes one product+warehouse row from the current inventory view.
 // Kept intentionally simple: this only touches the current view (not the
 // 45/60 day snapshot history), since that history is shared across
 // products and warehouses and shouldn't be wiped by a single-row delete.
-app.delete('/api/products', requireAdmin, (req, res) => {
+app.delete('/api/products', requireAdmin, mutating(async (req, res) => {
   const { productName, warehouseName } = req.query;
   if (!productName || !warehouseName) {
     return res.status(400).json({ error: 'productName and warehouseName are required.' });
@@ -337,15 +349,15 @@ app.delete('/api/products', requireAdmin, (req, res) => {
   }
 
   const [removedRow] = latest.rows.splice(index, 1);
-  saveLatest(latest);
-  clearUploadHashes('inventory');
+  await saveLatest(latest);
+  await clearUploadHashes('inventory');
 
   res.json({ ok: true, removedRow, index, rowCount: latest.rows.length });
-});
+}));
 
 // Re-inserts a previously deleted row (Ctrl+Z / undo) at its original
 // position.
-app.post('/api/products/restore', requireAdmin, (req, res) => {
+app.post('/api/products/restore', requireAdmin, mutating(async (req, res) => {
   const { row, index } = req.body || {};
   if (!row) return res.status(400).json({ error: 'row is required.' });
 
@@ -354,10 +366,10 @@ app.post('/api/products/restore', requireAdmin, (req, res) => {
 
   const clampedIndex = Math.max(0, Math.min(typeof index === 'number' ? index : latest.rows.length, latest.rows.length));
   latest.rows.splice(clampedIndex, 0, row);
-  saveLatest(latest);
+  await saveLatest(latest);
 
   res.json({ ok: true, rowCount: latest.rows.length });
-});
+}));
 
 // --- Product Focus (product-centric cross-tab view) ------------------------
 
@@ -417,14 +429,14 @@ app.get('/api/brand-names', requireAuth, (req, res) => {
 
 // Teaches the brand resolver a new mapping, e.g. { raw: 'Knife PB', canonical: 'Oicia' }.
 // Applies to files parsed from now on; already-stored campaign rows keep their brand.
-app.post('/api/brand-alias', requireAdmin, (req, res) => {
+app.post('/api/brand-alias', requireAdmin, mutating(async (req, res) => {
   const { raw, canonical } = req.body || {};
   if (typeof raw !== 'string' || typeof canonical !== 'string' || !raw.trim() || !canonical.trim()) {
     return res.status(400).json({ error: 'raw and canonical are required.' });
   }
-  saveAlias(raw, canonical);
+  await saveAlias(raw, canonical);
   res.json({ ok: true });
-});
+}));
 
 // --- Export (any authenticated user) ----------------------------------------
 
@@ -581,7 +593,7 @@ function salesRowsForBrand(store, brand) {
   return brand ? store.cityRows.filter((r) => sameBrand(r.brandName, brand)) : store.cityRows;
 }
 
-app.post('/api/sales-upload', requireAdmin, uploadReport, (req, res) => {
+app.post('/api/sales-upload', requireAdmin, uploadReport, mutating(async (req, res) => {
   if (!req.file) {
     return res.status(400).json({ error: 'No file uploaded.' });
   }
@@ -608,7 +620,8 @@ app.post('/api/sales-upload', requireAdmin, uploadReport, (req, res) => {
 
     // Log this upload's per-brand city totals BEFORE computing the trend, so it
     // becomes the comparison point for that brand's next upload.
-    appendCitySnapshot(cityAgg, date);
+    // Write order: history, city view, product view, then the upload hash (see /api/upload).
+    await appendCitySnapshot(cityAgg, date);
     const withTrend = attachTrend(cityAgg, date);
 
     // Replace only the brands in this file; every other brand stays.
@@ -618,14 +631,14 @@ app.post('/api/sales-upload', requireAdmin, uploadReport, (req, res) => {
       brandUploads[b] = { date, fileName: req.file.originalname };
     });
     const cityRows = previous.cityRows.filter((r) => !brands.includes(r.brandName)).concat(withTrend);
-    saveSalesLatest({ date, fileName: req.file.originalname, brandUploads, cityRows });
+    await saveSalesLatest({ date, fileName: req.file.originalname, brandUploads, cityRows });
 
     // Per-product breakdown (powers the feeder view); same replace-by-brand rule.
     const productAgg = aggregateByProduct(salesRows);
     const oldProducts = loadProductSalesLatest();
     const keptProducts = oldProducts ? oldProducts.productRows.filter((p) => !brands.some((b) => sameBrand(p.brandName, b))) : [];
-    saveProductSalesLatest(keptProducts.concat(productAgg), date, req.file.originalname);
-    recordUpload('sales', fileHash);
+    await saveProductSalesLatest(keptProducts.concat(productAgg), date, req.file.originalname);
+    await recordUpload('sales', fileHash);
 
     res.json({
       ok: true,
@@ -636,11 +649,12 @@ app.post('/api/sales-upload', requireAdmin, uploadReport, (req, res) => {
       orderRowCount: salesRows.length,
     });
   } catch (err) {
+    if (err.kvError) throw err; // save failed -> 500 from mutating()
     res.status(400).json({ error: err.message });
   } finally {
     fs.unlink(req.file.path, () => {});
   }
-});
+}));
 
 // ?brand= narrows the city table to one brand; brandSummaries always lists every brand.
 app.get('/api/city-performance', requireAuth, (req, res) => {
@@ -657,7 +671,7 @@ app.get('/api/city-performance', requireAuth, (req, res) => {
 
 // Wipes sales data: one brand (?brand=) or everything. Trend history for the removed
 // scope goes with it so it can't resurface as a stale "previous" comparison.
-app.delete('/api/sales-history', requireAdmin, async (req, res) => {
+app.delete('/api/sales-history', requireAdmin, mutating(async (req, res) => {
   const brand = typeof req.query.brand === 'string' ? req.query.brand.trim() : '';
   const latest = brand ? loadSalesLatest() : null;
 
@@ -668,27 +682,27 @@ app.delete('/api/sales-history', requireAdmin, async (req, res) => {
     });
     const products = loadProductSalesLatest();
     if (products) {
-      saveProductSalesLatest(products.productRows.filter((p) => !sameBrand(p.brandName, brand)), products.date, products.fileName);
+      await saveProductSalesLatest(products.productRows.filter((p) => !sameBrand(p.brandName, brand)), products.date, products.fileName);
     }
-    removeBrandFromHistory(brand);
+    await removeBrandFromHistory(brand);
     if (latest.cityRows.length) {
-      saveSalesLatest(latest);
-      clearUploadHashes('sales');
+      await saveSalesLatest(latest);
+      await clearUploadHashes('sales');
       return res.json({ ok: true, brand });
     }
   }
 
+  await clearHistory();
   await kv.delete(SALES_LATEST_KEY);
   await kv.delete(PRODUCT_SALES_KEY);
-  clearHistory();
-  clearUploadHashes('sales');
+  await clearUploadHashes('sales');
   res.json({ ok: true });
-});
+}));
 
 // Removes one city (all brands) from the current view and purges its history so it
 // doesn't resurface as a "previous" comparison point later. Returns everything needed
 // to fully undo the delete (Ctrl+Z), including the trend-history snapshots.
-app.delete('/api/city-performance/:city', requireAdmin, (req, res) => {
+app.delete('/api/city-performance/:city', requireAdmin, mutating(async (req, res) => {
   const { city } = req.params;
   const latest = loadSalesLatest();
   if (!latest) return res.status(404).json({ error: 'No sales data to delete from.' });
@@ -701,28 +715,30 @@ app.delete('/api/city-performance/:city', requireAdmin, (req, res) => {
   const removedHistorySnapshots = getSnapshotsForCity(city);
   latest.cityRows = latest.cityRows.filter((c) => c.city !== city);
 
-  saveSalesLatest(latest);
-  removeCityFromHistory(city);
-  clearUploadHashes('sales');
+  // History first: if the view save then fails, the city is still visible (nothing lost).
+  await removeCityFromHistory(city);
+  await saveSalesLatest(latest);
+  await clearUploadHashes('sales');
 
   res.json({ ok: true, removedRows, removedHistorySnapshots });
-});
+}));
 
 // Re-inserts a previously deleted city (Ctrl+Z / undo), including its trend-history snapshots.
-app.post('/api/city-performance/restore', requireAdmin, (req, res) => {
+app.post('/api/city-performance/restore', requireAdmin, mutating(async (req, res) => {
   const { cityRows, historySnapshots } = req.body || {};
   if (!Array.isArray(cityRows) || !cityRows.length) return res.status(400).json({ error: 'cityRows is required.' });
 
   const latest = loadSalesLatest();
   if (!latest) return res.status(404).json({ error: 'No sales data to restore into.' });
 
+  // History first: it skips snapshots already present, so a retry after a failed view
+  // save can't duplicate anything; the view concat runs last.
+  await restoreSnapshotsForCity(historySnapshots);
   latest.cityRows = latest.cityRows.concat(cityRows);
-  saveSalesLatest(latest);
-
-  restoreSnapshotsForCity(historySnapshots);
+  await saveSalesLatest(latest);
 
   res.json({ ok: true });
-});
+}));
 
 // Product-focus: a single product's totals + per-city breakdown, drawn
 // from the last uploaded sales report.
@@ -869,7 +885,7 @@ function campaignFilters(req, store) {
   return { periodKey, sheetType, brand };
 }
 
-app.post('/api/campaign-upload', requireAdmin, uploadReport, (req, res) => {
+app.post('/api/campaign-upload', requireAdmin, uploadReport, mutating(async (req, res) => {
   if (!req.file) {
     return res.status(400).json({ error: 'No file uploaded.' });
   }
@@ -890,8 +906,8 @@ app.post('/api/campaign-upload', requireAdmin, uploadReport, (req, res) => {
       return res.json({ ok: true, duplicate: true, skipped: true });
     }
 
-    const store = upsertCampaignUpload(parsed);
-    recordUpload('campaign', fileHash);
+    const store = await upsertCampaignUpload(parsed);
+    await recordUpload('campaign', fileHash);
     res.json({
       ok: true,
       periodKeys: Array.from(new Set(parsed.uploads.map((u) => u.periodKey))),
@@ -900,11 +916,12 @@ app.post('/api/campaign-upload', requireAdmin, uploadReport, (req, res) => {
       latestPeriodKey: getLatestCampaignPeriodKey(store),
     });
   } catch (err) {
+    if (err.kvError) throw err; // save failed -> 500 from mutating()
     res.status(400).json({ error: err.message });
   } finally {
     fs.unlink(req.file.path, () => {});
   }
-});
+}));
 
 app.get('/api/campaign-analysis', requireAuth, (req, res) => {
   const store = loadCampaignStore();
@@ -946,45 +963,45 @@ app.get('/api/campaign-detail', requireAuth, (req, res) => {
 });
 
 // Wipes stored campaign data: one brand across every period (?brand=), or everything.
-app.delete('/api/campaign-data', requireAdmin, (req, res) => {
+app.delete('/api/campaign-data', requireAdmin, mutating(async (req, res) => {
   const brand = typeof req.query.brand === 'string' ? req.query.brand.trim() : '';
-  if (brand) removeCampaignBrandRows(brand);
-  else clearCampaignStore();
-  clearUploadHashes('campaign');
+  if (brand) await removeCampaignBrandRows(brand);
+  else await clearCampaignStore();
+  await clearUploadHashes('campaign');
   campaignTrash.clear();
   res.json({ ok: true });
-});
+}));
 
 // Removes every daily row of one campaign in a period. Returns an undo token.
-app.delete('/api/campaign-analysis', requireAdmin, (req, res) => {
+app.delete('/api/campaign-analysis', requireAdmin, mutating(async (req, res) => {
   const { periodKey, sheetType, campaignId } = req.body || {};
   if (!periodKey || !SHEET_TYPES.includes(sheetType) || !campaignId) {
     return res.status(400).json({ error: 'periodKey, sheetType and campaignId are required.' });
   }
 
-  const removed = removeCampaignRows(periodKey, sheetType, campaignId);
+  const removed = await removeCampaignRows(periodKey, sheetType, campaignId);
   if (!removed.length) return res.status(404).json({ error: 'Campaign not found.' });
-  clearUploadHashes('campaign');
+  await clearUploadHashes('campaign');
 
   const undoToken = `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
   campaignTrash.set(undoToken, { rows: removed, expires: Date.now() + TRASH_TTL_MS });
   while (campaignTrash.size > TRASH_LIMIT) campaignTrash.delete(campaignTrash.keys().next().value);
 
   res.json({ ok: true, removedRows: removed.length, undoToken });
-});
+}));
 
 // Re-inserts a previously deleted campaign (Ctrl+Z / undo) using its token.
-app.post('/api/campaign-analysis/restore', requireAdmin, (req, res) => {
+app.post('/api/campaign-analysis/restore', requireAdmin, mutating(async (req, res) => {
   const { undoToken } = req.body || {};
   sweepCampaignTrash();
   const entry = undoToken ? campaignTrash.get(undoToken) : null;
   const rows = entry ? entry.rows : null;
   if (!rows) return res.status(404).json({ error: 'Nothing to restore - the undo window has expired.' });
 
-  restoreCampaignRows(rows);
+  await restoreCampaignRows(rows);
   campaignTrash.delete(undoToken);
   res.json({ ok: true, restoredRows: rows.length });
-});
+}));
 
 app.get('/api/campaign-summary', requireAuth, (req, res) => {
   const store = loadCampaignStore();

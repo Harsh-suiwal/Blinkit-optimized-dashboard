@@ -9,6 +9,11 @@ const keyQueues = new Map(); // key -> tail of that key's write chain
 let ready = false;
 let lockTail = Promise.resolve();
 
+// Errors from Supabase writes carry kvError so routes can answer 500 (not 400).
+function kvError(message) {
+  return Object.assign(new Error(message), { kvError: true });
+}
+
 function assertReady() {
   if (!ready) throw new Error('kv store used before kv.init() finished');
 }
@@ -52,7 +57,7 @@ async function set(key, value) {
     const { error } = await supabase
       .from(TABLE)
       .upsert({ key, value: stored, updated_at: new Date().toISOString() }, { onConflict: 'key' });
-    if (error) throw new Error(`kv set "${key}" failed: ${error.message}`);
+    if (error) throw kvError(`kv set "${key}" failed: ${error.message}`);
     cache.set(key, stored);
   });
 }
@@ -61,7 +66,7 @@ async function del(key) {
   assertReady();
   return enqueue(key, async () => {
     const { error } = await supabase.from(TABLE).delete().eq('key', key);
-    if (error) throw new Error(`kv delete "${key}" failed: ${error.message}`);
+    if (error) throw kvError(`kv delete "${key}" failed: ${error.message}`);
     cache.delete(key);
   });
 }
