@@ -119,7 +119,6 @@ Built with **Node.js / Express** on the backend and **Angular 20** on the fronte
 ```bash
 git clone https://github.com/Harsh-suiwal/Blinkit-optimized-dashboard.git
 cd Blinkit-optimized-dashboard
-git checkout v4
 ```
 
 ### 2. Set Up Supabase
@@ -267,6 +266,8 @@ blinkit-dashboard/
 
 ## How It Works
 
+> **Data storage (for now):** Supabase holds only the login users. All report data (inventory, sales, campaigns, history, brand aliases) is stored as local JSON files in `data/`. On a host with an ephemeral disk such as Render, those files are wiped on every redeploy, so re-upload your reports after deploying.
+
 ### Inventory Tracking
 
 1. **Upload** a Blinkit "Stock On Hand" `.xlsx` report from the Inventory tab.
@@ -362,6 +363,7 @@ All API routes are prefixed with `/api/`. Requests require a valid session cooki
 | Method | Endpoint | Auth | Description |
 |--------|----------|------|-------------|
 | `GET` | `/api/export` | Any | Download inventory as `.xlsx` |
+| `GET` | `/api/export-sales?brand=...` | Any | Download sales by city as `.xlsx` (`brand` optional) |
 | `GET` | `/api/export-campaign?periodKey=...` | Any | Download campaign data as `.xlsx` |
 | `GET` | `/api/export-all?periodKey=...` | Any | Download combined workbook (all available sheets) |
 
