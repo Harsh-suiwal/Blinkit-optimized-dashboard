@@ -100,3 +100,9 @@ Routes: `/app/inventory` (default), `/app/sales-performance`, `/app/campaign-ana
 - Write order in multi-write routes: history before the current view, upload hash last (only after the data is saved). City delete removes history first; city restore re-adds history (de-duplicated) before the view.
 - Keys: latest, history, salesLatest, salesByProduct, salesHistory, campaignData, brandAliases, uploadHashes.
 - Single server instance only.
+
+## Review fixes & enhancements (v7)
+- Inventory: incoming inventory calculation reads "Incoming scheduled inventory" only (was double-counted with net).
+- Inventory cards: summary is a computed signal over rows and filters (no card freeze on brand switch); 401 redirects to /login on session expiry.
+- Campaign Analysis: dry-run detects campaigns with "Unknown" brands and prompts admin with a brand picker before uploading; clarifies replaced campaigns and skipped rows.
+- Sales Feeder view: aggregated City totals table per mapped city across all products.

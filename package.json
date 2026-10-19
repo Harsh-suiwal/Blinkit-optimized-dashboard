@@ -1,6 +1,6 @@
 {
   "name": "blinkit-dashboard",
-  "version": "1.0.0",
+  "version": "7.0.0",
   "description": "Blinkit optimized analytics dashboard — inventory, sales, and campaign reporting",
   "main": "server.js",
   "engines": {
