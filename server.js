@@ -41,6 +41,7 @@ const {
   listCampaignBrands,
 } = require('./parser/campaignStore');
 const { resolveBrand, saveAlias, loadAliases } = require('./parser/brandResolver');
+const { hashFile, isDuplicateUpload, recordUpload, clearUploadHashes } = require('./parser/uploadGuard');
 
 const { requireAuth, requireAdmin } = require('./middleware/auth');
 const authRoutes = require('./routes/auth');
@@ -222,6 +223,12 @@ app.post('/api/upload', requireAdmin, uploadReport, (req, res) => {
   }
 
   try {
+    // Same file already processed today -> skip (?force=1 overrides).
+    const fileHash = hashFile(req.file.path);
+    if (req.query.force !== '1' && isDuplicateUpload('inventory', fileHash)) {
+      return res.json({ ok: true, duplicate: true, skipped: true });
+    }
+
     const parsedRows = parseReport(req.file.path);
     const date = todayDateString();
 
@@ -246,6 +253,7 @@ app.post('/api/upload', requireAdmin, uploadReport, (req, res) => {
     });
     const rows = previous.rows.filter((r) => !brands.includes(r.brandName)).concat(newRows);
     saveLatest({ date, fileName: req.file.originalname, rows, brandUploads });
+    recordUpload('inventory', fileHash);
 
     res.json({ ok: true, date, rowCount: newRows.length, totalRowCount: rows.length, brands });
   } catch (err) {
@@ -294,11 +302,13 @@ app.delete('/api/inventory-data', requireAdmin, (req, res) => {
     });
     if (latest.rows.length) {
       saveLatest(latest);
+      clearUploadHashes('inventory');
       return res.json({ ok: true, brand });
     }
   }
 
   if (fs.existsSync(DATA_PATH)) fs.unlinkSync(DATA_PATH);
+  clearUploadHashes('inventory');
   res.json({ ok: true });
 });
 
@@ -324,6 +334,7 @@ app.delete('/api/products', requireAdmin, (req, res) => {
 
   const [removedRow] = latest.rows.splice(index, 1);
   saveLatest(latest);
+  clearUploadHashes('inventory');
 
   res.json({ ok: true, removedRow, index, rowCount: latest.rows.length });
 });
@@ -573,6 +584,11 @@ app.post('/api/sales-upload', requireAdmin, uploadReport, (req, res) => {
   }
 
   try {
+    const fileHash = hashFile(req.file.path);
+    if (req.query.force !== '1' && isDuplicateUpload('sales', fileHash)) {
+      return res.json({ ok: true, duplicate: true, skipped: true });
+    }
+
     const salesRows = parseSalesRows(req.file.path);
     const date = todayDateString();
 
@@ -606,6 +622,7 @@ app.post('/api/sales-upload', requireAdmin, uploadReport, (req, res) => {
     const oldProducts = loadProductSalesLatest();
     const keptProducts = oldProducts ? oldProducts.productRows.filter((p) => !brands.some((b) => sameBrand(p.brandName, b))) : [];
     saveProductSalesLatest(keptProducts.concat(productAgg), date, req.file.originalname);
+    recordUpload('sales', fileHash);
 
     res.json({
       ok: true,
@@ -653,6 +670,7 @@ app.delete('/api/sales-history', requireAdmin, (req, res) => {
     removeBrandFromHistory(brand);
     if (latest.cityRows.length) {
       saveSalesLatest(latest);
+      clearUploadHashes('sales');
       return res.json({ ok: true, brand });
     }
   }
@@ -660,6 +678,7 @@ app.delete('/api/sales-history', requireAdmin, (req, res) => {
   if (fs.existsSync(SALES_DATA_PATH)) fs.unlinkSync(SALES_DATA_PATH);
   if (fs.existsSync(PRODUCT_SALES_PATH)) fs.unlinkSync(PRODUCT_SALES_PATH);
   clearHistory();
+  clearUploadHashes('sales');
   res.json({ ok: true });
 });
 
@@ -681,6 +700,7 @@ app.delete('/api/city-performance/:city', requireAdmin, (req, res) => {
 
   saveSalesLatest(latest);
   removeCityFromHistory(city);
+  clearUploadHashes('sales');
 
   res.json({ ok: true, removedRows, removedHistorySnapshots });
 });
@@ -853,7 +873,13 @@ app.post('/api/campaign-upload', requireAdmin, uploadReport, (req, res) => {
       return res.json({ ok: true, dryRun: true, plan: planCampaignUpload(parsed), rowCount: parsed.rows.length });
     }
 
+    const fileHash = hashFile(req.file.path);
+    if (req.query.force !== '1' && isDuplicateUpload('campaign', fileHash)) {
+      return res.json({ ok: true, duplicate: true, skipped: true });
+    }
+
     const store = upsertCampaignUpload(parsed);
+    recordUpload('campaign', fileHash);
     res.json({
       ok: true,
       periodKeys: Array.from(new Set(parsed.uploads.map((u) => u.periodKey))),
@@ -912,6 +938,7 @@ app.delete('/api/campaign-data', requireAdmin, (req, res) => {
   const brand = typeof req.query.brand === 'string' ? req.query.brand.trim() : '';
   if (brand) removeCampaignBrandRows(brand);
   else clearCampaignStore();
+  clearUploadHashes('campaign');
   campaignTrash.clear();
   res.json({ ok: true });
 });
@@ -925,6 +952,7 @@ app.delete('/api/campaign-analysis', requireAdmin, (req, res) => {
 
   const removed = removeCampaignRows(periodKey, sheetType, campaignId);
   if (!removed.length) return res.status(404).json({ error: 'Campaign not found.' });
+  clearUploadHashes('campaign');
 
   const undoToken = `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
   campaignTrash.set(undoToken, removed);
