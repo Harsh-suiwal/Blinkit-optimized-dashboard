@@ -65,3 +65,12 @@ CREATE TABLE IF NOT EXISTS upload_meta (
 CREATE INDEX IF NOT EXISTS idx_inventory_upload_date ON inventory_products (upload_date);
 CREATE INDEX IF NOT EXISTS idx_snapshot_item_wh      ON snapshot_history (item_id, warehouse_id, snapshot_date);
 CREATE INDEX IF NOT EXISTS idx_snapshot_date         ON snapshot_history (snapshot_date);
+
+-- 5. Key-value store for report data (one JSON document per key, see store/kv.js)
+CREATE TABLE IF NOT EXISTS kv_store (
+  key         TEXT PRIMARY KEY,
+  value       JSONB NOT NULL,
+  updated_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+-- No policies: only the server's service-role key (which bypasses RLS) can read or write.
+ALTER TABLE kv_store ENABLE ROW LEVEL SECURITY;
