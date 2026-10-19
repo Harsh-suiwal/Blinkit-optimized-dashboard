@@ -28,6 +28,8 @@ uploads/
 
 # Generated data
 data/*.json
+# Local backups of data/*.json (real business data, never commit)
+data_backup_*/
 !data/.gitkeep
 
 # Logs
