@@ -9,12 +9,13 @@ const supabase = require('../db/supabase');
 
 const router = express.Router();
 
-// 10 login attempts per IP per 15 minutes (in memory; resets on restart).
+// 10 failed login attempts per IP per 15 minutes (in memory; resets on restart).
 const loginLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   limit: 10,
   standardHeaders: true,
   legacyHeaders: false,
+  skipSuccessfulRequests: true, // only failed attempts count
   message: { error: 'Too many login attempts. Try again later.' },
 });
 
