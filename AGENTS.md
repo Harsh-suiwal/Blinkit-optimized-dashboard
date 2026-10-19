@@ -82,3 +82,14 @@ Routes: `/app/inventory` (default), `/app/sales-performance`, `/app/campaign-ana
 - Inventory, Sales and Campaign data are all stored per brand and an upload replaces only the brands inside that file. Empty brand in a file -> file name -> "Unknown".
 - Sales: data/salesLatest.json = { brandUploads, cityRows } with one row per (brand, city) and its own trend vs that brand's previous upload (data/salesHistory.json entries carry brandName). `GET city-performance?brand=` combines brand rows per city (orders are summed per brand, so a mixed-brand order counts once per brand) and also returns brandSummaries for the chips. `DELETE city-performance/:city` removes the city for all brands (offered only in the unfiltered view).
 - Clear data always asks which brand (or all): `DELETE inventory-data?brand=` (history kept), `DELETE sales-history?brand=` (removes that brand's trend history), `DELETE campaign-data?brand=` (all months). Shared UI: shared/clear-data-dialog.component.ts.
+
+## Deployment (Render)
+- Build: `npm run build`. Start: `npm run serve`.
+- Render's filesystem is ephemeral. Do not rely on local files for anything that must survive a deploy.
+- Sessions are in memory (everyone is logged out on restart). campaignTrash undo tokens are also in memory.
+
+## Data persistence (after v6)
+- All report data lives in Supabase table `kv_store` (key -> jsonb), accessed ONLY through store/kv.js. No fs reads/writes under data/ outside the one-time migration script.
+- kv.get returns a clone; to change data, get -> modify -> await kv.set.
+- Keys: latest, history, salesLatest, salesByProduct, salesHistory, campaignData, brandAliases.
+- Single server instance only.
