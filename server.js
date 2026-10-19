@@ -3,6 +3,7 @@ require('dotenv').config();
 const express = require('express');
 const session = require('express-session');
 const multer = require('multer');
+const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
 const XLSX = require('xlsx');
@@ -61,9 +62,21 @@ const upload = multer({ dest: UPLOAD_DIR });
 
 // --- Session setup --------------------------------------------------------
 
+// No hardcoded fallback: production refuses to start without a secret; elsewhere a random
+// per-process one is used (sessions live in memory anyway, so restarts log everyone out).
+let sessionSecret = process.env.SESSION_SECRET;
+if (!sessionSecret) {
+  if (process.env.NODE_ENV === 'production') {
+    console.error('SESSION_SECRET is not set. Refusing to start in production without it.');
+    process.exit(1);
+  }
+  sessionSecret = crypto.randomBytes(32).toString('hex');
+  console.warn('SESSION_SECRET is not set; using a random one for this run.');
+}
+
 app.use(
   session({
-    secret: process.env.SESSION_SECRET || 'blinkit-dashboard-secret-change-me',
+    secret: sessionSecret,
     resave: false,
     saveUninitialized: false,
     cookie: {
