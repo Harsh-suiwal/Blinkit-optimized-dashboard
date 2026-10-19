@@ -1,40 +1,47 @@
-const fs = require('fs');
-const path = require('path');
+const kv = require('../store/kv');
 const { periodLabelFor } = require('./parseCampaign');
 
-const STORE_PATH = path.join(__dirname, '..', 'data', 'campaignData.json');
-const LEGACY_PATH = path.join(__dirname, '..', 'data', 'campaignData.v1.json');
+const STORE_KEY = 'campaignData'; // kv key; { uploads: [...], rows: [...] }
 
 const EMPTY_STORE = () => ({ uploads: [], rows: [] });
 
 // --- Persistence -------------------------------------------------------------
 
-/**
- * Reads the store. The first read of a pre-rewrite file (aggregated
- * `periods` shape, no `rows`) moves it aside to campaignData.v1.json and
- * starts empty - the admin re-uploads the raw Blinkit export.
- */
-function loadStore() {
-  if (!fs.existsSync(STORE_PATH)) return EMPTY_STORE();
-  const raw = fs.readFileSync(STORE_PATH, 'utf-8');
-  if (!raw.trim()) return EMPTY_STORE();
+let warnedBadShape = false;
 
-  const parsed = JSON.parse(raw);
-  if (!Array.isArray(parsed.rows)) {
-    if (!fs.existsSync(LEGACY_PATH)) fs.renameSync(STORE_PATH, LEGACY_PATH);
-    else fs.unlinkSync(STORE_PATH);
+// A stored value without a rows array (e.g. the pre-rewrite aggregated format) counts as empty.
+function normalize(value) {
+  if (!value) return EMPTY_STORE();
+  if (!Array.isArray(value.rows)) {
+    if (!warnedBadShape) {
+      console.warn('campaignData in kv_store has an unexpected shape; treating it as empty.');
+      warnedBadShape = true;
+    }
     return EMPTY_STORE();
   }
-  return { uploads: parsed.uploads || [], rows: parsed.rows };
+  return { uploads: Array.isArray(value.uploads) ? value.uploads : [], rows: value.rows };
 }
 
-function saveStore(store) {
-  fs.writeFileSync(STORE_PATH, JSON.stringify(store));
+/**
+ * The store for READ-ONLY use: no copy is made (this is the biggest document and every
+ * campaign request reads it), so callers must never mutate the result or its rows.
+ */
+function loadStore() {
+  return normalize(kv.peek(STORE_KEY));
+}
+
+/** A private copy for code that modifies the store before saving it. */
+function loadStoreForWrite() {
+  return normalize(kv.get(STORE_KEY));
+}
+
+async function saveStore(store) {
+  await kv.set(STORE_KEY, store);
 }
 
 /** Deletes every campaign row of one brand (all periods / sheet types); returns how many. */
-function removeBrandRows(brand) {
-  const store = loadStore();
+async function removeBrandRows(brand) {
+  const store = loadStoreForWrite();
   const wanted = String(brand).toLowerCase();
   const kept = store.rows.filter((r) => r.brandName.toLowerCase() !== wanted);
   const removed = store.rows.length - kept.length;
@@ -43,14 +50,14 @@ function removeBrandRows(brand) {
     // Drop upload records whose (period, sheetType) no longer has any rows.
     const alive = new Set(kept.map((r) => `${r.periodKey}|${r.sheetType}`));
     store.uploads = store.uploads.filter((u) => alive.has(`${u.periodKey}|${u.sheetType}`));
-    saveStore(store);
+    await saveStore(store);
   }
   return removed;
 }
 
 /** Deletes every stored campaign row and upload record. */
-function clearStore() {
-  saveStore(EMPTY_STORE());
+async function clearStore() {
+  await saveStore(EMPTY_STORE());
 }
 
 // --- Uploads -----------------------------------------------------------------
@@ -86,14 +93,14 @@ function planUpload(parsed) {
  * what was stored for that pair, because Blinkit exports the whole month each
  * time; other months / sheet types are untouched.
  */
-function upsertUpload(parsed) {
-  const store = loadStore();
+async function upsertUpload(parsed) {
+  const store = loadStoreForWrite();
   const replaced = new Set(parsed.uploads.map((u) => `${u.periodKey}|${u.sheetType}`));
   const keep = (x) => !replaced.has(`${x.periodKey}|${x.sheetType}`);
 
   store.uploads = store.uploads.filter(keep).concat(parsed.uploads);
   store.rows = store.rows.filter(keep).concat(parsed.rows);
-  saveStore(store);
+  await saveStore(store);
   return store;
 }
 
@@ -128,24 +135,24 @@ function sameCampaign(row, periodKey, sheetType, campaignId) {
 }
 
 /** Removes every daily row of one campaign in a period; returns the removed rows. */
-function removeCampaignRows(periodKey, sheetType, campaignId) {
-  const store = loadStore();
+async function removeCampaignRows(periodKey, sheetType, campaignId) {
+  const store = loadStoreForWrite();
   const removed = store.rows.filter((r) => sameCampaign(r, periodKey, sheetType, campaignId));
   if (!removed.length) return [];
   store.rows = store.rows.filter((r) => !sameCampaign(r, periodKey, sheetType, campaignId));
-  saveStore(store);
+  await saveStore(store);
   return removed;
 }
 
 /** Puts previously removed rows back (undo). Returns how many were restored. */
-function restoreCampaignRows(rows) {
+async function restoreCampaignRows(rows) {
   if (!Array.isArray(rows) || !rows.length) return 0;
-  const store = loadStore();
+  const store = loadStoreForWrite();
   const first = rows[0];
   // Guard against double-restore: drop any rows already present for this campaign.
   store.rows = store.rows.filter((r) => !sameCampaign(r, first.periodKey, first.sheetType, first.campaignId));
   store.rows = store.rows.concat(rows);
-  saveStore(store);
+  await saveStore(store);
   return rows.length;
 }
 
