@@ -11,7 +11,8 @@ import {
   CampaignSheetType,
   CampaignSummary,
   CampaignTargetingRow,
-  CampaignUploadPlanItem,
+  CampaignUploadPreview,
+  CampaignUploadResult,
   CityRow,
   SalesBrandRow,
   ProductRow,
@@ -123,11 +124,13 @@ export class ApiService {
 
   /** Dry run: what an upload would replace, without storing anything. */
   previewCampaignUpload(file: File) {
-    return this.upload<{ ok: boolean; dryRun: true; plan: CampaignUploadPlanItem[]; rowCount: number }>('/api/campaign-upload?dryRun=1', file);
+    return this.upload<CampaignUploadPreview>('/api/campaign-upload?dryRun=1', file);
   }
 
-  uploadCampaign(file: File) {
-    return this.upload<{ ok: boolean; periodKeys: string[]; sheetTypes: CampaignSheetType[]; rowCount: number; latestPeriodKey: string }>('/api/campaign-upload', file);
+  /** defaultBrand is applied to campaigns whose brand can't be resolved; it forces past the same-day duplicate guard. */
+  uploadCampaign(file: File, defaultBrand = '') {
+    const url = defaultBrand ? '/api/campaign-upload?force=1' : '/api/campaign-upload';
+    return this.upload<CampaignUploadResult>(url, file, defaultBrand ? { defaultBrand } : {});
   }
 
   deleteCampaign(periodKey: string, sheetType: CampaignSheetType, campaignId: string) {
@@ -167,8 +170,10 @@ export class ApiService {
     return this.call(this.http.delete<T>(url, body === undefined ? {} : { body }), url);
   }
 
-  private async upload<T>(url: string, file: File): Promise<T> {
+  private async upload<T>(url: string, file: File, fields: Record<string, string> = {}): Promise<T> {
     const body = new FormData();
+    // Text fields before the file, so multer has them when it reads the file part.
+    for (const [name, value] of Object.entries(fields)) body.append(name, value);
     body.append('report', file);
     return this.call(this.http.post<T>(url, body), url);
   }

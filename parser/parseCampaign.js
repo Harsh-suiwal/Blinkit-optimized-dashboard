@@ -75,7 +75,8 @@ function detectSheetType(headers) {
  *   defaultBrand is used (as the "explicit" brand) for campaigns whose name
  *   can't be resolved; otherwise the upload's file name is tried before
  *   falling back to "Unknown".
- * @returns {{ uploads: object[], rows: object[] }}
+ * @returns {{ uploads: object[], rows: object[], skippedRows: number, unrecognisedSheets: string[] }}
+ *   skippedRows = data rows dropped for a missing/unreadable date, campaign ID or name.
  */
 function parseCampaignFile(filePath, options = {}) {
   const { fileName = '', defaultBrand = '' } = options;
@@ -97,6 +98,7 @@ function parseCampaignFile(filePath, options = {}) {
 
   const rows = [];
   const unrecognised = [];
+  let skippedRows = 0;
 
   for (const sheetName of workbook.SheetNames) {
     const grid = XLSX.utils.sheet_to_json(workbook.Sheets[sheetName], { header: 1, raw: true, defval: '' });
@@ -120,7 +122,11 @@ function parseCampaignFile(filePath, options = {}) {
 
       const date = parseDate(record.date);
       const campaignName = String(record.campaignName ?? '').trim();
-      if (!date || record.campaignId === '' || record.campaignId === undefined || !campaignName) continue;
+      const blank = raw.every((cell) => cell === '' || cell === null || cell === undefined);
+      if (!date || record.campaignId === '' || record.campaignId === undefined || !campaignName) {
+        if (!blank) skippedRows += 1;
+        continue;
+      }
 
       const isPb = sheetType === SHEET_PRODUCT_BOOSTING;
       rows.push({
@@ -161,7 +167,7 @@ function parseCampaignFile(filePath, options = {}) {
     throw new Error('No campaign data rows were found in this file.');
   }
 
-  return { uploads: summariseUploads(rows, fileName), rows };
+  return { uploads: summariseUploads(rows, fileName), rows, skippedRows, unrecognisedSheets: unrecognised };
 }
 
 /** One upload entry per (periodKey, sheetType) present in the parsed rows. */

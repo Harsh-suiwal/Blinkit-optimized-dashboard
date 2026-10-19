@@ -26,6 +26,7 @@ const {
   clearStore: clearCampaignStore,
   removeBrandRows: removeCampaignBrandRows,
   planUpload: planCampaignUpload,
+  listUnresolvedCampaigns,
   upsertUpload: upsertCampaignUpload,
   listPeriods: listCampaignPeriods,
   getLatestPeriodKey: getLatestCampaignPeriodKey,
@@ -898,7 +899,15 @@ app.post('/api/campaign-upload', requireAdmin, uploadReport, mutating(async (req
 
     // Dry run: report what this upload would replace, write nothing.
     if (req.query.dryRun === '1') {
-      return res.json({ ok: true, dryRun: true, plan: planCampaignUpload(parsed), rowCount: parsed.rows.length });
+      return res.json({
+        ok: true,
+        dryRun: true,
+        plan: planCampaignUpload(parsed),
+        rowCount: parsed.rows.length,
+        unresolved: listUnresolvedCampaigns(parsed), // brand "Unknown"; the admin can pick a defaultBrand
+        skippedRows: parsed.skippedRows,
+        unrecognisedSheets: parsed.unrecognisedSheets,
+      });
     }
 
     const fileHash = hashFile(req.file.path);
@@ -913,6 +922,8 @@ app.post('/api/campaign-upload', requireAdmin, uploadReport, mutating(async (req
       periodKeys: Array.from(new Set(parsed.uploads.map((u) => u.periodKey))),
       sheetTypes: Array.from(new Set(parsed.uploads.map((u) => u.sheetType))),
       rowCount: parsed.rows.length,
+      skippedRows: parsed.skippedRows,
+      unrecognisedSheets: parsed.unrecognisedSheets,
       latestPeriodKey: getLatestCampaignPeriodKey(store),
     });
   } catch (err) {

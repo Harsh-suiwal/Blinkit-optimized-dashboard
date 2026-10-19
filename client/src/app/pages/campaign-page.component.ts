@@ -5,7 +5,7 @@ import { AuthService } from '../core/auth.service';
 import { brandFor, compareValues, money, number } from '../core/formatters';
 import {
   CampaignBrandRow, CampaignDailyRow, CampaignPeriod, CampaignRow, CampaignSheetFilter,
-  CampaignSheetType, CampaignSummary, CampaignTargetingRow, CampaignUploadPlanItem,
+  CampaignSheetType, CampaignSummary, CampaignTargetingRow, CampaignUploadPlanItem, CampaignUploadPreview, CampaignUploadResult,
 } from '../core/models';
 import { UiStateService } from '../core/ui-state.service';
 import { BrandFilterComponent, mergeKnownBrands } from '../shared/brand-filter.component';
@@ -30,6 +30,18 @@ const SHEET_LABELS: Record<CampaignSheetFilter, string> = {
       </div>
     </header>
     <div class="upload-status" [class.success]="statusType() === 'success'" [class.error]="statusType() === 'error'">{{ status() }}</div>
+    @if (pendingUpload(); as pending) {
+      <section class="controls unresolved-panel">
+        <p><strong>{{ pending.preview.unresolved.length }} campaign(s) have no recognisable brand</strong> and would be filed under "Unknown" (hidden when a brand is selected):</p>
+        <ul>@for (c of pending.preview.unresolved; track c.sheetType + c.campaignId) { <li>{{ c.campaignName }} <span class="muted">({{ sheetLabel(c.sheetType) }}, ID {{ c.campaignId }})</span></li> }</ul>
+        <label for="unresolvedBrand">Brand for these campaigns</label>
+        <input id="unresolvedBrand" list="unresolvedBrandOptions" [(ngModel)]="pendingBrand" placeholder="Pick or type a brand">
+        <datalist id="unresolvedBrandOptions">@for (b of brandOptions(); track b) { <option [value]="b"></option> }</datalist>
+        <button class="upload-btn" [disabled]="!pendingBrand.trim()" (click)="confirmPendingUpload(pendingBrand.trim())">Upload with this brand</button>
+        <button class="secondary-btn" (click)="confirmPendingUpload('')">Upload as Unknown</button>
+        <button class="secondary-btn" (click)="cancelPendingUpload()">Cancel</button>
+      </section>
+    }
 
     <section class="controls campaign-controls">
       <label class="filter-label" for="periodSelect">Period</label>
@@ -181,6 +193,10 @@ export class CampaignPageComponent implements OnInit {
   readonly query = signal('');
   readonly lastUpdated = signal('No campaign report uploaded yet');
   readonly status = signal('');
+  // Upload waiting for the admin to pick a brand for campaigns that resolve to "Unknown".
+  readonly pendingUpload = signal<{ file: File; preview: CampaignUploadPreview } | null>(null);
+  pendingBrand = '';
+  readonly brandOptions = computed(() => Array.from(new Set([...this.allBrands(), ...this.knownBrands()].filter((b) => b && b !== 'Unknown'))).sort());
   readonly statusType = signal<'success' | 'error' | ''>('');
   readonly pendingDelete = signal<string | null>(null);
   readonly sortKey = signal<keyof CampaignRow>('roas');
@@ -296,13 +312,48 @@ export class CampaignPageComponent implements OnInit {
       const preview = await this.api.previewCampaignUpload(file);
       const warning = this.replaceWarning(preview.plan);
       if (warning && !window.confirm(warning)) { this.setStatus('Upload cancelled.', ''); return; }
-      this.setStatus('Uploading...', '');
-      const result = await this.api.uploadCampaign(file);
-      this.setStatus(`Uploaded successfully - ${result.rowCount} daily rows across ${result.periodKeys.length} period(s) and ${result.sheetTypes.length} sheet type(s).`, 'success');
-      this.ui.refreshLookups();
-      await this.load(result.latestPeriodKey);
+      if (preview.unresolved?.length) {
+        this.pendingBrand = '';
+        this.pendingUpload.set({ file, preview });
+        this.setStatus('Choose a brand for the unrecognised campaigns below.', '');
+        return;
+      }
+      await this.doUpload(file, '');
     } catch (error) { this.setStatus(this.message(error), 'error'); }
     finally { input.value = ''; }
+  }
+
+  async confirmPendingUpload(defaultBrand: string) {
+    const pending = this.pendingUpload();
+    if (!pending) return;
+    this.pendingUpload.set(null);
+    try { await this.doUpload(pending.file, defaultBrand); }
+    catch (error) { this.setStatus(this.message(error), 'error'); }
+  }
+
+  cancelPendingUpload() {
+    this.pendingUpload.set(null);
+    this.setStatus('Upload cancelled.', '');
+  }
+
+  private async doUpload(file: File, defaultBrand: string) {
+    this.setStatus('Uploading...', '');
+    const result: CampaignUploadResult = await this.api.uploadCampaign(file, defaultBrand);
+    if (result.duplicate) {
+      this.setStatus('This exact file was already uploaded today - nothing changed.', 'success');
+      return;
+    }
+    const notes = [
+      result.skippedRows ? `${result.skippedRows} row(s) skipped (missing date, campaign ID or name)` : '',
+      result.unrecognisedSheets?.length ? `sheet(s) not recognised: ${result.unrecognisedSheets.join(', ')}` : '',
+    ].filter(Boolean);
+    this.setStatus(
+      `Uploaded successfully - ${result.rowCount} daily rows across ${result.periodKeys.length} period(s) and ${result.sheetTypes.length} sheet type(s).` +
+        (notes.length ? ` Note: ${notes.join('; ')}.` : ''),
+      notes.length ? 'error' : 'success'
+    );
+    this.ui.refreshLookups();
+    await this.load(result.latestPeriodKey);
   }
 
   /** Deletes one brand's campaign data across all months (or everything when brand is empty). */
@@ -398,7 +449,10 @@ export class CampaignPageComponent implements OnInit {
     if (!replacing.length) return '';
     const lines = replacing.map((item) => {
       const shrinks = item.incoming.rowCount < (item.existing?.rowCount ?? 0) ? '  (FEWER rows than stored!)' : '';
-      return `- ${item.periodLabel} / ${this.sheetLabel(item.sheetType)}: ${item.existing?.rowCount} rows (${item.existing?.from} to ${item.existing?.to}) -> ${item.incoming.rowCount} rows (${item.incoming.from} to ${item.incoming.to})${shrinks}`;
+      const removed = (item.removedCampaigns ?? []).length
+        ? `\n    Removed (not in this file): ${item.removedCampaigns.map((c) => `${c.campaignName} (ID ${c.campaignId})`).join(', ')}`
+        : '';
+      return `- ${item.periodLabel} / ${this.sheetLabel(item.sheetType)}: ${item.existing?.rowCount} rows (${item.existing?.from} to ${item.existing?.to}) -> ${item.incoming.rowCount} rows (${item.incoming.from} to ${item.incoming.to})${shrinks}${removed}`;
     });
     return `This upload replaces data already stored:\n\n${lines.join('\n')}\n\nContinue?`;
   }

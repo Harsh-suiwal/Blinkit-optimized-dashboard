@@ -65,13 +65,21 @@ async function clearStore() {
 /**
  * Describes what an upload would replace, without writing anything: for each
  * (periodKey, sheetType) in the parsed file, the row count and date range
- * already stored versus the new one.
+ * already stored versus the new one, plus the stored campaigns that are not in
+ * the new file (they disappear, because the whole pair is replaced).
  */
 function planUpload(parsed) {
   const store = loadStore();
   return parsed.uploads.map((u) => {
     const existingUpload = store.uploads.find((e) => e.periodKey === u.periodKey && e.sheetType === u.sheetType);
     const existingRows = store.rows.filter((r) => r.periodKey === u.periodKey && r.sheetType === u.sheetType);
+    const incomingIds = new Set(
+      parsed.rows.filter((r) => r.periodKey === u.periodKey && r.sheetType === u.sheetType).map((r) => String(r.campaignId))
+    );
+    const removedCampaigns = new Map();
+    for (const r of existingRows) {
+      if (!incomingIds.has(String(r.campaignId))) removedCampaigns.set(String(r.campaignId), r.campaignName);
+    }
     return {
       periodKey: u.periodKey,
       periodLabel: u.periodLabel,
@@ -84,8 +92,20 @@ function planUpload(parsed) {
             to: existingUpload?.dateRange.to ?? existingRows.reduce((m, r) => (r.date > m ? r.date : m), existingRows[0].date),
           }
         : null,
+      removedCampaigns: Array.from(removedCampaigns, ([campaignId, campaignName]) => ({ campaignId, campaignName })),
     };
   });
+}
+
+/** Campaigns in a parsed upload whose brand could not be resolved (brandName "Unknown"). */
+function listUnresolvedCampaigns(parsed) {
+  const seen = new Map();
+  for (const r of parsed.rows) {
+    if (r.brandName !== 'Unknown') continue;
+    const key = `${r.sheetType}|${r.campaignId}`;
+    if (!seen.has(key)) seen.set(key, { campaignId: r.campaignId, campaignName: r.campaignName, sheetType: r.sheetType });
+  }
+  return Array.from(seen.values());
 }
 
 /**
@@ -328,6 +348,7 @@ module.exports = {
   clearStore,
   removeBrandRows,
   planUpload,
+  listUnresolvedCampaigns,
   upsertUpload,
   listPeriods,
   getLatestPeriodKey,

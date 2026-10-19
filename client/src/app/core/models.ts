@@ -150,4 +150,29 @@ export interface CampaignUploadPlanItem {
   sheetType: CampaignSheetType;
   incoming: { rowCount: number; from: string; to: string };
   existing: { rowCount: number; from: string; to: string } | null;
+  /** Stored campaigns of this period/sheet that are not in the new file (they will be removed). */
+  removedCampaigns: { campaignId: string; campaignName: string }[];
+}
+
+export interface CampaignUploadPreview {
+  ok: boolean;
+  dryRun: true;
+  plan: CampaignUploadPlanItem[];
+  rowCount: number;
+  /** Campaigns whose brand resolves to "Unknown". */
+  unresolved: { campaignId: string; campaignName: string; sheetType: CampaignSheetType }[];
+  skippedRows: number;
+  unrecognisedSheets: string[];
+}
+
+export interface CampaignUploadResult {
+  ok: boolean;
+  duplicate?: boolean;
+  skipped?: boolean;
+  periodKeys: string[];
+  sheetTypes: CampaignSheetType[];
+  rowCount: number;
+  skippedRows: number;
+  unrecognisedSheets: string[];
+  latestPeriodKey: string;
 }
