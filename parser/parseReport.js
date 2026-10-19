@@ -93,7 +93,9 @@ function parseReport(filePath) {
 
       // Derived fields, per the accountant's export spec
       totalStockAvailable: toNumber(record.totalSellable),
-      incomingInventory: toNumber(record.netScheduledInventory) + toNumber(record.incomingScheduledInventory),
+      // "Net scheduled" is already "Incoming scheduled" minus "Recalled", so adding the two
+      // double-counted. The incoming quantity is the "Incoming scheduled inventory" column.
+      incomingInventory: toNumber(record.incomingScheduledInventory),
     });
   }
 
