@@ -1,8 +1,19 @@
-# 📊 Blinkit Optimized Dashboard
+# 📊 Blinkit Optimized Dashboard (v6)
 
 A full-stack analytics dashboard for **Blinkit** sellers to track inventory health, city-level sales performance, and advertising campaign ROI — all from a single authenticated interface.
 
-Built with **Node.js / Express** on the backend and **Angular 20** on the frontend, backed by **Supabase** (PostgreSQL) for user authentication and role management.
+Built with **Node.js / Express** on the backend and **Angular 20** on the frontend, backed by **Supabase** (PostgreSQL) for user authentication, role management, and persistent key-value report storage.
+
+---
+
+## What's New in v6
+
+- **Supabase KV Store Persistence:** All report data (`latest`, `history`, `salesLatest`, `salesHistory`, `campaignData`, `brandAliases`, `uploadHashes`) is saved in Supabase PostgreSQL (`kv_store`), persisting cleanly across server reboots and ephemeral hosts like Render.
+- **Brand-First Multi-Brand Architecture:** Global and per-tab brand selection across Inventory, Sales, and Campaign analysis.
+- **Accurate Incoming Inventory:** Corrected the incoming stock calculation to read "Incoming scheduled inventory" directly, resolving a 2× doubling bug.
+- **Responsive Inventory Cards:** KPI summary metrics dynamically compute from active filter signals, preventing metric freezes on brand switching; includes automated 401 redirect to `/login` if sessions expire.
+- **Sales Feeder City Totals:** Added an aggregated "City totals" summary table in the Feeder view summarizing revenue, units, orders, and AOV across all products per mapped city.
+- **Campaign Unknown Brand Resolution:** Dry-run detects campaigns with "Unknown" brands and prompts administrators to assign a default brand before upload; previews replaced campaigns and flags skipped rows.
 
 ---
 

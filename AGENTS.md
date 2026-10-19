@@ -101,7 +101,7 @@ Routes: `/app/inventory` (default), `/app/sales-performance`, `/app/campaign-ana
 - Keys: latest, history, salesLatest, salesByProduct, salesHistory, campaignData, brandAliases, uploadHashes.
 - Single server instance only.
 
-## Review fixes & enhancements (v7)
+## Review fixes & enhancements (v6)
 - Inventory: incoming inventory calculation reads "Incoming scheduled inventory" only (was double-counted with net).
 - Inventory cards: summary is a computed signal over rows and filters (no card freeze on brand switch); 401 redirects to /login on session expiry.
 - Campaign Analysis: dry-run detects campaigns with "Unknown" brands and prompts admin with a brand picker before uploading; clarifies replaced campaigns and skipped rows.
