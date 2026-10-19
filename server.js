@@ -43,6 +43,7 @@ const {
 const { resolveBrand, saveAlias, loadAliases } = require('./parser/brandResolver');
 const { hashFile, isDuplicateUpload, recordUpload, clearUploadHashes } = require('./parser/uploadGuard');
 
+const kv = require('./store/kv');
 const { requireAuth, requireAdmin } = require('./middleware/auth');
 const authRoutes = require('./routes/auth');
 
@@ -50,9 +51,10 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 
 const UPLOAD_DIR = path.join(__dirname, 'uploads');
-const DATA_PATH = path.join(__dirname, 'data', 'latest.json');
-const SALES_DATA_PATH = path.join(__dirname, 'data', 'salesLatest.json');
-const PRODUCT_SALES_PATH = path.join(__dirname, 'data', 'salesByProduct.json');
+// kv_store keys (see store/kv.js)
+const LATEST_KEY = 'latest';
+const SALES_LATEST_KEY = 'salesLatest';
+const PRODUCT_SALES_KEY = 'salesByProduct';
 const ANGULAR_DIST_PATH = path.join(__dirname, 'client', 'dist', 'client', 'browser');
 // "Low stock" line; set LOW_STOCK_THRESHOLD in .env to change it (unset/invalid/negative -> 10)
 const envLowStock = process.env.LOW_STOCK_THRESHOLD;
@@ -62,7 +64,6 @@ const LOW_STOCK_THRESHOLD =
     : 10;
 
 if (!fs.existsSync(UPLOAD_DIR)) fs.mkdirSync(UPLOAD_DIR, { recursive: true });
-if (!fs.existsSync(path.join(__dirname, 'data'))) fs.mkdirSync(path.join(__dirname, 'data'), { recursive: true });
 
 const MAX_UPLOAD_BYTES = 25 * 1024 * 1024;
 const upload = multer({
@@ -198,24 +199,24 @@ function buildConsolidatedRows(parsedRows, date) {
 // Inventory is stored per brand so uploading one brand never removes another:
 //   { date, fileName, rows, brandUploads: { "<Brand>": { date, fileName } } }
 // `date`/`fileName` mirror the most recent upload for older callers.
-function saveLatest(store) {
-  fs.writeFileSync(DATA_PATH, JSON.stringify(store, null, 2));
+async function saveLatest(store) {
+  await kv.set(LATEST_KEY, store);
 }
 
+// Returns a private copy (small document), or null if nothing is stored.
 function loadLatest() {
-  if (!fs.existsSync(DATA_PATH)) return null;
-  const latest = JSON.parse(fs.readFileSync(DATA_PATH, 'utf-8'));
+  const latest = kv.get(LATEST_KEY);
+  if (!latest) return null;
   if (latest.brandUploads) return latest;
 
-  // Pre-per-brand file: attribute every row to its brand with the old date/file name.
+  // Pre-per-brand shape: attribute every row to its brand with the old date/file name.
+  // Converted in memory on each read; the next save stores the new shape.
   const brandUploads = {};
   (latest.rows || []).forEach((r) => {
     r.brandName = r.brandName || 'Unknown';
     brandUploads[r.brandName] = { date: latest.date, fileName: latest.fileName };
   });
-  const migrated = { ...latest, brandUploads };
-  saveLatest(migrated);
-  return migrated;
+  return { ...latest, rows: latest.rows || [], brandUploads };
 }
 
 // --- Upload (admin only) --------------------------------------------------
@@ -294,7 +295,7 @@ app.get('/api/summary', requireAuth, (req, res) => {
 // Wipes the current inventory view for one brand (?brand=) or for every brand. The upload history log
 // (data/history.json) is kept on purpose: it is what the 45/60-day figures
 // are computed from, and it cannot be rebuilt.
-app.delete('/api/inventory-data', requireAdmin, (req, res) => {
+app.delete('/api/inventory-data', requireAdmin, async (req, res) => {
   const brand = typeof req.query.brand === 'string' ? req.query.brand.trim() : '';
   const latest = brand ? loadLatest() : null;
 
@@ -310,7 +311,7 @@ app.delete('/api/inventory-data', requireAdmin, (req, res) => {
     }
   }
 
-  if (fs.existsSync(DATA_PATH)) fs.unlinkSync(DATA_PATH);
+  await kv.delete(LATEST_KEY);
   clearUploadHashes('inventory');
   res.json({ ok: true });
 });
@@ -482,35 +483,34 @@ app.get('/api/export', requireAuth, (req, res) => {
 //   salesByProduct.json { date, fileName, productRows }   (each product row carries brandName)
 // Reads combine the brand rows per city (see combineCityRows).
 
-function saveSalesLatest(store) {
-  fs.writeFileSync(SALES_DATA_PATH, JSON.stringify(store, null, 2));
+async function saveSalesLatest(store) {
+  await kv.set(SALES_LATEST_KEY, store);
 }
 
+// Returns a private copy (small document), or null if nothing is stored.
 function loadSalesLatest() {
-  if (!fs.existsSync(SALES_DATA_PATH)) return null;
-  const latest = JSON.parse(fs.readFileSync(SALES_DATA_PATH, 'utf-8'));
+  const latest = kv.get(SALES_LATEST_KEY);
+  if (!latest) return null;
   if (latest.brandUploads) return latest;
 
-  // Pre-per-brand file: its city rows were totalled across brands. Attribute each row to
-  // its single brand (or "Unknown") and keep the old date / file name.
+  // Pre-per-brand shape: its city rows were totalled across brands. Attribute each row to
+  // its single brand (or "Unknown") and keep the old date / file name. Converted in memory
+  // on each read; the next save stores the new shape.
   const brandUploads = {};
   const cityRows = (latest.cityRows || []).map((r) => {
     const brandName = r.brandName || (r.brands && r.brands.length === 1 ? r.brands[0] : 'Unknown');
     brandUploads[brandName] = { date: latest.date, fileName: latest.fileName };
     return { ...r, brandName };
   });
-  const migrated = { ...latest, cityRows, brandUploads };
-  saveSalesLatest(migrated);
-  return migrated;
+  return { ...latest, cityRows, brandUploads };
 }
 
-function saveProductSalesLatest(productRows, date, fileName) {
-  fs.writeFileSync(PRODUCT_SALES_PATH, JSON.stringify({ date, fileName, productRows }, null, 2));
+async function saveProductSalesLatest(productRows, date, fileName) {
+  await kv.set(PRODUCT_SALES_KEY, { date, fileName, productRows });
 }
 
 function loadProductSalesLatest() {
-  if (!fs.existsSync(PRODUCT_SALES_PATH)) return null;
-  return JSON.parse(fs.readFileSync(PRODUCT_SALES_PATH, 'utf-8'));
+  return kv.get(PRODUCT_SALES_KEY);
 }
 
 const sameBrand = (a, b) => String(a || 'Unknown').toLowerCase() === String(b || 'Unknown').toLowerCase();
@@ -657,7 +657,7 @@ app.get('/api/city-performance', requireAuth, (req, res) => {
 
 // Wipes sales data: one brand (?brand=) or everything. Trend history for the removed
 // scope goes with it so it can't resurface as a stale "previous" comparison.
-app.delete('/api/sales-history', requireAdmin, (req, res) => {
+app.delete('/api/sales-history', requireAdmin, async (req, res) => {
   const brand = typeof req.query.brand === 'string' ? req.query.brand.trim() : '';
   const latest = brand ? loadSalesLatest() : null;
 
@@ -678,8 +678,8 @@ app.delete('/api/sales-history', requireAdmin, (req, res) => {
     }
   }
 
-  if (fs.existsSync(SALES_DATA_PATH)) fs.unlinkSync(SALES_DATA_PATH);
-  if (fs.existsSync(PRODUCT_SALES_PATH)) fs.unlinkSync(PRODUCT_SALES_PATH);
+  await kv.delete(SALES_LATEST_KEY);
+  await kv.delete(PRODUCT_SALES_KEY);
   clearHistory();
   clearUploadHashes('sales');
   res.json({ ok: true });
@@ -1103,6 +1103,15 @@ app.get('/api/export-all', requireAuth, (req, res) => {
   res.send(buffer);
 });
 
-app.listen(PORT, () => {
-  console.log(`Blinkit dashboard running at http://localhost:${PORT}`);
-});
+// Report data must be loaded before serving; never start with an empty store.
+kv.init()
+  .then((count) => {
+    console.log(`Loaded ${count} kv_store key(s).`);
+    app.listen(PORT, () => {
+      console.log(`Blinkit dashboard running at http://localhost:${PORT}`);
+    });
+  })
+  .catch((err) => {
+    console.error(err.message);
+    process.exit(1);
+  });
