@@ -852,8 +852,17 @@ const SHEET_TYPES = ['PRODUCT_BOOSTING', 'PRODUCT_RECOMMENDATION'];
 
 // Rows removed by DELETE are held here so undo can restore them by token
 // instead of the browser re-posting thousands of daily rows. Lost on restart.
-const campaignTrash = new Map();
+const campaignTrash = new Map(); // undoToken -> { rows, expires }
 const TRASH_LIMIT = 20;
+const TRASH_TTL_MS = 10 * 60 * 1000;
+
+function sweepCampaignTrash() {
+  const now = Date.now();
+  for (const [token, entry] of campaignTrash) {
+    if (entry.expires <= now) campaignTrash.delete(token);
+  }
+}
+setInterval(sweepCampaignTrash, 60 * 1000).unref();
 
 function campaignFilters(req, store) {
   const periodKey = resolveCampaignPeriod(store, req.query.periodKey);
@@ -960,7 +969,7 @@ app.delete('/api/campaign-analysis', requireAdmin, (req, res) => {
   clearUploadHashes('campaign');
 
   const undoToken = `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
-  campaignTrash.set(undoToken, removed);
+  campaignTrash.set(undoToken, { rows: removed, expires: Date.now() + TRASH_TTL_MS });
   while (campaignTrash.size > TRASH_LIMIT) campaignTrash.delete(campaignTrash.keys().next().value);
 
   res.json({ ok: true, removedRows: removed.length, undoToken });
@@ -969,7 +978,9 @@ app.delete('/api/campaign-analysis', requireAdmin, (req, res) => {
 // Re-inserts a previously deleted campaign (Ctrl+Z / undo) using its token.
 app.post('/api/campaign-analysis/restore', requireAdmin, (req, res) => {
   const { undoToken } = req.body || {};
-  const rows = undoToken ? campaignTrash.get(undoToken) : null;
+  sweepCampaignTrash();
+  const entry = undoToken ? campaignTrash.get(undoToken) : null;
+  const rows = entry ? entry.rows : null;
   if (!rows) return res.status(404).json({ error: 'Nothing to restore - the undo window has expired.' });
 
   restoreCampaignRows(rows);
