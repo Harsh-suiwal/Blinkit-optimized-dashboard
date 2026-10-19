@@ -10,7 +10,8 @@ require('dotenv').config();
 const bcrypt = require('bcrypt');
 const supabase = require('./supabase');
 
-const ADMIN_EMAIL = process.env.ADMIN_EMAIL || 'admin@blinkit.local';
+// login lowercases the email it looks up, so the seeded one must be lowercase too
+const ADMIN_EMAIL = String(process.env.ADMIN_EMAIL || 'admin@blinkit.local').trim().toLowerCase();
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'changeme123';
 
 async function seed() {
