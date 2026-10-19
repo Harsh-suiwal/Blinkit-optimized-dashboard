@@ -7,8 +7,8 @@ yarn-error.log*
 pnpm-debug.log*
 
 # excel sheets
-.xls
-.xlsx
+*.xls
+*.xlsx
 
 # Environment files
 .env
