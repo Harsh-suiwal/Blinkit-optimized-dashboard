@@ -54,7 +54,12 @@ const DATA_PATH = path.join(__dirname, 'data', 'latest.json');
 const SALES_DATA_PATH = path.join(__dirname, 'data', 'salesLatest.json');
 const PRODUCT_SALES_PATH = path.join(__dirname, 'data', 'salesByProduct.json');
 const ANGULAR_DIST_PATH = path.join(__dirname, 'client', 'dist', 'client', 'browser');
-const LOW_STOCK_THRESHOLD = 10; // change this one number to adjust the "low stock" line
+// "Low stock" line; set LOW_STOCK_THRESHOLD in .env to change it (unset/invalid/negative -> 10)
+const envLowStock = process.env.LOW_STOCK_THRESHOLD;
+const LOW_STOCK_THRESHOLD =
+  envLowStock && envLowStock.trim() !== '' && Number.isFinite(Number(envLowStock)) && Number(envLowStock) >= 0
+    ? Number(envLowStock)
+    : 10;
 
 if (!fs.existsSync(UPLOAD_DIR)) fs.mkdirSync(UPLOAD_DIR, { recursive: true });
 if (!fs.existsSync(path.join(__dirname, 'data'))) fs.mkdirSync(path.join(__dirname, 'data'), { recursive: true });

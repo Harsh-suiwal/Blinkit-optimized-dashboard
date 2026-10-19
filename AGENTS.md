@@ -51,7 +51,7 @@ Routes: `/app/inventory` (default), `/app/sales-performance`, `/app/campaign-ana
 **Export (R):** `GET export`, `export-campaign?periodKey&brand&sheetType` (summary + daily sheets), `export-all?periodKey` → .xlsx
 
 ## Domain rules (intentional, don't "fix")
-- Stock: Out = 0, Low ≤ `LOW_STOCK_THRESHOLD` (10, in server.js), else OK.
+- Stock: Out = 0, Low ≤ `LOW_STOCK_THRESHOLD` (env, default 10), else OK.
 - 45/60-day sold are computed from upload history (Blinkit only gives 7/15/30). Needs an upload ~30 days before latest (±`ANCHOR_TOLERANCE_DAYS`=5 in snapshotHistory.js). Otherwise shows "Insufficient data".
 - Sales: city revenue change % vs previous upload; tiers top/low by revenue distribution; metrics = revenue, units, orders, AOV, best product.
 - Campaign: the Blinkit export is one row per day x campaign x targeting value, in two sheets (Product Boosting has Targeting Value/Match Type/Position; Recommendation does not). Sheet type is detected from headers, never the sheet name. Re-upload replaces by (periodKey, sheetType); periodKey is derived per row from the DD-MM-YYYY date. Aggregation happens at query time; ROAS/ROI/CPM are recomputed from sums, never averaged. The export has no status/duration, so the UI has none. The old aggregated store is auto-moved to data/campaignData.v1.json.

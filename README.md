@@ -415,7 +415,7 @@ This mapping enables feeder-scoped views in the Sales Performance tab.
 
 | Setting | Location | Default | Description |
 |---------|----------|---------|-------------|
-| `LOW_STOCK_THRESHOLD` | `server.js` | `10` | Stock count at or below which a product is flagged "Low" |
+| `LOW_STOCK_THRESHOLD` | `.env` | `10` | Stock count at or below which a product is flagged "Low" |
 | `ANCHOR_TOLERANCE_DAYS` | `parser/snapshotHistory.js` | `5` | Days of slack when looking for a ~30-day-old upload to anchor 45/60-day calculations |
 | `PORT` | `.env` | `3000` | Server listening port |
 | `SESSION_SECRET` | `.env` | — | Express session signing secret (required when `NODE_ENV=production`) |
