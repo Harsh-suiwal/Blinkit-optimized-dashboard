@@ -233,7 +233,7 @@ app.post('/api/upload', requireAdmin, uploadReport, (req, res) => {
     const date = todayDateString();
 
     // Rows with an empty Brand Name column fall back to the file name, then "Unknown".
-    const fileBrand = resolveBrand(req.file.originalname.replace(/.[^.]+$/, '')).brand;
+    const fileBrand = resolveBrand(path.parse(req.file.originalname).name).brand;
     parsedRows.forEach((row) => {
       if (!row.brandName) row.brandName = fileBrand;
     });
@@ -593,7 +593,7 @@ app.post('/api/sales-upload', requireAdmin, uploadReport, (req, res) => {
     const date = todayDateString();
 
     // Orders with an empty Brand Name fall back to the file name, then "Unknown".
-    const fileBrand = resolveBrand(req.file.originalname.replace(/\.[^.]+$/, '')).brand;
+    const fileBrand = resolveBrand(path.parse(req.file.originalname).name).brand;
     salesRows.forEach((row) => {
       if (!row.brandName) row.brandName = fileBrand;
     });

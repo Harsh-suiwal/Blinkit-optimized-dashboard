@@ -1,3 +1,4 @@
+const path = require('path');
 const XLSX = require('xlsx');
 const columnMap = require('./columnMap');
 const { resolveBrand, loadAliases } = require('./brandResolver');
@@ -80,7 +81,7 @@ function parseCampaignFile(filePath, options = {}) {
   const { fileName = '', defaultBrand = '' } = options;
   const workbook = XLSX.readFile(filePath);
   const aliases = loadAliases();
-  const fileBrand = resolveBrand(fileName.replace(/\.[^.]+$/, ''), '', aliases);
+  const fileBrand = resolveBrand(path.parse(fileName).name, '', aliases);
   const brandCache = new Map();
 
   const brandFor = (campaignName) => {
