@@ -3,6 +3,9 @@
   "version": "1.0.0",
   "description": "Blinkit optimized analytics dashboard — inventory, sales, and campaign reporting",
   "main": "server.js",
+  "engines": {
+    "node": ">=18"
+  },
   "scripts": {
     "start": "node scripts/require-build.js && node server.js",
     "build": "npm run install:client && npm run build:client",
