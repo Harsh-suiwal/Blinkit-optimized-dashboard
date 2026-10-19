@@ -55,6 +55,14 @@ import { FEEDER_CITY_MAP, feederCities } from '../core/feeder-map';
     </section>
     @if (ui.focusedFeeder()) {
     <section class="table-wrap">
+      <h3>City totals</h3>
+      <p class="muted">All products, per mapped city. A city that belongs to several feeders (e.g. Delhi) shows its full city total here, not a share for this feeder.</p>
+      <table id="feederCityTotals"><thead><tr><th>City</th><th>Revenue</th><th>Units Sold</th><th>Orders</th><th>Avg Order Value</th></tr></thead><tbody>
+        @for (row of feederCityTotals(); track row.city) { <tr><td>{{ row.city }}</td><td>{{ money(row.revenue) }}</td><td>{{ row.units }}</td><td>{{ row.orderCount ?? 'N/A' }}</td><td>@if (row.avgOrderValue === undefined) { <span class="na">N/A</span> } @else { {{ money(row.avgOrderValue) }} }</td></tr> }
+      </tbody></table>
+      @if (!feederCityTotals().length) { <p class="muted">No sales for this feeder's cities.</p> }
+    </section>
+    <section class="table-wrap">
       <table id="feederProductTable"><thead><tr><th (click)="sortFeederBy('city')">City {{ feederSortIndicator('city') }}</th><th (click)="sortFeederBy('productName')">Product {{ feederSortIndicator('productName') }}</th><th (click)="sortFeederBy('revenue')">Revenue {{ feederSortIndicator('revenue') }}</th><th (click)="sortFeederBy('units')">Units Sold {{ feederSortIndicator('units') }}</th><th (click)="sortFeederBy('orderCount')">Orders {{ feederSortIndicator('orderCount') }}</th><th (click)="sortFeederBy('avgOrderValue')">Avg Order Value {{ feederSortIndicator('avgOrderValue') }}</th></tr></thead><tbody>
         @for (row of displayedFeederRows(); track row.city + '::' + row.productName) { <tr [class.row-top]="row.tier === 'top'" [class.row-low]="row.tier === 'low'"><td>{{ row.city }}</td><td>{{ row.productName }}</td><td>{{ money(row.revenue) }}</td><td>{{ row.units }}</td><td>{{ row.orderCount ?? 'N/A' }}</td><td>@if (row.avgOrderValue === undefined) { <span class="na">N/A</span> } @else { {{ money(row.avgOrderValue) }} }</td></tr> }
       </tbody></table>
@@ -110,6 +118,9 @@ export class SalesPageComponent implements OnInit {
     const cities = new Set(feederCities(feeder).map((city) => city.toLocaleLowerCase()));
     return this.rows().filter((row) => cities.has(row.city.trim().toLocaleLowerCase()));
   });
+  // City-level rows (all products, brand-filtered by the API) for the feeder's cities, biggest first.
+  // Uses the city rows rather than summing product rows, since one order can hold several products.
+  readonly feederCityTotals = computed(() => [...this.filteredRows()].sort((a, b) => b.revenue - a.revenue));
   readonly feederProductNames = computed(() => {
     const cities = new Set(feederCities(this.ui.focusedFeeder()).map((city) => city.trim().toLocaleLowerCase()));
     return this.feederProductRows()
