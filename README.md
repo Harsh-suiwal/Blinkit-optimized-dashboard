@@ -418,7 +418,8 @@ This mapping enables feeder-scoped views in the Sales Performance tab.
 | `LOW_STOCK_THRESHOLD` | `server.js` | `10` | Stock count at or below which a product is flagged "Low" |
 | `ANCHOR_TOLERANCE_DAYS` | `parser/snapshotHistory.js` | `5` | Days of slack when looking for a ~30-day-old upload to anchor 45/60-day calculations |
 | `PORT` | `.env` | `3000` | Server listening port |
-| `SESSION_SECRET` | `.env` | — | Express session signing secret |
+| `SESSION_SECRET` | `.env` | — | Express session signing secret (required when `NODE_ENV=production`) |
+| `NODE_ENV` | environment | — | Set to `production` on the host (Render): enables secure session cookies, so it must be served over HTTPS |
 | `SUPABASE_URL` | `.env` | — | Supabase project URL |
 | `SUPABASE_SERVICE_KEY` | `.env` | — | Supabase service-role key (never expose to browser) |
 | `ADMIN_EMAIL` | `.env` | — | Email for the seeded admin account |

@@ -74,6 +74,9 @@ if (!sessionSecret) {
   console.warn('SESSION_SECRET is not set; using a random one for this run.');
 }
 
+// Behind Render's HTTPS proxy: trust the first hop so req.secure / client IPs are right.
+app.set('trust proxy', 1);
+
 app.use(
   session({
     secret: sessionSecret,
@@ -81,7 +84,8 @@ app.use(
     saveUninitialized: false,
     cookie: {
       httpOnly: true,
-      secure: false, // set to true behind HTTPS in production
+      secure: process.env.NODE_ENV === 'production', // HTTPS only in production
+      sameSite: 'lax',
       maxAge: 1000 * 60 * 60 * 24, // 24 hours
     },
   })
