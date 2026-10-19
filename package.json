@@ -4,7 +4,7 @@
   "description": "Blinkit optimized analytics dashboard — inventory, sales, and campaign reporting",
   "main": "server.js",
   "scripts": {
-    "start": "npm run build",
+    "start": "node scripts/require-build.js && node server.js",
     "build": "npm run install:client && npm run build:client",
     "render-build": "npm ci --omit=dev && npm run install:client && npm run build:client",
     "deploy":"node scripts/require-build.js && node server.js",

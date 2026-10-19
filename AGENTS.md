@@ -10,8 +10,9 @@ npm install && cd client && npm install && cd ..
 cp .env.example .env   # SUPABASE_URL, SUPABASE_SERVICE_KEY, SESSION_SECRET, ADMIN_EMAIL, ADMIN_PASSWORD, PORT=3000
 npm run seed           # create admin (needs db/schema.sql run in Supabase first)
 npm run dev            # express(nodemon) + ng serve
-npm start              # install client deps + build client + express (prod); same as `npm run build`
-npm run deploy         # express only, reusing the existing build (errors if client/dist is missing)
+npm run build        # install client deps + build client (does not start express)
+npm start              # require-build check + express (prod); errors if client/dist is missing
+npm run deploy         # same as start (kept for older docs/scripts)
 npm run render-build   # Render build step: root deps (no dev) + client deps + client build; Render start = `node server.js`
 ```
 Other: `serve` (express only, no build check), `build:client` (build only, does not start), `dev:client`, `install:client`. App: `localhost:3000` → `/login` (static) → `/app/` (Angular).

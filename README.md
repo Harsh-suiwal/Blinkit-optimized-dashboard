@@ -169,8 +169,9 @@ This creates (or updates) the first admin account in Supabase using the `ADMIN_E
 
 ### 6. Run the Application
 
-**Production (builds Angular, then starts Express):**
+**Production (build Angular, then start Express):**
 ```bash
+npm run build
 npm start
 ```
 
@@ -429,11 +430,11 @@ This mapping enables feeder-scoped views in the Sales Performance tab.
 
 | Command | Description |
 |---------|-------------|
-| `npm start` | Install client deps, build the Angular client, then start Express (same as `npm run build`) |
+| `npm start` | Start Express using the existing client build (fails with a hint if there is none; run `npm run build` first) |
 | `npm run deploy` | Start Express using the existing build (fails with a hint if there is none) |
 | `npm run dev` | Start Express (nodemon) + Angular dev server (concurrently) |
 | `npm run serve` | Start Express only (no client build) |
-| `npm run build` | Rebuild everything, then start Express |
+| `npm run build` | Install client deps and build the Angular client (does not start Express) |
 | `npm run build:client` | Build Angular client only |
 | `npm run dev:client` | Start Angular dev server only |
 | `npm run install:client` | Clean-install client dependencies |
