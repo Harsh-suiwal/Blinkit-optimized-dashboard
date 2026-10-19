@@ -10,9 +10,9 @@ const router = express.Router();
 
 // POST /api/login
 router.post('/login', async (req, res) => {
-  const { email, password } = req.body;
+  const { email, password } = req.body || {};
 
-  if (!email || !password) {
+  if (typeof email !== 'string' || typeof password !== 'string' || !email || !password) {
     return res.status(400).json({ error: 'Email and password are required.' });
   }
 
@@ -32,16 +32,27 @@ router.post('/login', async (req, res) => {
       return res.status(401).json({ error: 'Invalid email or password.' });
     }
 
-    // Set session
-    req.session.user = {
-      id: user.id,
-      email: user.email,
-      role: user.role,
-    };
-
-    res.json({
-      ok: true,
-      user: { email: user.email, role: user.role },
+    // New session id on login (prevents session fixation), then store the user.
+    req.session.regenerate((regenErr) => {
+      if (regenErr) {
+        console.error('Session regenerate error:', regenErr);
+        return res.status(500).json({ error: 'Internal server error.' });
+      }
+      req.session.user = {
+        id: user.id,
+        email: user.email,
+        role: user.role,
+      };
+      req.session.save((saveErr) => {
+        if (saveErr) {
+          console.error('Session save error:', saveErr);
+          return res.status(500).json({ error: 'Internal server error.' });
+        }
+        res.json({
+          ok: true,
+          user: { email: user.email, role: user.role },
+        });
+      });
     });
   } catch (err) {
     console.error('Login error:', err);
