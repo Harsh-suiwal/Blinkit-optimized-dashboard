@@ -267,7 +267,8 @@ export class SalesPageComponent implements OnInit {
       this.brandSummaries.set(data.brandSummaries || []);
       this.brandUploads.set(data.brandUploads || {});
       this.lastDate.set(data.date);
-      this.knownBrands.set((await this.api.brandNames()).brands);
+      // Brand chips only; a failure here must not stop the summary below.
+      this.knownBrands.set(await this.api.brandNames().then((r) => r.brands, () => this.knownBrands()));
       if (this.ui.focusedFeeder()) {
         const products = await this.api.productCitySales(brand || undefined);
         this.feederProductRows.set(products.productRows || []);

@@ -70,7 +70,9 @@ export class InventoryPageComponent implements OnInit {
   readonly brandChips = computed(() => mergeKnownBrands(this.brandStock(), this.knownBrands()));
   readonly brandNames = computed(() => this.brandStock().map((chip) => chip.brandName));
   readonly lastUpdated = computed(() => this.describeUpdate());
-  readonly summary = signal<InventorySummary>({ totalUnitsSold30: 0, totalStock: 0, productCount: 0, lowOrOutCount: 0 });
+  // Derived from the loaded rows so the cards follow the brand/product filter instantly,
+  // even if a reload fails (e.g. a 401 after a server restart).
+  readonly summary = computed<InventorySummary>(() => this.summarize(this.scopedRows()));
   readonly status = signal('');
   readonly statusType = signal<'success' | 'error' | ''>('');
   readonly pendingDelete = signal('');
@@ -80,6 +82,7 @@ export class InventoryPageComponent implements OnInit {
   readonly sortAsc = signal(true);
   private undoStack: { row: ProductRow; index: number }[] = [];
   private initialized = false;
+  private loadSeq = 0;
   private pendingTimer?: ReturnType<typeof setTimeout>;
 
   constructor() {
@@ -145,7 +148,6 @@ export class InventoryPageComponent implements OnInit {
       this.rows.update((items) => items.filter((item) => this.rowKey(item) !== key));
       this.undoStack.push({ row: result.removedRow || row, index: result.index ?? index });
       if (this.undoStack.length > 15) this.undoStack.shift();
-      this.recalculateFocusedSummary();
       this.setStatus('Row deleted. Press Ctrl+Z to undo.', 'success');
     } catch (error) { this.setStatus(this.message(error), 'error'); }
   }
@@ -159,7 +161,6 @@ export class InventoryPageComponent implements OnInit {
     try {
       await this.api.restoreProduct(record.row, record.index);
       this.rows.update((items) => { const next = [...items]; next.splice(Math.max(0, Math.min(record.index, next.length)), 0, record.row); return next; });
-      this.recalculateFocusedSummary();
       this.setStatus('Restored.', 'success');
     } catch (error) { this.setStatus(this.message(error), 'error'); }
   }
@@ -171,15 +172,22 @@ export class InventoryPageComponent implements OnInit {
   }
 
   private async load() {
+    const seq = ++this.loadSeq; // only the newest load may write state
     try {
       const data = await this.api.products();
+      if (seq !== this.loadSeq) return;
       this.rows.set(data.rows || []);
       this.brandUploads.set(data.brandUploads || {});
       this.lastDate.set(data.date);
-      this.knownBrands.set((await this.api.brandNames()).brands);
-      if (this.ui.focusedProduct() || this.ui.focusedBrand()) this.recalculateFocusedSummary();
-      else this.summary.set(await this.api.inventorySummary());
-    } catch (error) { this.setStatus(this.message(error), 'error'); }
+    } catch (error) {
+      if (seq === this.loadSeq) this.setStatus(this.message(error), 'error');
+      return;
+    }
+    // Brand chips only; a failure here must not affect the rows or cards.
+    try {
+      const { brands } = await this.api.brandNames();
+      if (seq === this.loadSeq) this.knownBrands.set(brands);
+    } catch { /* keep the previous chips */ }
   }
 
   private describeUpdate() {
@@ -191,19 +199,24 @@ export class InventoryPageComponent implements OnInit {
 
   private filterRows() {
     const query = this.query().trim().toLowerCase();
-    const brand = this.ui.focusedBrand().toLowerCase();
-    const product = this.ui.focusedProduct();
-    let values = this.rows().filter((row) => row.productName.toLowerCase().includes(query) || row.warehouseName.toLowerCase().includes(query));
-    if (brand) values = values.filter((row) => brandFor(row).toLowerCase() === brand);
-    if (product) values = values.filter((row) => row.productName === product);
+    let values = this.scopedRows().filter((row) => row.productName.toLowerCase().includes(query) || row.warehouseName.toLowerCase().includes(query));
     const sortKey = this.sortKey();
     if (sortKey) values = [...values].sort((a, b) => (this.sortAsc() ? 1 : -1) * compareValues(a, b, sortKey));
     return values;
   }
 
-  private recalculateFocusedSummary() {
-    const rows = this.filterRows();
-    this.summary.set({ totalUnitsSold30: rows.reduce((sum, row) => sum + row.unitsSold30, 0), totalStock: rows.reduce((sum, row) => sum + row.totalStockAvailable, 0), productCount: new Set(rows.map((row) => row.productName)).size, lowOrOutCount: rows.filter((row) => row.stockStatus !== 'ok').length });
+  /** Rows narrowed by the focused brand and product (not the search box). */
+  private scopedRows() {
+    const brand = this.ui.focusedBrand().toLowerCase();
+    const product = this.ui.focusedProduct();
+    let values = this.rows();
+    if (brand) values = values.filter((row) => brandFor(row).toLowerCase() === brand);
+    if (product) values = values.filter((row) => row.productName === product);
+    return values;
+  }
+
+  private summarize(rows: ProductRow[]): InventorySummary {
+    return { totalUnitsSold30: rows.reduce((sum, row) => sum + row.unitsSold30, 0), totalStock: rows.reduce((sum, row) => sum + row.totalStockAvailable, 0), productCount: new Set(rows.map((row) => row.productName)).size, lowOrOutCount: rows.filter((row) => row.stockStatus !== 'ok').length };
   }
 
   private setStatus(value: string, type: 'success' | 'error' | '') { this.status.set(value); this.statusType.set(type); }

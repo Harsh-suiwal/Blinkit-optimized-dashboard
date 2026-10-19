@@ -14,7 +14,6 @@ import {
   CampaignUploadPlanItem,
   CityRow,
   SalesBrandRow,
-  InventorySummary,
   ProductRow,
   ProductCitySalesRow,
   ProductSalesRow,
@@ -38,9 +37,6 @@ export class ApiService {
     return this.get<{ date: string | null; brandUploads?: Record<string, BrandUpload>; rows: ProductRow[] }>('/api/products');
   }
 
-  inventorySummary() {
-    return this.get<InventorySummary>('/api/summary');
-  }
 
   uploadInventory(file: File) {
     return this.upload<{ ok: boolean; date: string; rowCount: number; totalRowCount: number; brands: string[] }>('/api/upload', file);
@@ -160,28 +156,34 @@ export class ApiService {
   }
 
   private async get<T>(url: string): Promise<T> {
-    return this.call(this.http.get<T>(url));
+    return this.call(this.http.get<T>(url), url);
   }
 
   private async post<T>(url: string, body: unknown): Promise<T> {
-    return this.call(this.http.post<T>(url, body));
+    return this.call(this.http.post<T>(url, body), url);
   }
 
   private async delete<T>(url: string, body?: unknown): Promise<T> {
-    return this.call(this.http.delete<T>(url, body === undefined ? {} : { body }));
+    return this.call(this.http.delete<T>(url, body === undefined ? {} : { body }), url);
   }
 
   private async upload<T>(url: string, file: File): Promise<T> {
     const body = new FormData();
     body.append('report', file);
-    return this.call(this.http.post<T>(url, body));
+    return this.call(this.http.post<T>(url, body), url);
   }
 
-  private async call<T>(request: Observable<T>): Promise<T> {
+  private async call<T>(request: Observable<T>, url: string): Promise<T> {
     try {
       return await firstValueFrom(request);
     } catch (error) {
       const httpError = error as HttpErrorResponse;
+      // Session gone (e.g. the server restarted): back to the login page. /api/me and
+      // /api/login are left to the auth guard / login page to avoid double redirects.
+      const path = url.split('?')[0];
+      if (httpError.status === 401 && path !== '/api/me' && path !== '/api/login') {
+        window.location.assign('/login');
+      }
       const message = typeof httpError.error?.error === 'string' ? httpError.error.error : httpError.message;
       throw new Error(message || 'The request failed.');
     }
