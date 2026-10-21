@@ -5,6 +5,11 @@ const STORE_KEY = 'campaignData'; // kv key; { uploads: [...], rows: [...] }
 
 const EMPTY_STORE = () => ({ uploads: [], rows: [] });
 
+// A "slot" is one brand's data for one period + sheet type. An upload replaces only the slots it contains.
+const brandKey = (brand) => String(brand || '').toLowerCase();
+const slotKey = (x) => `${x.periodKey}|${x.sheetType}|${brandKey(x.brandName)}`;
+const pairKey = (x) => `${x.periodKey}|${x.sheetType}`;
+
 // --- Persistence -------------------------------------------------------------
 
 let warnedBadShape = false;
@@ -47,9 +52,11 @@ async function removeBrandRows(brand) {
   const removed = store.rows.length - kept.length;
   if (removed) {
     store.rows = kept;
-    // Drop upload records whose (period, sheetType) no longer has any rows.
-    const alive = new Set(kept.map((r) => `${r.periodKey}|${r.sheetType}`));
-    store.uploads = store.uploads.filter((u) => alive.has(`${u.periodKey}|${u.sheetType}`));
+    // Drop upload records whose slot no longer has any rows. Old records without a brandName
+    // covered a whole period + sheet type, so they are judged by that pair instead.
+    const aliveSlots = new Set(kept.map(slotKey));
+    const alivePairs = new Set(kept.map(pairKey));
+    store.uploads = store.uploads.filter((u) => (u.brandName ? aliveSlots.has(slotKey(u)) : alivePairs.has(pairKey(u))));
     await saveStore(store);
   }
   return removed;
@@ -64,17 +71,19 @@ async function clearStore() {
 
 /**
  * Describes what an upload would replace, without writing anything: for each
- * (periodKey, sheetType) in the parsed file, the row count and date range
- * already stored versus the new one, plus the stored campaigns that are not in
- * the new file (they disappear, because the whole pair is replaced).
+ * (periodKey, sheetType, brandName) in the parsed file, the row count and date range
+ * already stored versus the new one, plus that brand's stored campaigns that are not
+ * in the new file (they disappear, because the whole brand slot is replaced).
+ * Other brands in the same period / sheet type are not touched.
  */
 function planUpload(parsed) {
   const store = loadStore();
   return parsed.uploads.map((u) => {
-    const existingUpload = store.uploads.find((e) => e.periodKey === u.periodKey && e.sheetType === u.sheetType);
-    const existingRows = store.rows.filter((r) => r.periodKey === u.periodKey && r.sheetType === u.sheetType);
+    const slot = slotKey(u);
+    const existingUpload = store.uploads.find((e) => e.brandName && slotKey(e) === slot);
+    const existingRows = store.rows.filter((r) => slotKey(r) === slot);
     const incomingIds = new Set(
-      parsed.rows.filter((r) => r.periodKey === u.periodKey && r.sheetType === u.sheetType).map((r) => String(r.campaignId))
+      parsed.rows.filter((r) => slotKey(r) === slot).map((r) => String(r.campaignId))
     );
     const removedCampaigns = new Map();
     for (const r of existingRows) {
@@ -84,6 +93,7 @@ function planUpload(parsed) {
       periodKey: u.periodKey,
       periodLabel: u.periodLabel,
       sheetType: u.sheetType,
+      brandName: u.brandName,
       incoming: { rowCount: u.rowCount, from: u.dateRange.from, to: u.dateRange.to },
       existing: existingRows.length
         ? {
@@ -109,17 +119,20 @@ function listUnresolvedCampaigns(parsed) {
 }
 
 /**
- * Stores a parsed upload. Every (periodKey, sheetType) it contains replaces
- * what was stored for that pair, because Blinkit exports the whole month each
- * time; other months / sheet types are untouched.
+ * Stores a parsed upload. Every (periodKey, sheetType, brandName) it contains replaces
+ * what was stored for that slot, because Blinkit exports the whole month each time.
+ * Other months, sheet types and other brands are untouched.
  */
 async function upsertUpload(parsed) {
   const store = loadStoreForWrite();
-  const replaced = new Set(parsed.uploads.map((u) => `${u.periodKey}|${u.sheetType}`));
-  const keep = (x) => !replaced.has(`${x.periodKey}|${x.sheetType}`);
+  const replacedSlots = new Set(parsed.uploads.map(slotKey));
+  const replacedPairs = new Set(parsed.uploads.map(pairKey));
+  const keepRow = (r) => !replacedSlots.has(slotKey(r));
+  // Old upload records (no brandName) only hold informational dates; drop them for any pair being replaced.
+  const keepUpload = (u) => (u.brandName ? !replacedSlots.has(slotKey(u)) : !replacedPairs.has(pairKey(u)));
 
-  store.uploads = store.uploads.filter(keep).concat(parsed.uploads);
-  store.rows = store.rows.filter(keep).concat(parsed.rows);
+  store.uploads = store.uploads.filter(keepUpload).concat(parsed.uploads);
+  store.rows = store.rows.filter(keepRow).concat(parsed.rows);
   await saveStore(store);
   return store;
 }

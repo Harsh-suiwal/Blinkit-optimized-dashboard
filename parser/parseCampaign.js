@@ -170,13 +170,13 @@ function parseCampaignFile(filePath, options = {}) {
   return { uploads: summariseUploads(rows, fileName), rows, skippedRows, unrecognisedSheets: unrecognised };
 }
 
-/** One upload entry per (periodKey, sheetType) present in the parsed rows. */
+/** One upload entry per (periodKey, sheetType, brandName) present in the parsed rows. */
 function summariseUploads(rows, fileName) {
   const groups = new Map();
   for (const row of rows) {
-    const key = `${row.periodKey}|${row.sheetType}`;
+    const key = `${row.periodKey}|${row.sheetType}|${row.brandName}`;
     if (!groups.has(key)) {
-      groups.set(key, { periodKey: row.periodKey, sheetType: row.sheetType, from: row.date, to: row.date, rowCount: 0 });
+      groups.set(key, { periodKey: row.periodKey, sheetType: row.sheetType, brandName: row.brandName, from: row.date, to: row.date, rowCount: 0 });
     }
     const g = groups.get(key);
     if (row.date < g.from) g.from = row.date;
@@ -186,9 +186,10 @@ function summariseUploads(rows, fileName) {
 
   const uploadedAt = new Date().toISOString();
   return Array.from(groups.values())
-    .sort((a, b) => a.periodKey.localeCompare(b.periodKey) || a.sheetType.localeCompare(b.sheetType))
+    .sort((a, b) => a.periodKey.localeCompare(b.periodKey) || a.sheetType.localeCompare(b.sheetType) || a.brandName.localeCompare(b.brandName))
     .map((g) => ({
-      uploadId: `${uploadedAt}|${g.periodKey}|${g.sheetType}`,
+      uploadId: `${uploadedAt}|${g.periodKey}|${g.sheetType}|${g.brandName}`,
+      brandName: g.brandName,
       fileName,
       uploadedDate: todayDateString(),
       dateRange: { from: g.from, to: g.to },
