@@ -9,13 +9,15 @@ import { ClearDataDialogComponent } from '../shared/clear-data-dialog.component'
 import { FEEDER_CITY_MAP, feederCities } from '../core/feeder-map';
 
 type ProductSortKey = 'productName' | 'revenue' | 'units' | 'orderCount' | 'avgOrderValue' | 'topCity';
+type ProductCitySortKey = 'city' | 'revenue' | 'sharePct' | 'units' | 'orderCount' | 'avgOrderValue';
+type ProductCityRow = CityRow & { sharePct: number };
 
 @Component({
   selector: 'app-sales-page',
   imports: [BrandFilterComponent, ClearDataDialogComponent],
   template: `
     <header class="topbar">
-      <div class="topbar-left"><div><h1>Sales Performance - City Wise</h1><span class="muted">{{ lastUpdated() }}</span></div></div>
+      <div class="topbar-left"><div><h1>{{ view() === 'product' ? 'Sales Performance - Product Wise' : 'Sales Performance - City Wise' }}</h1><span class="muted">{{ lastUpdated() }}</span></div></div>
       <div class="topbar-right">
         @if (isAdmin()) { <label class="upload-btn">Upload Sales Report<input type="file" accept=".xlsx" hidden (change)="upload($event)"></label> }
         <button class="secondary-btn" (click)="getSheet()">Get Sheet</button>
@@ -26,6 +28,13 @@ type ProductSortKey = 'productName' | 'revenue' | 'units' | 'orderCount' | 'avgO
     @if (brandChips().length) {
       <section class="brand-bar"><app-brand-filter [brands]="brandChips()" [selected]="ui.focusedBrand()" (select)="ui.setBrand($event)" /></section>
     }
+    <section class="controls">
+      <div class="sheet-tabs" role="tablist">
+        <button type="button" role="tab" class="sheet-tab" [class.active]="view() === 'city'" (click)="setView('city')">City wise</button>
+        <button type="button" role="tab" class="sheet-tab" [class.active]="view() === 'product'" (click)="setView('product')">Product wise</button>
+      </div>
+    </section>
+    @if (view() === 'city') {
     <section class="cards">
       <div class="card"><div class="card-label">{{ ui.focusedFeeder() ? 'Feeder Revenue' : 'Total Revenue' }}</div><div class="card-value">{{ money(ui.focusedFeeder() ? feederSummary().revenue : summary().totalRevenue) }}</div></div>
       <div class="card"><div class="card-label">Total Units Sold</div><div class="card-value">{{ ui.focusedFeeder() ? feederSummary().units : summary().totalUnits }}</div></div>
@@ -86,15 +95,47 @@ type ProductSortKey = 'productName' | 'revenue' | 'units' | 'orderCount' | 'avgO
       </tbody></table>
       @if (!displayedRows().length) { <p class="muted">{{ emptyMessage() }}</p> }
     </section>
+    }
+    } @else {
+    <section class="controls">
+      <label class="filter-label" for="productSearch">Product</label>
+      <input id="productSearch" type="search" aria-label="Search products" placeholder="Search a product, e.g. Stainless Spoon" [value]="productQuery()" (input)="onProductSearch($event)">
+      <span class="muted">{{ listedProducts().length }} of {{ feederProductRows().length }} products{{ ui.focusedBrand() ? ' of ' + ui.focusedBrand() : '' }}</span>
+    </section>
+    @if (selectedProduct(); as product) {
+      <section class="cards">
+        <div class="card"><div class="card-label">Total Revenue</div><div class="card-value">{{ money(product.revenue) }}</div></div>
+        <div class="card"><div class="card-label">Units Sold</div><div class="card-value">{{ product.units }}</div></div>
+        <div class="card"><div class="card-label">Orders</div><div class="card-value">{{ product.orderCount }}</div></div>
+        <div class="card"><div class="card-label">Avg Order Value</div><div class="card-value">{{ money(productAov()) }}</div></div>
+        <div class="card"><div class="card-label">Top City</div><div class="card-value">{{ productTopCity()?.city || '-' }}</div>@if (productTopCity(); as top) { <span class="muted">{{ money(top.revenue) }} ({{ top.sharePct }}%)</span> }</div>
+        <div class="card"><div class="card-label">Cities Sold In</div><div class="card-value">{{ product.cities.length }}</div></div>
+      </section>
+      <section class="legend">
+        <span class="legend-item"><span class="dot dot-top"></span> Top 25% cities</span>
+        <span class="legend-item"><span class="dot dot-low"></span> Bottom 25% cities</span>
+      </section>
+      <section class="table-wrap">
+        <h3>{{ product.productName }}@if (product.brandName) { <span class="muted"> ({{ product.brandName }})</span> } - revenue by city</h3>
+        <table id="productCityTable"><thead><tr><th>Rank</th><th (click)="sortProductCitiesBy('city')">City {{ productCityIndicator('city') }}</th><th (click)="sortProductCitiesBy('revenue')">Revenue {{ productCityIndicator('revenue') }}</th><th (click)="sortProductCitiesBy('sharePct')">Share of Product Revenue {{ productCityIndicator('sharePct') }}</th><th (click)="sortProductCitiesBy('units')">Units Sold {{ productCityIndicator('units') }}</th><th (click)="sortProductCitiesBy('orderCount')">Orders {{ productCityIndicator('orderCount') }}</th><th (click)="sortProductCitiesBy('avgOrderValue')">Avg Order Value {{ productCityIndicator('avgOrderValue') }}</th></tr></thead><tbody>
+          @for (row of displayedProductCities(); track row.city; let index = $index) {
+            <tr [class.row-top]="row.tier === 'top'" [class.row-low]="row.tier === 'low'"><td>{{ index + 1 }}</td><td>{{ row.city }}</td><td>{{ money(row.revenue) }}</td><td>{{ row.sharePct }}%</td><td>{{ row.units }}</td><td>{{ row.orderCount ?? 'N/A' }}</td><td>@if (row.avgOrderValue === undefined) { <span class="na">N/A</span> } @else { {{ money(row.avgOrderValue) }} }</td></tr>
+          }
+        </tbody><tfoot><tr><td></td><td><strong>Total</strong></td><td><strong>{{ money(product.revenue) }}</strong></td><td><strong>100%</strong></td><td><strong>{{ product.units }}</strong></td><td><strong>{{ product.orderCount }}</strong></td><td><strong>{{ money(productAov()) }}</strong></td></tr></tfoot></table>
+        @if (!displayedProductCities().length) { <p class="muted">No city-level sales recorded for this product.</p> }
+      </section>
+    } @else {
+      <p class="muted brand-note">Pick a product from the list below (or search for it above) to see its revenue in every city.</p>
+    }
     <section class="table-wrap">
-      <h3>Product-wise sales</h3>
-      <p class="muted">Every product{{ ui.focusedBrand() ? ' of ' + ui.focusedBrand() : '' }}, summed across all cities. Orders are orders that contain the product.</p>
-      <table id="productTable"><thead><tr><th>Rank</th><th (click)="sortProductsBy('productName')">Product {{ productSortIndicator('productName') }}</th><th (click)="sortProductsBy('revenue')">Revenue {{ productSortIndicator('revenue') }}</th><th (click)="sortProductsBy('units')">Units Sold {{ productSortIndicator('units') }}</th><th (click)="sortProductsBy('orderCount')">Orders {{ productSortIndicator('orderCount') }}</th><th (click)="sortProductsBy('avgOrderValue')">Avg Order Value {{ productSortIndicator('avgOrderValue') }}</th><th (click)="sortProductsBy('topCity')">Top City {{ productSortIndicator('topCity') }}</th></tr></thead><tbody>
-        @for (row of displayedProducts(); track row.productName + '::' + row.brandName; let index = $index) {
-          <tr><td>{{ index + 1 }}</td><td>{{ row.productName }}</td><td>{{ money(row.revenue) }}</td><td>{{ row.units }}</td><td>{{ row.orderCount }}</td><td>{{ money(row.avgOrderValue) }}</td><td>{{ row.topCity || 'No data' }}</td></tr>
+      <h3>All products</h3>
+      <p class="muted">Click a product to see its city-wise revenue. Orders are orders that contain the product.</p>
+      <table id="productListTable"><thead><tr><th>Rank</th><th (click)="sortProductsBy('productName')">Product {{ productSortIndicator('productName') }}</th><th>Brand</th><th (click)="sortProductsBy('revenue')">Revenue {{ productSortIndicator('revenue') }}</th><th (click)="sortProductsBy('units')">Units Sold {{ productSortIndicator('units') }}</th><th (click)="sortProductsBy('orderCount')">Orders {{ productSortIndicator('orderCount') }}</th><th (click)="sortProductsBy('avgOrderValue')">Avg Order Value {{ productSortIndicator('avgOrderValue') }}</th><th (click)="sortProductsBy('topCity')">Top City {{ productSortIndicator('topCity') }}</th></tr></thead><tbody>
+        @for (row of listedProducts(); track row.productName + '::' + row.brandName; let index = $index) {
+          <tr (click)="selectProduct(row)" [style.cursor]="'pointer'" [style.font-weight]="isSelectedProduct(row) ? '700' : '400'"><td>{{ index + 1 }}</td><td>{{ isSelectedProduct(row) ? '> ' : '' }}{{ row.productName }}</td><td>{{ row.brandName || '-' }}</td><td>{{ money(row.revenue) }}</td><td>{{ row.units }}</td><td>{{ row.orderCount }}</td><td>{{ money(row.avgOrderValue) }}</td><td>{{ row.topCity || 'No data' }}</td></tr>
         }
       </tbody></table>
-      @if (!displayedProducts().length) { <p class="muted">No product sales yet. Upload the sales report to see product-wise numbers.</p> }
+      @if (!listedProducts().length) { <p class="muted">No products found. Upload the sales report, or clear the search box.</p> }
     </section>
     }
     @if (clearOpen()) {
@@ -111,6 +152,45 @@ export class SalesPageComponent implements OnInit {
   readonly feederProductRows = signal<ProductSalesRow[]>([]); // every product row (brand-filtered); used by the product table and the feeder breakdown
   readonly productSortKey = signal<ProductSortKey>('revenue');
   readonly productSortAsc = signal(false);
+
+  // --- Product wise tab: pick one product, see its total and every city it sold in ---
+  readonly view = signal<'city' | 'product'>('city');
+  readonly productQuery = signal('');
+  readonly selectedProductKey = signal('');
+  readonly productCitySortKey = signal<ProductCitySortKey>('revenue');
+  readonly productCitySortAsc = signal(false);
+  readonly selectedProduct = computed(() => this.feederProductRows().find((p) => this.productKey(p) === this.selectedProductKey()) ?? null);
+  readonly productAov = computed(() => {
+    const product = this.selectedProduct();
+    return product && product.orderCount > 0 ? Math.round((product.revenue / product.orderCount) * 100) / 100 : 0;
+  });
+  // Every city the selected product sold in, each with its share of the product's revenue.
+  readonly productCityRows = computed<ProductCityRow[]>(() => {
+    const product = this.selectedProduct();
+    if (!product) return [];
+    return product.cities.map((city) => ({
+      ...city,
+      sharePct: product.revenue > 0 ? Math.round((city.revenue / product.revenue) * 1000) / 10 : 0,
+    }));
+  });
+  readonly productTopCity = computed(() => [...this.productCityRows()].sort((a, b) => b.revenue - a.revenue)[0] ?? null);
+  readonly displayedProductCities = computed(() => {
+    const key = this.productCitySortKey();
+    const direction = this.productCitySortAsc() ? 1 : -1;
+    return this.withTiers(this.productCityRows()).sort((a, b) => {
+      const left = a[key];
+      const right = b[key];
+      const order = typeof left === 'number' && typeof right === 'number'
+        ? left - right
+        : String(left ?? '').localeCompare(String(right ?? ''));
+      return direction * order;
+    });
+  });
+  readonly listedProducts = computed(() => {
+    const query = this.productQuery().trim().toLowerCase();
+    return this.displayedProducts().filter((p) =>
+      !query || p.productName.toLowerCase().includes(query) || (p.brandName ?? '').toLowerCase().includes(query));
+  });
   readonly displayedProducts = computed(() => {
     const key = this.productSortKey();
     const direction = this.productSortAsc() ? 1 : -1;
@@ -229,6 +309,21 @@ export class SalesPageComponent implements OnInit {
     this.productSortKey.set(key);
   }
   productSortIndicator(key: ProductSortKey) { return this.productSortKey() === key ? (this.productSortAsc() ? '↑' : '↓') : ''; }
+  setView(view: 'city' | 'product') { this.view.set(view); }
+  // Name + brand, so the same product name under two brands stays two products.
+  productKey(product: ProductSalesRow) { return `${product.productName}::${product.brandName ?? ''}`; }
+  isSelectedProduct(product: ProductSalesRow) { return this.productKey(product) === this.selectedProductKey(); }
+  selectProduct(product: ProductSalesRow) { this.selectedProductKey.set(this.productKey(product)); }
+  onProductSearch(event: Event) {
+    this.productQuery.set((event.target as HTMLInputElement).value);
+    const matches = this.listedProducts();
+    if (matches.length === 1) this.selectProduct(matches[0]); // typed an exact-enough name: show it straight away
+  }
+  sortProductCitiesBy(key: ProductCitySortKey) {
+    this.productCitySortAsc.set(this.productCitySortKey() === key ? !this.productCitySortAsc() : key === 'city');
+    this.productCitySortKey.set(key);
+  }
+  productCityIndicator(key: ProductCitySortKey) { return this.productCitySortKey() === key ? (this.productCitySortAsc() ? '↑' : '↓') : ''; }
 
   trend(row: CityRow) {
     if (row.revenueChangePct === null || row.revenueChangePct === undefined) return 'First upload';
