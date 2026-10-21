@@ -99,7 +99,7 @@ type ProductCityRow = CityRow & { sharePct: number };
     } @else {
     <section class="controls">
       <label class="filter-label" for="productSearch">Product</label>
-      <input id="productSearch" type="search" aria-label="Search products" placeholder="Search a product, e.g. Stainless Spoon" [value]="productQuery()" (input)="onProductSearch($event)">
+      <input id="productSearch" class="styled-select" type="search" aria-label="Search products" placeholder="Search a product, e.g. Stainless Spoon" [value]="productQuery()" (input)="onProductSearch($event)">
       <span class="muted">{{ listedProducts().length }} of {{ feederProductRows().length }} products{{ ui.focusedBrand() ? ' of ' + ui.focusedBrand() : '' }}</span>
     </section>
     @if (selectedProduct(); as product) {
