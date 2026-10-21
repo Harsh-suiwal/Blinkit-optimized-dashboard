@@ -148,6 +148,7 @@ export interface CampaignUploadPlanItem {
   periodKey: string;
   periodLabel: string;
   sheetType: CampaignSheetType;
+  brandName: string;
   incoming: { rowCount: number; from: string; to: string };
   existing: { rowCount: number; from: string; to: string } | null;
   /** Stored campaigns of this period/sheet that are not in the new file (they will be removed). */

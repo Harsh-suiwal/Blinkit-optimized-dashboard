@@ -11,6 +11,9 @@ import { UiStateService } from '../core/ui-state.service';
 import { BrandFilterComponent, mergeKnownBrands } from '../shared/brand-filter.component';
 import { ClearDataDialogComponent } from '../shared/clear-data-dialog.component';
 
+/** One campaign (by name) waiting for a brand; detail lists the sheet(s) and ID(s) it appears under. */
+interface UnresolvedItem { campaignName: string; detail: string; }
+
 const SHEET_LABELS: Record<CampaignSheetFilter, string> = {
   ALL: 'All',
   PRODUCT_BOOSTING: 'Product Boosting',
@@ -32,14 +35,24 @@ const SHEET_LABELS: Record<CampaignSheetFilter, string> = {
     <div class="upload-status" [class.success]="statusType() === 'success'" [class.error]="statusType() === 'error'">{{ status() }}</div>
     @if (pendingUpload(); as pending) {
       <section class="controls unresolved-panel">
-        <p><strong>{{ pending.preview.unresolved.length }} campaign(s) have no recognisable brand</strong> and would be filed under "Unknown" (hidden when a brand is selected):</p>
-        <ul>@for (c of pending.preview.unresolved; track c.sheetType + c.campaignId) { <li>{{ c.campaignName }} <span class="muted">({{ sheetLabel(c.sheetType) }}, ID {{ c.campaignId }})</span></li> }</ul>
-        <label for="unresolvedBrand">Brand for these campaigns</label>
-        <input id="unresolvedBrand" list="unresolvedBrandOptions" [(ngModel)]="pendingBrand" placeholder="Pick or type a brand">
-        <datalist id="unresolvedBrandOptions">@for (b of brandOptions(); track b) { <option [value]="b"></option> }</datalist>
-        <button class="upload-btn" [disabled]="!pendingBrand.trim()" (click)="confirmPendingUpload(pendingBrand.trim())">Upload with this brand</button>
-        <button class="secondary-btn" (click)="confirmPendingUpload('')">Upload as Unknown</button>
-        <button class="secondary-btn" (click)="cancelPendingUpload()">Cancel</button>
+        @if (currentItem(); as item) {
+          <p><strong>Campaign {{ queueIndex() + 1 }} of {{ pending.items.length }}</strong> has no recognisable brand:</p>
+          <p>{{ item.campaignName }} <span class="muted">({{ item.detail }})</span></p>
+          <label for="queueBrand">Brand for this campaign</label>
+          <input id="queueBrand" list="queueBrandOptions" [(ngModel)]="queueInput" (keydown.enter)="queueNext()" placeholder="Pick or type a brand">
+          <datalist id="queueBrandOptions">@for (b of queueSuggestions(); track b) { <option [value]="b"></option> }</datalist>
+          <button class="upload-btn" [disabled]="!queueInput.trim()" (click)="queueNext()">Next</button>
+          <button class="secondary-btn" (click)="queueSkip()">Skip (keep Unknown)</button>
+          <button class="secondary-btn" [disabled]="!queueInput.trim()" (click)="queueApplyRest()">Apply to all remaining ({{ pending.items.length - queueIndex() }})</button>
+          <button class="secondary-btn" [disabled]="queueIndex() === 0" (click)="queueBack()">Back</button>
+          <button class="secondary-btn" (click)="cancelPendingUpload()">Cancel</button>
+        } @else {
+          <p><strong>All {{ pending.items.length }} campaign(s) reviewed.</strong></p>
+          <ul>@for (item of pending.items; track item.campaignName) { <li>{{ item.campaignName }} -> <strong>{{ labelFor(item.campaignName) || 'Unknown' }}</strong></li> }</ul>
+          <button class="upload-btn" (click)="confirmPendingUpload()">Upload</button>
+          <button class="secondary-btn" (click)="queueBack()">Back</button>
+          <button class="secondary-btn" (click)="cancelPendingUpload()">Cancel</button>
+        }
       </section>
     }
 
@@ -193,9 +206,14 @@ export class CampaignPageComponent implements OnInit {
   readonly query = signal('');
   readonly lastUpdated = signal('No campaign report uploaded yet');
   readonly status = signal('');
-  // Upload waiting for the admin to pick a brand for campaigns that resolve to "Unknown".
-  readonly pendingUpload = signal<{ file: File; preview: CampaignUploadPreview } | null>(null);
-  pendingBrand = '';
+  // Upload waiting while the admin labels, one campaign at a time, the campaigns that resolve to "Unknown".
+  readonly pendingUpload = signal<{ file: File; items: UnresolvedItem[] } | null>(null);
+  readonly queueIndex = signal(0);
+  readonly queueLabels = signal<Record<string, string>>({}); // campaign name -> brand
+  queueInput = '';
+  readonly currentItem = computed(() => this.pendingUpload()?.items[this.queueIndex()] ?? null);
+  readonly queueSuggestions = computed(() =>
+    Array.from(new Set([...Object.values(this.queueLabels()), ...this.brandOptions()])).filter((b) => b && b !== 'Unknown').sort());
   readonly brandOptions = computed(() => Array.from(new Set([...this.allBrands(), ...this.knownBrands()].filter((b) => b && b !== 'Unknown'))).sort());
   readonly statusType = signal<'success' | 'error' | ''>('');
   readonly pendingDelete = signal<string | null>(null);
@@ -310,35 +328,95 @@ export class CampaignPageComponent implements OnInit {
     this.setStatus('Checking file...', '');
     try {
       const preview = await this.api.previewCampaignUpload(file);
-      const warning = this.replaceWarning(preview.plan);
-      if (warning && !window.confirm(warning)) { this.setStatus('Upload cancelled.', ''); return; }
       if (preview.unresolved?.length) {
-        this.pendingBrand = '';
-        this.pendingUpload.set({ file, preview });
-        this.setStatus('Choose a brand for the unrecognised campaigns below.', '');
+        // Label the unknown campaigns first; the replace warning is shown afterwards, with the chosen brands applied.
+        this.startQueue(file, preview.unresolved);
+        this.setStatus('Choose a brand for each unrecognised campaign below.', '');
         return;
       }
-      await this.doUpload(file, '');
+      await this.confirmAndUpload(file, preview, {});
     } catch (error) { this.setStatus(this.message(error), 'error'); }
     finally { input.value = ''; }
   }
 
-  async confirmPendingUpload(defaultBrand: string) {
+  labelFor(campaignName: string) { return this.queueLabels()[campaignName] ?? ''; }
+
+  private startQueue(file: File, unresolved: CampaignUploadPreview['unresolved']) {
+    const byName = new Map<string, string[]>();
+    for (const c of unresolved) {
+      const where = byName.get(c.campaignName) ?? [];
+      where.push(`${this.sheetLabel(c.sheetType)}, ID ${c.campaignId}`);
+      byName.set(c.campaignName, where);
+    }
+    const items: UnresolvedItem[] = Array.from(byName, ([campaignName, where]) => ({ campaignName, detail: where.join(' | ') }));
+    this.queueLabels.set({});
+    this.pendingUpload.set({ file, items });
+    this.showQueueItem(0);
+  }
+
+  private showQueueItem(index: number) {
+    this.queueIndex.set(index);
+    const item = this.pendingUpload()?.items[index];
+    this.queueInput = item ? this.labelFor(item.campaignName) : '';
+  }
+
+  queueNext() {
+    const item = this.currentItem();
+    const brand = this.queueInput.trim();
+    if (!item || !brand) return;
+    this.queueLabels.update((labels) => ({ ...labels, [item.campaignName]: brand }));
+    this.showQueueItem(this.queueIndex() + 1);
+  }
+
+  queueSkip() {
+    const item = this.currentItem();
+    if (!item) return;
+    this.queueLabels.update((labels) => { const next = { ...labels }; delete next[item.campaignName]; return next; });
+    this.showQueueItem(this.queueIndex() + 1);
+  }
+
+  /** Gives the typed brand to this campaign and every one after it in the queue. */
+  queueApplyRest() {
+    const pending = this.pendingUpload();
+    const brand = this.queueInput.trim();
+    if (!pending || !brand) return;
+    const labels = { ...this.queueLabels() };
+    for (const item of pending.items.slice(this.queueIndex())) labels[item.campaignName] = brand;
+    this.queueLabels.set(labels);
+    this.showQueueItem(pending.items.length);
+  }
+
+  queueBack() {
+    if (this.queueIndex() > 0) this.showQueueItem(this.queueIndex() - 1);
+  }
+
+  async confirmPendingUpload() {
     const pending = this.pendingUpload();
     if (!pending) return;
+    const labels = this.queueLabels();
     this.pendingUpload.set(null);
-    try { await this.doUpload(pending.file, defaultBrand); }
-    catch (error) { this.setStatus(this.message(error), 'error'); }
+    try {
+      this.setStatus('Checking file...', '');
+      const preview = await this.api.previewCampaignUpload(pending.file, labels);
+      await this.confirmAndUpload(pending.file, preview, labels);
+    } catch (error) { this.setStatus(this.message(error), 'error'); }
   }
 
   cancelPendingUpload() {
     this.pendingUpload.set(null);
+    this.queueLabels.set({});
     this.setStatus('Upload cancelled.', '');
   }
 
-  private async doUpload(file: File, defaultBrand: string) {
+  private async confirmAndUpload(file: File, preview: CampaignUploadPreview, labels: Record<string, string>) {
+    const warning = this.replaceWarning(preview.plan);
+    if (warning && !window.confirm(warning)) { this.setStatus('Upload cancelled.', ''); return; }
+    await this.doUpload(file, labels);
+  }
+
+  private async doUpload(file: File, campaignBrands: Record<string, string>) {
     this.setStatus('Uploading...', '');
-    const result: CampaignUploadResult = await this.api.uploadCampaign(file, defaultBrand);
+    const result: CampaignUploadResult = await this.api.uploadCampaign(file, campaignBrands);
     if (result.duplicate) {
       this.setStatus('This exact file was already uploaded today - nothing changed.', 'success');
       return;
@@ -452,7 +530,7 @@ export class CampaignPageComponent implements OnInit {
       const removed = (item.removedCampaigns ?? []).length
         ? `\n    Removed (not in this file): ${item.removedCampaigns.map((c) => `${c.campaignName} (ID ${c.campaignId})`).join(', ')}`
         : '';
-      return `- ${item.periodLabel} / ${this.sheetLabel(item.sheetType)}: ${item.existing?.rowCount} rows (${item.existing?.from} to ${item.existing?.to}) -> ${item.incoming.rowCount} rows (${item.incoming.from} to ${item.incoming.to})${shrinks}${removed}`;
+      return `- ${item.periodLabel} / ${this.sheetLabel(item.sheetType)} / ${item.brandName}: ${item.existing?.rowCount} rows (${item.existing?.from} to ${item.existing?.to}) -> ${item.incoming.rowCount} rows (${item.incoming.from} to ${item.incoming.to})${shrinks}${removed}`;
     });
     return `This upload replaces data already stored:\n\n${lines.join('\n')}\n\nContinue?`;
   }

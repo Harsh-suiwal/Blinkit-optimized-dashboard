@@ -122,15 +122,20 @@ export class ApiService {
     return this.get<{ periodKey: string | null; targeting: CampaignTargetingRow[]; daily: CampaignDailyRow[] }>(`/api/campaign-detail?${query}`);
   }
 
-  /** Dry run: what an upload would replace, without storing anything. */
-  previewCampaignUpload(file: File) {
-    return this.upload<CampaignUploadPreview>('/api/campaign-upload?dryRun=1', file);
+  /** Dry run: what an upload would replace, without storing anything. campaignBrands (campaign name -> brand) is applied before planning. */
+  previewCampaignUpload(file: File, campaignBrands: Record<string, string> = {}) {
+    return this.upload<CampaignUploadPreview>('/api/campaign-upload?dryRun=1', file, this.campaignFields(campaignBrands));
   }
 
-  /** defaultBrand is applied to campaigns whose brand can't be resolved; it forces past the same-day duplicate guard. */
-  uploadCampaign(file: File, defaultBrand = '') {
-    const url = defaultBrand ? '/api/campaign-upload?force=1' : '/api/campaign-upload';
-    return this.upload<CampaignUploadResult>(url, file, defaultBrand ? { defaultBrand } : {});
+  /** campaignBrands labels campaigns whose brand can't be resolved; sending labels forces past the same-day duplicate guard. */
+  uploadCampaign(file: File, campaignBrands: Record<string, string> = {}) {
+    const labelled = Object.keys(campaignBrands).length > 0;
+    const url = labelled ? '/api/campaign-upload?force=1' : '/api/campaign-upload';
+    return this.upload<CampaignUploadResult>(url, file, this.campaignFields(campaignBrands));
+  }
+
+  private campaignFields(campaignBrands: Record<string, string>): Record<string, string> {
+    return Object.keys(campaignBrands).length ? { campaignBrands: JSON.stringify(campaignBrands) } : {};
   }
 
   deleteCampaign(periodKey: string, sheetType: CampaignSheetType, campaignId: string) {
