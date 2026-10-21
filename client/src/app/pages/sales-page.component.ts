@@ -115,8 +115,9 @@ type ProductCityRow = CityRow & { sharePct: number };
         <span class="legend-item"><span class="dot dot-top"></span> Top 25% cities</span>
         <span class="legend-item"><span class="dot dot-low"></span> Bottom 25% cities</span>
       </section>
-      <section class="table-wrap">
+      <section class="table-wrap table-flat">
         <h3>{{ product.productName }}@if (product.brandName) { <span class="muted"> ({{ product.brandName }})</span> } - revenue by city</h3>
+        <p class="muted">Showing all {{ product.cities.length }} cities.</p>
         <table id="productCityTable"><thead><tr><th>Rank</th><th (click)="sortProductCitiesBy('city')">City {{ productCityIndicator('city') }}</th><th (click)="sortProductCitiesBy('revenue')">Revenue {{ productCityIndicator('revenue') }}</th><th (click)="sortProductCitiesBy('sharePct')">Share of Product Revenue {{ productCityIndicator('sharePct') }}</th><th (click)="sortProductCitiesBy('units')">Units Sold {{ productCityIndicator('units') }}</th><th (click)="sortProductCitiesBy('orderCount')">Orders {{ productCityIndicator('orderCount') }}</th><th (click)="sortProductCitiesBy('avgOrderValue')">Avg Order Value {{ productCityIndicator('avgOrderValue') }}</th></tr></thead><tbody>
           @for (row of displayedProductCities(); track row.city; let index = $index) {
             <tr [class.row-top]="row.tier === 'top'" [class.row-low]="row.tier === 'low'"><td>{{ index + 1 }}</td><td>{{ row.city }}</td><td>{{ money(row.revenue) }}</td><td>{{ row.sharePct }}%</td><td>{{ row.units }}</td><td>{{ row.orderCount ?? 'N/A' }}</td><td>@if (row.avgOrderValue === undefined) { <span class="na">N/A</span> } @else { {{ money(row.avgOrderValue) }} }</td></tr>

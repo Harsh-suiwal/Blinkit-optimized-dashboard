@@ -1469,6 +1469,13 @@ html[data-theme="dark"] .login-card {
   color: #fff;
 }
 
+/* A table that must show all its rows (e.g. every city of one product) instead of scrolling inside its own box. */
+.table-wrap.table-flat {
+  max-height: none;
+  overflow-x: auto;
+  overflow-y: visible;
+}
+
 .brand-bar {
   padding: 4px 24px 0;
 }
