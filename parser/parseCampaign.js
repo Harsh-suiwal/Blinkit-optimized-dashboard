@@ -71,17 +71,23 @@ function detectSheetType(headers) {
  * independently; each data row is one day x campaign x targeting value.
  *
  * @param {string} filePath
- * @param {{ fileName?: string, defaultBrand?: string }} [options]
- *   defaultBrand is used (as the "explicit" brand) for campaigns whose name
- *   can't be resolved; otherwise the upload's file name is tried before
- *   falling back to "Unknown".
+ * @param {{ fileName?: string, defaultBrand?: string, campaignBrands?: Record<string, string> }} [options]
+ *   For campaigns whose name can't be resolved the order is: campaignBrands
+ *   (campaign name -> brand, chosen one by one by the admin), then defaultBrand
+ *   (one brand for all of them), then the upload's file name, then "Unknown".
  * @returns {{ uploads: object[], rows: object[], skippedRows: number, unrecognisedSheets: string[] }}
  *   skippedRows = data rows dropped for a missing/unreadable date, campaign ID or name.
  */
 function parseCampaignFile(filePath, options = {}) {
-  const { fileName = '', defaultBrand = '' } = options;
+  const { fileName = '', defaultBrand = '', campaignBrands = {} } = options;
   const workbook = XLSX.readFile(filePath);
   const aliases = loadAliases();
+  // campaign name (lower-case) -> brand typed by the admin; blank brands are ignored
+  const labelled = new Map(
+    Object.entries(campaignBrands || {})
+      .map(([name, brand]) => [String(name).trim().toLowerCase(), String(brand ?? '').trim()])
+      .filter(([, brand]) => brand)
+  );
   const fileBrand = resolveBrand(path.parse(fileName).name, '', aliases);
   const brandCache = new Map();
 
@@ -89,7 +95,9 @@ function parseCampaignFile(filePath, options = {}) {
     if (brandCache.has(campaignName)) return brandCache.get(campaignName);
     let result = resolveBrand(campaignName, '', aliases);
     if (result.brand === 'Unknown') {
-      if (defaultBrand.trim()) result = resolveBrand('', defaultBrand, aliases);
+      const chosen = labelled.get(String(campaignName).trim().toLowerCase());
+      if (chosen) result = resolveBrand('', chosen, aliases);
+      else if (defaultBrand.trim()) result = resolveBrand('', defaultBrand, aliases);
       else if (fileBrand.brand !== 'Unknown') result = { brand: fileBrand.brand, confidence: 'parsed' };
     }
     brandCache.set(campaignName, result.brand);

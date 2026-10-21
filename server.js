@@ -886,6 +886,23 @@ function campaignFilters(req, store) {
   return { periodKey, sheetType, brand };
 }
 
+// Reads the optional `campaignBrands` multipart field: JSON { "<campaign name>": "<brand>" }.
+// Anything malformed is ignored (those campaigns simply stay Unknown).
+function parseCampaignBrands(raw) {
+  if (typeof raw !== 'string' || !raw.trim()) return {};
+  try {
+    const value = JSON.parse(raw);
+    if (!value || typeof value !== 'object' || Array.isArray(value)) return {};
+    const out = {};
+    for (const [name, brand] of Object.entries(value)) {
+      if (typeof brand === 'string' && brand.trim()) out[String(name)] = brand.trim().slice(0, 80);
+    }
+    return out;
+  } catch {
+    return {};
+  }
+}
+
 app.post('/api/campaign-upload', requireAdmin, uploadReport, mutating(async (req, res) => {
   if (!req.file) {
     return res.status(400).json({ error: 'No file uploaded.' });
@@ -895,6 +912,7 @@ app.post('/api/campaign-upload', requireAdmin, uploadReport, mutating(async (req
     const parsed = parseCampaignFile(req.file.path, {
       fileName: req.file.originalname,
       defaultBrand: req.body && typeof req.body.defaultBrand === 'string' ? req.body.defaultBrand : '',
+      campaignBrands: parseCampaignBrands(req.body && req.body.campaignBrands),
     });
 
     // Dry run: report what this upload would replace, write nothing.
