@@ -8,6 +8,8 @@ import { BrandFilterComponent, mergeKnownBrands } from '../shared/brand-filter.c
 import { ClearDataDialogComponent } from '../shared/clear-data-dialog.component';
 import { FEEDER_CITY_MAP, feederCities } from '../core/feeder-map';
 
+type ProductSortKey = 'productName' | 'revenue' | 'units' | 'orderCount' | 'avgOrderValue' | 'topCity';
+
 @Component({
   selector: 'app-sales-page',
   imports: [BrandFilterComponent, ClearDataDialogComponent],
@@ -84,6 +86,16 @@ import { FEEDER_CITY_MAP, feederCities } from '../core/feeder-map';
       </tbody></table>
       @if (!displayedRows().length) { <p class="muted">{{ emptyMessage() }}</p> }
     </section>
+    <section class="table-wrap">
+      <h3>Product-wise sales</h3>
+      <p class="muted">Every product{{ ui.focusedBrand() ? ' of ' + ui.focusedBrand() : '' }}, summed across all cities. Orders are orders that contain the product.</p>
+      <table id="productTable"><thead><tr><th>Rank</th><th (click)="sortProductsBy('productName')">Product {{ productSortIndicator('productName') }}</th><th (click)="sortProductsBy('revenue')">Revenue {{ productSortIndicator('revenue') }}</th><th (click)="sortProductsBy('units')">Units Sold {{ productSortIndicator('units') }}</th><th (click)="sortProductsBy('orderCount')">Orders {{ productSortIndicator('orderCount') }}</th><th (click)="sortProductsBy('avgOrderValue')">Avg Order Value {{ productSortIndicator('avgOrderValue') }}</th><th (click)="sortProductsBy('topCity')">Top City {{ productSortIndicator('topCity') }}</th></tr></thead><tbody>
+        @for (row of displayedProducts(); track row.productName + '::' + row.brandName; let index = $index) {
+          <tr><td>{{ index + 1 }}</td><td>{{ row.productName }}</td><td>{{ money(row.revenue) }}</td><td>{{ row.units }}</td><td>{{ row.orderCount }}</td><td>{{ money(row.avgOrderValue) }}</td><td>{{ row.topCity || 'No data' }}</td></tr>
+        }
+      </tbody></table>
+      @if (!displayedProducts().length) { <p class="muted">No product sales yet. Upload the sales report to see product-wise numbers.</p> }
+    </section>
     }
     @if (clearOpen()) {
       <app-clear-data-dialog scope="sales" note="Its trend history is removed too." [brands]="brandNames()" [initialBrand]="ui.focusedBrand()" (confirm)="clearData($event)" (cancel)="clearOpen.set(false)" />
@@ -96,7 +108,25 @@ export class SalesPageComponent implements OnInit {
   readonly ui = inject(UiStateService);
   readonly rows = signal<CityRow[]>([]);
   readonly feederNames = Object.keys(FEEDER_CITY_MAP);
-  readonly feederProductRows = signal<ProductSalesRow[]>([]);
+  readonly feederProductRows = signal<ProductSalesRow[]>([]); // every product row (brand-filtered); used by the product table and the feeder breakdown
+  readonly productSortKey = signal<ProductSortKey>('revenue');
+  readonly productSortAsc = signal(false);
+  readonly displayedProducts = computed(() => {
+    const key = this.productSortKey();
+    const direction = this.productSortAsc() ? 1 : -1;
+    const rows = this.feederProductRows().map((p) => ({
+      ...p,
+      avgOrderValue: p.orderCount > 0 ? Math.round((p.revenue / p.orderCount) * 100) / 100 : 0,
+    }));
+    return rows.sort((a, b) => {
+      const left = a[key];
+      const right = b[key];
+      const order = typeof left === 'number' && typeof right === 'number'
+        ? left - right
+        : String(left ?? '').localeCompare(String(right ?? ''));
+      return direction * order;
+    });
+  });
   readonly selectedFeederProduct = signal('');
   readonly feederSortKey = signal<keyof ProductCitySalesRow>('revenue');
   readonly feederSortAsc = signal(false);
@@ -194,6 +224,11 @@ export class SalesPageComponent implements OnInit {
     this.feederSortKey.set(key);
   }
   feederSortIndicator(key: keyof ProductCitySalesRow) { return this.feederSortKey() === key ? (this.feederSortAsc() ? '↑' : '↓') : ''; }
+  sortProductsBy(key: ProductSortKey) {
+    this.productSortAsc.set(this.productSortKey() === key ? !this.productSortAsc() : key === 'productName' || key === 'topCity');
+    this.productSortKey.set(key);
+  }
+  productSortIndicator(key: ProductSortKey) { return this.productSortKey() === key ? (this.productSortAsc() ? '↑' : '↓') : ''; }
 
   trend(row: CityRow) {
     if (row.revenueChangePct === null || row.revenueChangePct === undefined) return 'First upload';
@@ -280,8 +315,10 @@ export class SalesPageComponent implements OnInit {
       this.lastDate.set(data.date);
       // Brand chips only; a failure here must not stop the summary below.
       this.knownBrands.set(await this.api.brandNames().then((r) => r.brands, () => this.knownBrands()));
-      if (this.ui.focusedFeeder()) {
-        const products = await this.api.productCitySales(brand || undefined);
+      // Product rows feed the product-wise table and the feeder breakdown, so they are always loaded.
+      // A failure here must not stop the summary below.
+      const products = await this.api.productCitySales(brand || undefined).catch(() => null);
+      if (products) {
         this.feederProductRows.set(products.productRows || []);
         if (this.selectedFeederProduct() && !this.feederProductNames().includes(this.selectedFeederProduct())) this.selectedFeederProduct.set('');
       }
