@@ -1,4 +1,4 @@
-# AGENTS.md — Blinkit Optimized Dashboard
+﻿# AGENTS.md — Blinkit Optimized Dashboard
 
 Seller analytics: Inventory, Sales Performance, Campaign ROI from uploaded Blinkit `.xlsx` reports. Single login, roles `admin` (upload/delete) / `viewer` (read).
 
@@ -46,7 +46,7 @@ client/src/app/
 public/                static login page only: login.html, login.js, style.css (legacy dashboard files removed)
 data/ (gitignored; legacy JSON, read only by the migration script)   uploads/ (temp, auto-cleaned)
 ```
-Routes: `/app/overview` (default, Brand Overview), `/app/inventory`, `/app/sales-performance`, `/app/monthly-comparison`, `/app/campaign-analysis`.
+Routes: `/app/overview` (default), `/app/sales-performance` (Sales), `/app/inventory` (Stock), `/app/campaign-analysis` (Advertising), `/app/monthly-comparison` (Trends). Page and nav names are plain: Overview, Sales, Stock, Advertising, Trends; the sidebar title is "Analytics" and the brand switcher sits at the top of the sidebar.
 
 ## API (all `/api/*`; R = any logged-in, A = admin; uploads are multipart field `report`)
 **Inventory:** `POST upload` A · `GET products` R · `GET summary` R · `DELETE products?productName&warehouseName` A · `POST products/restore {row,index}` A
@@ -105,6 +105,11 @@ Routes: `/app/overview` (default, Brand Overview), `/app/inventory`, `/app/sales
 - Data-changing routes are wrapped in `mutating()` (server.js): one at a time via `kv.withLock`, every write awaited, 500 if a save fails (upload parse errors stay 400).
 - Write order in multi-write routes: history before the current view, upload hash last (only after the data is saved). City delete removes history first; city restore re-adds history (de-duplicated) before the view.
 - Keys: latest, history, salesLatest, salesByProduct, salesHistory, campaignData, brandAliases, uploadHashes, salesMonthly.
+
+## Look and feel (v7 Pro theme)
+- The flat "Pro theme" block at the end of `public/style.css` overrides the older glass styles through the same tokens (light and dark). Use the tokens (`--surface`, `--surface-alt`, `--border`, `--text`, `--text-muted`, `--accent`, `--success`, `--danger`), never raw colours. Sentence case for every label and heading.
+- Planned features show a shared "Coming soon" page (`pages/coming-soon-page.component.ts`, title and text from route data): Reports (`/reports`), Uploads (`/uploads`, admin-only in the sidebar), Present (`/present`), and the platform tabs All / Zepto / Flipkart Minutes (`/platforms/...`). When one is built, replace its route's component; keep the button where it is.
+- Overview layout: header with platform tabs (Blinkit active), period pill, Present and Create report; four headline cards (Revenue, Orders, Units in stock, Return on ad spend), each opening its page; a change vs last month only when the latest sales upload is the latest full month; panels: Revenue by month, Top cities, Top products, Best sellers in stock.
 - Single server instance only.
 
 ## Review fixes & enhancements (v6)
