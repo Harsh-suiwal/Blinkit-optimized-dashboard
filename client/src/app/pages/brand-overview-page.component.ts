@@ -41,15 +41,15 @@ const SHORT_MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'S
       @if (data(); as d) {
       <section class="overview-section" aria-labelledby="ovSales">
         <div class="overview-head">
-          <div><h2 id="ovSales">Sales</h2>@if (d.sales; as s) { <p class="muted">{{ sourceText(s.fileName, s.date) }}</p> }</div>
+          <div><h2 id="ovSales">Sales</h2>@if (d.sales; as s) { @if (s.from && s.to) { <p class="overview-period">Orders from {{ periodText(s.from, s.to) }}</p> } <p class="muted">{{ sourceText(s.fileName, s.date) }}</p> }</div>
           <a class="overview-link" routerLink="/sales-performance">Open sales</a>
         </div>
         @if (d.sales; as s) {
           <div class="cards overview-cards">
-            <div class="card"><div class="card-label">Revenue</div><div class="card-value">{{ money(s.totalRevenue, 0) }}</div></div>
-            <div class="card"><div class="card-label">Orders</div><div class="card-value">{{ number(s.totalOrders) }}</div></div>
-            <div class="card"><div class="card-label">Units sold</div><div class="card-value">{{ number(s.totalUnits) }}</div></div>
-            <div class="card"><div class="card-label">Avg order value</div><div class="card-value">{{ money(s.avgOrderValue, 0) }}</div></div>
+            <a class="card overview-card-link" routerLink="/sales-performance" title="Open sales"><div class="card-label">Revenue</div><div class="card-value">{{ money(s.totalRevenue, 0) }}</div></a>
+            <a class="card overview-card-link" routerLink="/sales-performance" title="Open sales"><div class="card-label">Orders</div><div class="card-value">{{ number(s.totalOrders) }}</div></a>
+            <a class="card overview-card-link" routerLink="/sales-performance" title="Open sales"><div class="card-label">Units sold</div><div class="card-value">{{ number(s.totalUnits) }}</div></a>
+            <a class="card overview-card-link" routerLink="/sales-performance" title="Open sales"><div class="card-label">Avg order value</div><div class="card-value">{{ money(s.avgOrderValue, 0) }}</div></a>
           </div>
           <div class="overview-split">
             <div class="overview-list">
@@ -107,15 +107,15 @@ const SHORT_MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'S
 
       <section class="overview-section" aria-labelledby="ovStock">
         <div class="overview-head">
-          <div><h2 id="ovStock">Stock</h2>@if (d.inventory; as inv) { <p class="muted">{{ sourceText(inv.fileName, inv.date) }}</p> }</div>
+          <div><h2 id="ovStock">Stock</h2>@if (d.inventory; as inv) { @if (inv.date) { <p class="overview-period">Stock as of {{ dateText(inv.date) }}</p> } <p class="muted">{{ sourceText(inv.fileName, inv.date) }}</p> }</div>
           <a class="overview-link" routerLink="/inventory">Open inventory</a>
         </div>
         @if (d.inventory; as inv) {
           <div class="cards overview-cards">
-            <div class="card"><div class="card-label">Products</div><div class="card-value">{{ number(inv.productCount) }}</div></div>
-            <div class="card"><div class="card-label">Units in stock</div><div class="card-value">{{ number(inv.totalStock) }}</div></div>
-            <div class="card"><div class="card-label">Sold in last 30 days</div><div class="card-value">{{ number(inv.unitsSold30) }}</div></div>
-            <div class="card"><div class="card-label">Out of stock</div><div class="card-value">{{ number(inv.outOfStock) }}</div><span class="muted">{{ inv.lowStock }} running low, of {{ inv.listingCount }} warehouse listings</span></div>
+            <a class="card overview-card-link" routerLink="/inventory" title="Open inventory"><div class="card-label">Products</div><div class="card-value">{{ number(inv.productCount) }}</div></a>
+            <a class="card overview-card-link" routerLink="/inventory" title="Open inventory"><div class="card-label">Units in stock</div><div class="card-value">{{ number(inv.totalStock) }}</div></a>
+            <a class="card overview-card-link" routerLink="/inventory" title="Open inventory"><div class="card-label">Sold in last 30 days</div><div class="card-value">{{ number(inv.unitsSold30) }}</div></a>
+            <a class="card overview-card-link" routerLink="/inventory" title="Open inventory"><div class="card-label">Out of stock</div><div class="card-value">{{ number(inv.outOfStock) }}</div><span class="muted">{{ inv.lowStock }} running low, of {{ inv.listingCount }} warehouse listings</span></a>
           </div>
           <div class="table-wrap overview-table">
             <table>
@@ -132,15 +132,15 @@ const SHORT_MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'S
 
       <section class="overview-section" aria-labelledby="ovAds">
         <div class="overview-head">
-          <div><h2 id="ovAds">Advertising</h2>@if (d.campaign; as c) { <p class="muted">{{ c.periodLabel }}, all campaigns</p> }</div>
+          <div><h2 id="ovAds">Advertising</h2>@if (d.campaign; as c) { <p class="overview-period">{{ c.periodLabel }}</p><p class="muted">All campaigns in that month</p> }</div>
           <a class="overview-link" routerLink="/campaign-analysis">Open campaigns</a>
         </div>
         @if (d.campaign; as c) {
           <div class="cards overview-cards">
-            <div class="card"><div class="card-label">Ad spend</div><div class="card-value">{{ money(c.adSpend, 0) }}</div></div>
-            <div class="card"><div class="card-label">Sales from ads</div><div class="card-value">{{ money(c.sales, 0) }}</div></div>
-            <div class="card"><div class="card-label">Return on ad spend</div><div class="card-value">{{ c.roas === null ? 'n/a' : c.roas + 'x' }}</div></div>
-            <div class="card"><div class="card-label">Campaigns</div><div class="card-value">{{ number(c.campaignCount) }}</div></div>
+            <a class="card overview-card-link" routerLink="/campaign-analysis" title="Open campaigns"><div class="card-label">Ad spend</div><div class="card-value">{{ money(c.adSpend, 0) }}</div></a>
+            <a class="card overview-card-link" routerLink="/campaign-analysis" title="Open campaigns"><div class="card-label">Sales from ads</div><div class="card-value">{{ money(c.sales, 0) }}</div></a>
+            <a class="card overview-card-link" routerLink="/campaign-analysis" title="Open campaigns"><div class="card-label">Return on ad spend</div><div class="card-value">{{ c.roas === null ? 'n/a' : c.roas + 'x' }}</div></a>
+            <a class="card overview-card-link" routerLink="/campaign-analysis" title="Open campaigns"><div class="card-label">Campaigns</div><div class="card-value">{{ number(c.campaignCount) }}</div></a>
           </div>
           @if (c.bestCampaign; as best) { <p class="overview-note">Best campaign: <strong>{{ best.name }}</strong>, returning {{ best.roas }}x its spend.</p> }
         } @else {
@@ -211,6 +211,21 @@ export class BrandOverviewPageComponent implements OnInit {
   shortMonth(monthKey: string) {
     const [year, month] = monthKey.split('-').map(Number);
     return `${SHORT_MONTHS[month - 1]} ${String(year).slice(-2)}`;
+  }
+
+  /** "1-20 Oct 2026", "28 Sep - 20 Oct 2026" or "28 Dec 2025 - 3 Jan 2026". */
+  periodText(from: string | null, to: string | null) {
+    if (!from || !to) return '';
+    const [fy, fm, fd] = from.split('-').map(Number);
+    const [ty, tm, td] = to.split('-').map(Number);
+    if (!fy || !fm || !fd || !ty || !tm || !td) return '';
+    if (fy === ty && fm === tm) return fd === td ? `${fd} ${SHORT_MONTHS[fm - 1]} ${fy}` : `${fd}-${td} ${SHORT_MONTHS[fm - 1]} ${fy}`;
+    if (fy === ty) return `${fd} ${SHORT_MONTHS[fm - 1]} - ${td} ${SHORT_MONTHS[tm - 1]} ${fy}`;
+    return `${this.formatDate(from)} - ${this.formatDate(to)}`;
+  }
+
+  dateText(date: string | null) {
+    return date ? this.formatDate(date) : '';
   }
 
   sourceText(fileName: string | null, date: string | null) {

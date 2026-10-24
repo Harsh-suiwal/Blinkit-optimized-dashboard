@@ -307,8 +307,23 @@ async function restoreMonth(slot) {
   return true;
 }
 
+/** First and last readable order date in these rows, as { from, to } (YYYY-MM-DD), or {} if none. */
+function orderDateRange(salesRows) {
+  let from = null;
+  let to = null;
+  for (const row of salesRows) {
+    const date = parseOrderDate(row.orderDate);
+    if (!date) continue;
+    const day = `${date.y}-${pad2(date.m)}-${pad2(date.d)}`;
+    if (!from || day < from) from = day;
+    if (!to || day > to) to = day;
+  }
+  return from ? { from, to } : {};
+}
+
 module.exports = {
   parseOrderDate,
+  orderDateRange,
   monthLabel,
   buildMonthSlots,
   upsertMonthSlots,

@@ -228,6 +228,8 @@ export interface BrandOverview {
   sales: {
     date: string | null;
     fileName: string | null;
+    from: string | null;   // first order date covered (null for uploads made before this was recorded)
+    to: string | null;     // last order date covered
     totalRevenue: number;
     totalUnits: number;
     totalOrders: number;

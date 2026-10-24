@@ -45,6 +45,7 @@ const { resolveBrand, saveAlias, loadAliases } = require('./parser/brandResolver
 const { hashFile, isDuplicateUpload, recordUpload, clearUploadHashes } = require('./parser/uploadGuard');
 const {
   monthLabel,
+  orderDateRange,
   buildMonthSlots,
   upsertMonthSlots,
   listMonthlyBrands,
@@ -644,7 +645,8 @@ app.post('/api/sales-upload', requireAdmin, uploadReport, mutating(async (req, r
     const previous = loadSalesLatest() || { cityRows: [], brandUploads: {} };
     const brandUploads = { ...previous.brandUploads };
     brands.forEach((b) => {
-      brandUploads[b] = { date, fileName: req.file.originalname };
+      // from / to = the order dates this upload covers, so pages can say which period the numbers are for.
+      brandUploads[b] = { date, fileName: req.file.originalname, ...orderDateRange(salesRows.filter((r) => r.brandName === b)) };
     });
     const cityRows = previous.cityRows.filter((r) => !brands.includes(r.brandName)).concat(withTrend);
     await saveSalesLatest({ date, fileName: req.file.originalname, brandUploads, cityRows });

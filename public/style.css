@@ -2227,3 +2227,27 @@ a.secondary-btn {
   flex-wrap: wrap;
   gap: 12px;
 }
+
+/* Brand overview: period lines and cards that open their detail page */
+.overview-head .overview-period {
+  margin: 4px 0 0;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.overview-card-link {
+  display: block;
+  color: inherit;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.overview-card-link:hover {
+  border-color: rgba(var(--accent-rgb), 0.45);
+}
+
+.overview-card-link:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}

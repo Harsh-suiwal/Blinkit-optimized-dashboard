@@ -41,6 +41,8 @@ function salesSection(cityRows, productRows, upload) {
   return {
     date: upload ? upload.date : null,
     fileName: upload ? upload.fileName : null,
+    from: upload && upload.from ? upload.from : null,
+    to: upload && upload.to ? upload.to : null,
     totalRevenue: round2(totalRevenue),
     totalUnits,
     totalOrders,
