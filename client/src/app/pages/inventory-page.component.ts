@@ -1,4 +1,4 @@
-import { Component, HostListener, OnInit, computed, effect, inject, signal } from '@angular/core';
+﻿import { Component, HostListener, OnInit, computed, effect, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { ApiService } from '../core/api.service';
 import { AuthService } from '../core/auth.service';
@@ -13,7 +13,7 @@ import { ClearDataDialogComponent } from '../shared/clear-data-dialog.component'
   imports: [FormsModule, BrandFilterComponent, ClearDataDialogComponent],
   template: `
     <header class="topbar topbar-static">
-      <div class="topbar-left"><div><h1>Blinkit Inventory Dashboard</h1><span class="muted">{{ lastUpdated() }}</span></div></div>
+      <div class="topbar-left"><div><h1>Stock</h1><span class="muted">{{ lastUpdated() }}</span></div></div>
       <div class="topbar-right">
         @if (isAdmin()) { <label class="upload-btn">Upload Inventory<input type="file" accept=".xlsx" hidden (change)="upload($event)"></label> }
         <button class="secondary-btn" (click)="download('/api/export')">Get Sheet</button>

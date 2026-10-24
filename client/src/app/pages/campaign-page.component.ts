@@ -1,4 +1,4 @@
-import { Component, HostListener, OnInit, computed, effect, inject, signal } from '@angular/core';
+﻿import { Component, HostListener, OnInit, computed, effect, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { ApiService } from '../core/api.service';
 import { AuthService } from '../core/auth.service';
@@ -25,7 +25,7 @@ const SHEET_LABELS: Record<CampaignSheetFilter, string> = {
   imports: [FormsModule, BrandFilterComponent, ClearDataDialogComponent],
   template: `
     <header class="topbar">
-      <div class="topbar-left"><div><h1>Campaign Analysis</h1><span class="muted">{{ lastUpdated() }}</span></div></div>
+      <div class="topbar-left"><div><h1>Advertising</h1><span class="muted">{{ lastUpdated() }}</span></div></div>
       <div class="topbar-right">
         @if (isAdmin()) { <label class="upload-btn">Upload Campaign Sheet<input type="file" accept=".xls,.xlsx" hidden (change)="upload($event)"></label> }
         <button class="secondary-btn" (click)="exportCampaign()">Get Sheet</button>

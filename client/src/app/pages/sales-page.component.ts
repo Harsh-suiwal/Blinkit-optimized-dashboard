@@ -1,4 +1,4 @@
-import { Component, HostListener, OnInit, computed, effect, inject, signal } from '@angular/core';
+﻿import { Component, HostListener, OnInit, computed, effect, inject, signal } from '@angular/core';
 import { ApiService } from '../core/api.service';
 import { AuthService } from '../core/auth.service';
 import { compareValues, money } from '../core/formatters';
@@ -17,7 +17,7 @@ type ProductCityRow = CityRow & { sharePct: number };
   imports: [BrandFilterComponent, ClearDataDialogComponent],
   template: `
     <header class="topbar">
-      <div class="topbar-left"><div><h1>{{ view() === 'product' ? 'Sales Performance - Product Wise' : 'Sales Performance - City Wise' }}</h1><span class="muted">{{ lastUpdated() }}</span></div></div>
+      <div class="topbar-left"><div><h1>{{ view() === 'product' ? 'Sales by product' : 'Sales by city' }}</h1><span class="muted">{{ lastUpdated() }}</span></div></div>
       <div class="topbar-right">
         @if (isAdmin()) { <label class="upload-btn">Upload Sales Report<input type="file" accept=".xlsx" hidden (change)="upload($event)"></label> }
         <button class="secondary-btn" (click)="getSheet()">Get Sheet</button>

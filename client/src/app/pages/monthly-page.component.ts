@@ -1,4 +1,4 @@
-import { Component, computed, effect, inject, signal, untracked } from '@angular/core';
+﻿import { Component, computed, effect, inject, signal, untracked } from '@angular/core';
 import { ApiService } from '../core/api.service';
 import { AuthService } from '../core/auth.service';
 import { money, number } from '../core/formatters';
@@ -30,7 +30,7 @@ const METRICS: { key: Metric; label: string }[] = [
   selector: 'app-monthly-page',
   template: `
     <header class="topbar">
-      <div class="topbar-left"><div><h1>Monthly comparison</h1><span class="muted">{{ brand() || 'All brands combined' }}</span></div></div>
+      <div class="topbar-left"><div><h1>Trends</h1><span class="muted">{{ brand() || 'All brands combined' }}</span></div></div>
       @if (isAdmin()) {
         <div class="topbar-right"><label class="upload-btn">Upload monthly sales report<input type="file" accept=".xlsx,.xls" hidden (change)="upload($event)"></label></div>
       }
