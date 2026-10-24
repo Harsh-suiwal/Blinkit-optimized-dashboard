@@ -1,10 +1,12 @@
-<!doctype html>
+﻿<!doctype html>
 <html lang="en">
 <head>
   <meta charset="utf-8">
   <title>Blinkit Dashboard</title>
   <base href="/app/">
   <meta name="viewport" content="width=device-width, initial-scale=1">
+  <!-- Apply the saved look before the app loads (no flash of the other style). Pro unless Glass was chosen. -->
+  <script>document.documentElement.setAttribute('data-look', localStorage.getItem('blinkitLook') === 'glass' ? 'glass' : 'pro');</script>
 </head>
 <body>
   <app-root></app-root>

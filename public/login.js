@@ -1,3 +1,6 @@
+﻿// Same look as the dashboard (Profile > Appearance): Pro unless Glass was chosen.
+document.documentElement.setAttribute('data-look', localStorage.getItem('blinkitLook') === 'glass' ? 'glass' : 'pro');
+
 const form = document.getElementById('loginForm');
 const errorEl = document.getElementById('loginError');
 const btn = document.getElementById('loginBtn');

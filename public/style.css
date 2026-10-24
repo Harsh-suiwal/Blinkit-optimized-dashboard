@@ -2253,129 +2253,9 @@ a.secondary-btn {
 }
 
 /* ==========================================================================
-   Pro theme (v7): flat, quiet surfaces for client meetings.
-   Overrides the glass look above through its own tokens; delete this block to go back.
+   Layout for the brand workspace pages (v7). Works with both looks:
+   Pro and Glass. Colours come from the tokens of the active look.
    ========================================================================== */
-:root {
-  --bg: #f6f6f4;
-  --surface: #ffffff;
-  --surface-rgb: 255, 255, 255;
-  --surface-alt: #f0efec;
-  --border: rgba(31, 30, 29, 0.12);
-  --text: #1f1e1d;
-  --text-muted: #6b6a66;
-  --shadow: rgba(31, 30, 29, 0.08);
-
-  --accent: #1f6fd1;
-  --accent-rgb: 31, 111, 209;
-  --accent-hover: #185ab0;
-  --success: #1e7d4f;
-  --success-rgb: 30, 125, 79;
-  --danger: #c23b3b;
-  --danger-rgb: 194, 59, 59;
-  --gradient: var(--accent);
-
-  --glass-bg: var(--surface);
-  --glass-bg-strong: var(--surface);
-  --glass-border: var(--border);
-  --glass-highlight: transparent;
-  --glass-shadow: none;
-  --glass-blur: none;
-
-  --sidebar-bg: var(--surface-alt);
-  --sidebar-text: var(--text-muted);
-  --sidebar-text-active: var(--text);
-  --sidebar-border: var(--border);
-}
-
-html[data-theme="dark"] {
-  --bg: #1a1a19;
-  --surface: #232322;
-  --surface-rgb: 35, 35, 34;
-  --surface-alt: #2c2c2a;
-  --border: rgba(255, 255, 255, 0.11);
-  --text: #ecebe8;
-  --text-muted: #a3a19b;
-  --shadow: rgba(0, 0, 0, 0.4);
-
-  --accent: #6aa6f2;
-  --accent-rgb: 106, 166, 242;
-  --accent-hover: #8dbbf5;
-  --success: #5cc28a;
-  --success-rgb: 92, 194, 138;
-  --danger: #f07171;
-  --danger-rgb: 240, 113, 113;
-
-  --glass-bg: var(--surface);
-  --glass-bg-strong: var(--surface);
-  --glass-border: var(--border);
-  --glass-highlight: transparent;
-  --glass-shadow: none;
-
-  --sidebar-bg: #202020;
-  --sidebar-text: var(--text-muted);
-  --sidebar-text-active: var(--text);
-  --sidebar-border: var(--border);
-}
-
-body {
-  background: var(--bg);
-}
-
-/* Surfaces: no blur, no glow */
-.topbar,
-.sidebar,
-.card,
-.overview-list,
-.upload-btn,
-.secondary-btn {
-  backdrop-filter: none;
-  -webkit-backdrop-filter: none;
-}
-
-.topbar {
-  background: var(--surface);
-  border-bottom: 1px solid var(--border);
-}
-
-.topbar-left h1 {
-  font-size: 22px;
-  font-weight: 600;
-}
-
-/* Sidebar: light panel, brand switcher on top, quiet navigation */
-.sidebar-brand {
-  background: none;
-  -webkit-text-fill-color: currentColor;
-  color: var(--text);
-  font-size: 15px;
-  font-weight: 600;
-}
-
-.sidebar-nav {
-  padding: 8px 0;
-}
-
-.sidebar-nav a {
-  margin: 2px 10px;
-  padding: 9px 12px;
-  border-radius: 8px;
-  font-size: 14px;
-  color: var(--sidebar-text);
-}
-
-.sidebar-nav a:hover {
-  background: rgba(var(--accent-rgb), 0.07);
-  color: var(--text);
-  transform: none;
-}
-
-.sidebar-nav a.active {
-  background: rgba(var(--accent-rgb), 0.13);
-  color: var(--accent);
-  font-weight: 600;
-}
-
 .sidebar-icon {
   display: inline-flex;
   align-items: center;
@@ -2384,13 +2264,6 @@ body {
 .sidebar-icon svg {
   width: 18px;
   height: 18px;
-}
-
-.sidebar-focus-label {
-  text-transform: none;
-  letter-spacing: 0;
-  font-size: 12px;
-  font-weight: 500;
 }
 
 .brand-switcher {
@@ -2447,158 +2320,6 @@ body {
   background: var(--surface);
 }
 
-.sidebar-logout,
-.theme-switch {
-  background: var(--surface);
-  border-color: var(--border);
-  color: var(--text-muted);
-}
-
-.sidebar-logout:hover {
-  background: var(--surface);
-  color: var(--text);
-}
-
-.theme-switch-thumb {
-  background: var(--accent);
-  box-shadow: none;
-}
-
-/* Metric cards: flat tiles, sentence-case labels */
-.card {
-  background-color: var(--surface);
-  background-image: none;
-  border: 1px solid var(--border);
-  border-radius: 12px;
-  box-shadow: none;
-  padding: 14px 16px;
-}
-
-.card::before {
-  display: none;
-}
-
-.card:hover {
-  transform: none;
-  box-shadow: none;
-}
-
-.card-label {
-  margin-top: 0;
-  margin-bottom: 4px;
-  font-size: 13px;
-  font-weight: 500;
-  text-transform: none;
-  letter-spacing: 0;
-}
-
-.card-value {
-  font-size: 26px;
-  font-weight: 600;
-}
-
-.overview-card-link:hover {
-  border-color: rgba(var(--accent-rgb), 0.5);
-  background-color: rgba(var(--accent-rgb), 0.04);
-}
-
-/* Buttons: quiet outline, one accent */
-.upload-btn,
-.secondary-btn {
-  border-radius: 8px;
-  padding: 8px 14px;
-  font-size: 13.5px;
-  box-shadow: none;
-}
-
-.upload-btn {
-  background: var(--accent);
-  border-color: var(--accent);
-  color: #ffffff;
-}
-
-.upload-btn:hover {
-  background: var(--accent-hover);
-  border-color: var(--accent-hover);
-  transform: none;
-  box-shadow: none;
-}
-
-.secondary-btn {
-  background: var(--surface);
-  border-color: var(--border);
-  color: var(--text);
-}
-
-.secondary-btn:hover,
-html[data-theme="dark"] .secondary-btn:hover {
-  background: var(--surface-alt);
-  border-color: var(--border);
-  color: var(--text);
-  transform: none;
-  box-shadow: none;
-}
-
-.upload-btn:active,
-.secondary-btn:active {
-  transform: scale(0.98);
-}
-
-/* Destructive buttons (Clear Data, Delete month) stay red */
-.secondary-btn.danger-btn {
-  background: var(--surface);
-  border-color: rgba(var(--danger-rgb), 0.4);
-  color: var(--danger);
-}
-
-.secondary-btn.danger-btn:hover {
-  background: rgba(var(--danger-rgb), 0.08);
-  border-color: rgba(var(--danger-rgb), 0.55);
-  color: var(--danger);
-}
-
-/* Tables */
-table {
-  border-radius: 12px;
-}
-
-tbody tr:last-child td:first-child {
-  border-bottom-left-radius: 12px;
-}
-
-tbody tr:last-child td:last-child {
-  border-bottom-right-radius: 12px;
-}
-
-th {
-  color: var(--text-muted);
-  font-size: 12.5px;
-  text-transform: none;
-  letter-spacing: 0;
-}
-
-/* Tabs and chips */
-.sheet-tabs {
-  border-radius: 8px;
-  background: var(--surface-alt);
-}
-
-.sheet-tab {
-  border-radius: 6px;
-}
-
-.sheet-tab.active {
-  background: var(--surface);
-  color: var(--accent);
-  box-shadow: 0 0 0 1px var(--border);
-}
-
-.month-chip {
-  border-radius: 8px;
-  background: var(--surface);
-}
-
-/* Overview header: platform and period */
 .overview-context {
   display: flex;
   flex-wrap: wrap;
@@ -2625,7 +2346,6 @@ th {
   color: var(--text-muted);
 }
 
-/* Overview: headline row and panels */
 .kpi-row {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
@@ -2657,11 +2377,6 @@ th {
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 12px;
   padding: 12px 24px 0;
-}
-
-.overview-list {
-  border-radius: 12px;
-  padding: 14px 16px;
 }
 
 .panel-head {
@@ -2710,12 +2425,10 @@ th {
   height: 5px;
 }
 
-/* Bottom breathing room on the overview */
 .overview-end {
   height: 32px;
 }
 
-/* Overview header: platform tabs and actions */
 .platform-tabs {
   display: inline-flex;
   border: 1px solid var(--border);
@@ -2766,15 +2479,13 @@ th {
   color: var(--text-muted);
 }
 
-/* Sidebar: section label above admin-only links */
 .sidebar-section-label {
   margin: 14px 22px 4px;
   font-size: 12px;
   font-weight: 500;
-  color: var(--text-muted);
+  color: var(--sidebar-text);
 }
 
-/* Coming soon pages */
 .coming-soon {
   max-width: 560px;
   margin: 72px auto;
@@ -2826,4 +2537,346 @@ th {
   padding-top: 18px;
   border-top: 0;
   border-bottom: 1px solid var(--sidebar-border);
+}
+
+/* Profile page */
+.profile {
+  display: grid;
+  gap: 12px;
+  max-width: 640px;
+  padding: 20px 24px 32px;
+}
+
+.profile-card h3 {
+  margin: 0 0 4px;
+}
+
+.profile-card > p.muted {
+  margin: 0 0 12px;
+  font-size: 13px;
+}
+
+.profile-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 16px;
+  padding: 10px 0;
+  border-top: 1px solid var(--border);
+}
+
+.profile-label {
+  font-weight: 600;
+  color: var(--text);
+}
+
+.profile-card > p.profile-hint {
+  margin: 0 0 6px;
+  font-size: 12.5px;
+}
+
+.profile-facts {
+  margin: 0;
+  display: grid;
+}
+
+.profile-facts div {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 10px 0;
+  border-top: 1px solid var(--border);
+}
+
+.profile-facts dt {
+  color: var(--text-muted);
+}
+
+.profile-facts dd {
+  margin: 0;
+  font-weight: 600;
+  color: var(--text);
+  overflow-wrap: anywhere;
+}
+
+/* ==========================================================================
+   Pro look (v7): flat, quiet surfaces for client meetings.
+   Applies only when <html data-look="pro"> (Profile > Appearance). Without it the
+   original glass design above is used unchanged.
+   ========================================================================== */
+html[data-look="pro"] {
+  --bg: #f6f6f4;
+  --surface: #ffffff;
+  --surface-rgb: 255, 255, 255;
+  --surface-alt: #f0efec;
+  --border: rgba(31, 30, 29, 0.12);
+  --text: #1f1e1d;
+  --text-muted: #6b6a66;
+  --shadow: rgba(31, 30, 29, 0.08);
+
+  --accent: #1f6fd1;
+  --accent-rgb: 31, 111, 209;
+  --accent-hover: #185ab0;
+  --success: #1e7d4f;
+  --success-rgb: 30, 125, 79;
+  --danger: #c23b3b;
+  --danger-rgb: 194, 59, 59;
+  --gradient: var(--accent);
+
+  --glass-bg: var(--surface);
+  --glass-bg-strong: var(--surface);
+  --glass-border: var(--border);
+  --glass-highlight: transparent;
+  --glass-shadow: none;
+  --glass-blur: none;
+
+  --sidebar-bg: var(--surface-alt);
+  --sidebar-text: var(--text-muted);
+  --sidebar-text-active: var(--text);
+  --sidebar-border: var(--border);
+}
+
+html[data-look="pro"][data-theme="dark"] {
+  --bg: #1a1a19;
+  --surface: #232322;
+  --surface-rgb: 35, 35, 34;
+  --surface-alt: #2c2c2a;
+  --border: rgba(255, 255, 255, 0.11);
+  --text: #ecebe8;
+  --text-muted: #a3a19b;
+  --shadow: rgba(0, 0, 0, 0.4);
+
+  --accent: #6aa6f2;
+  --accent-rgb: 106, 166, 242;
+  --accent-hover: #8dbbf5;
+  --success: #5cc28a;
+  --success-rgb: 92, 194, 138;
+  --danger: #f07171;
+  --danger-rgb: 240, 113, 113;
+
+  --glass-bg: var(--surface);
+  --glass-bg-strong: var(--surface);
+  --glass-border: var(--border);
+  --glass-highlight: transparent;
+  --glass-shadow: none;
+
+  --sidebar-bg: #202020;
+  --sidebar-text: var(--text-muted);
+  --sidebar-text-active: var(--text);
+  --sidebar-border: var(--border);
+}
+
+html[data-look="pro"] body {
+  background: var(--bg);
+}
+
+html[data-look="pro"] .topbar,
+html[data-look="pro"] .sidebar,
+html[data-look="pro"] .card,
+html[data-look="pro"] .overview-list,
+html[data-look="pro"] .upload-btn,
+html[data-look="pro"] .secondary-btn {
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+
+html[data-look="pro"] .topbar {
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+}
+
+html[data-look="pro"] .topbar-left h1 {
+  font-size: 22px;
+  font-weight: 600;
+}
+
+html[data-look="pro"] .sidebar-brand {
+  background: none;
+  -webkit-text-fill-color: currentColor;
+  color: var(--text);
+  font-size: 15px;
+  font-weight: 600;
+}
+
+html[data-look="pro"] .sidebar-nav {
+  padding: 8px 0;
+}
+
+html[data-look="pro"] .sidebar-nav a {
+  margin: 2px 10px;
+  padding: 9px 12px;
+  border-radius: 8px;
+  font-size: 14px;
+  color: var(--sidebar-text);
+}
+
+html[data-look="pro"] .sidebar-nav a:hover {
+  background: rgba(var(--accent-rgb), 0.07);
+  color: var(--text);
+  transform: none;
+}
+
+html[data-look="pro"] .sidebar-nav a.active {
+  background: rgba(var(--accent-rgb), 0.13);
+  color: var(--accent);
+  font-weight: 600;
+}
+
+html[data-look="pro"] .sidebar-focus-label {
+  text-transform: none;
+  letter-spacing: 0;
+  font-size: 12px;
+  font-weight: 500;
+}
+
+html[data-look="pro"] .sidebar-logout,
+html[data-look="pro"] .theme-switch {
+  background: var(--surface);
+  border-color: var(--border);
+  color: var(--text-muted);
+}
+
+html[data-look="pro"] .sidebar-logout:hover {
+  background: var(--surface);
+  color: var(--text);
+}
+
+html[data-look="pro"] .theme-switch-thumb {
+  background: var(--accent);
+  box-shadow: none;
+}
+
+html[data-look="pro"] .card {
+  background-color: var(--surface);
+  background-image: none;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  box-shadow: none;
+  padding: 14px 16px;
+}
+
+html[data-look="pro"] .card::before {
+  display: none;
+}
+
+html[data-look="pro"] .card:hover {
+  transform: none;
+  box-shadow: none;
+}
+
+html[data-look="pro"] .card-label {
+  margin-top: 0;
+  margin-bottom: 4px;
+  font-size: 13px;
+  font-weight: 500;
+  text-transform: none;
+  letter-spacing: 0;
+}
+
+html[data-look="pro"] .card-value {
+  font-size: 26px;
+  font-weight: 600;
+}
+
+html[data-look="pro"] .overview-card-link:hover {
+  border-color: rgba(var(--accent-rgb), 0.5);
+  background-color: rgba(var(--accent-rgb), 0.04);
+}
+
+html[data-look="pro"] .upload-btn,
+html[data-look="pro"] .secondary-btn {
+  border-radius: 8px;
+  padding: 8px 14px;
+  font-size: 13.5px;
+  box-shadow: none;
+}
+
+html[data-look="pro"] .upload-btn {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #ffffff;
+}
+
+html[data-look="pro"] .upload-btn:hover {
+  background: var(--accent-hover);
+  border-color: var(--accent-hover);
+  transform: none;
+  box-shadow: none;
+}
+
+html[data-look="pro"] .secondary-btn {
+  background: var(--surface);
+  border-color: var(--border);
+  color: var(--text);
+}
+
+html[data-look="pro"] .secondary-btn:hover,
+html[data-look="pro"][data-theme="dark"] .secondary-btn:hover {
+  background: var(--surface-alt);
+  border-color: var(--border);
+  color: var(--text);
+  transform: none;
+  box-shadow: none;
+}
+
+html[data-look="pro"] .upload-btn:active,
+html[data-look="pro"] .secondary-btn:active {
+  transform: scale(0.98);
+}
+
+html[data-look="pro"] .secondary-btn.danger-btn {
+  background: var(--surface);
+  border-color: rgba(var(--danger-rgb), 0.4);
+  color: var(--danger);
+}
+
+html[data-look="pro"] .secondary-btn.danger-btn:hover {
+  background: rgba(var(--danger-rgb), 0.08);
+  border-color: rgba(var(--danger-rgb), 0.55);
+  color: var(--danger);
+}
+
+html[data-look="pro"] table {
+  border-radius: 12px;
+}
+
+html[data-look="pro"] tbody tr:last-child td:first-child {
+  border-bottom-left-radius: 12px;
+}
+
+html[data-look="pro"] tbody tr:last-child td:last-child {
+  border-bottom-right-radius: 12px;
+}
+
+html[data-look="pro"] th {
+  color: var(--text-muted);
+  font-size: 12.5px;
+  text-transform: none;
+  letter-spacing: 0;
+}
+
+html[data-look="pro"] .sheet-tabs {
+  border-radius: 8px;
+  background: var(--surface-alt);
+}
+
+html[data-look="pro"] .sheet-tab {
+  border-radius: 6px;
+}
+
+html[data-look="pro"] .sheet-tab.active {
+  background: var(--surface);
+  color: var(--accent);
+  box-shadow: 0 0 0 1px var(--border);
+}
+
+html[data-look="pro"] .month-chip {
+  border-radius: 8px;
+  background: var(--surface);
+}
+
+html[data-look="pro"] .overview-list {
+  border-radius: 12px;
+  padding: 14px 16px;
 }

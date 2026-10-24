@@ -1,4 +1,4 @@
-import { DOCUMENT } from '@angular/common';
+﻿import { DOCUMENT } from '@angular/common';
 import { Injectable, inject, signal } from '@angular/core';
 
 const THEME_KEY = 'blinkitTheme';
@@ -7,11 +7,14 @@ const SIDEBAR_COLLAPSED_KEY = 'blinkitSidebarCollapsed';
 const PRODUCT_FOCUS_KEY = 'blinkitFocusProduct';
 const BRAND_FILTER_KEY = 'blinkitBrandFilter';
 const FEEDER_FILTER_KEY = 'blinkitFeederFilter';
+const LOOK_KEY = 'blinkitLook';
 
 @Injectable({ providedIn: 'root' })
 export class UiStateService {
   private readonly document = inject(DOCUMENT);
   readonly theme = signal(this.read(THEME_KEY) || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'));
+  /** 'pro' (flat, the default) or 'glass' (the original design). Sets <html data-look>; see the Pro look block in style.css. */
+  readonly look = signal<'pro' | 'glass'>(this.read(LOOK_KEY) === 'glass' ? 'glass' : 'pro');
   readonly sidebarWidth = signal(Number(this.read(SIDEBAR_WIDTH_KEY)) || 220);
   readonly collapsed = signal(this.read(SIDEBAR_COLLAPSED_KEY) === '1');
   readonly focusedProduct = signal(this.read(PRODUCT_FOCUS_KEY));
@@ -23,6 +26,7 @@ export class UiStateService {
   constructor() {
     this.setFocus('');
     this.applyTheme(this.theme());
+    this.applyLook(this.look());
     this.applySidebarWidth(this.sidebarWidth());
   }
 
@@ -31,6 +35,18 @@ export class UiStateService {
     this.theme.set(next);
     localStorage.setItem(THEME_KEY, next);
     this.applyTheme(next);
+  }
+
+  setTheme(theme: 'light' | 'dark') {
+    this.theme.set(theme);
+    localStorage.setItem(THEME_KEY, theme);
+    this.applyTheme(theme);
+  }
+
+  setLook(look: 'pro' | 'glass') {
+    this.look.set(look);
+    localStorage.setItem(LOOK_KEY, look);
+    this.applyLook(look);
   }
 
   setSidebarWidth(width: number) {
@@ -69,6 +85,10 @@ export class UiStateService {
     this.setFocus('');
     this.setBrand('');
     this.setFeeder('');
+  }
+
+  private applyLook(look: string) {
+    this.document.documentElement.setAttribute('data-look', look);
   }
 
   private applyTheme(theme: string) {
