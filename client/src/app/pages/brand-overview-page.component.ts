@@ -1,4 +1,4 @@
-import { Component, OnInit, computed, effect, inject, signal, untracked } from '@angular/core';
+﻿import { Component, OnInit, computed, effect, inject, signal, untracked } from '@angular/core';
 import { RouterLink } from '@angular/router';
 import { ApiService } from '../core/api.service';
 import { money, number } from '../core/formatters';
@@ -7,18 +7,34 @@ import { UiStateService } from '../core/ui-state.service';
 
 const SHORT_MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
+/** A card's second line: a change vs last month (up / down) or a plain note. */
+interface KpiNote { text: string; tone: '' | 'up' | 'down'; }
+
 /**
- * One brand's dashboard for client meetings: sales, monthly trend, stock and advertising,
- * for the brand picked in the sidebar. Shows no other brand's data.
+ * One brand's dashboard for client meetings: headline numbers, monthly revenue, top cities,
+ * top products and best sellers, for the brand picked in the sidebar. Shows no other brand.
+ * Every headline card opens its detail page.
  */
 @Component({
   selector: 'app-brand-overview-page',
   imports: [RouterLink],
   template: `
     <header class="topbar">
-      <div class="topbar-left"><div><h1>{{ brand() || 'Brand overview' }}</h1><span class="muted">{{ brand() ? 'Brand overview' : 'Choose a brand to begin' }}</span></div></div>
+      <div class="topbar-left"><div><h1>{{ brand() || 'Brand overview' }}</h1><span class="muted">{{ brand() ? 'Overview' : 'Choose a brand to begin' }}</span></div></div>
       @if (brand()) {
-        <div class="topbar-right"><a class="secondary-btn" routerLink="/monthly-comparison">Compare months</a></div>
+        <div class="topbar-right overview-context">
+          <nav class="platform-tabs" aria-label="Platform">
+            <a routerLink="/platforms/all">All</a>
+            <a class="active" aria-current="page">Blinkit</a>
+            <a routerLink="/platforms/zepto">Zepto</a>
+            <a routerLink="/platforms/flipkart-minutes">Flipkart Minutes</a>
+          </nav>
+          @if (periodLabel()) {
+            <span class="context-pill" title="Period"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7a2 2 0 0 1 2 -2h12a2 2 0 0 1 2 2v12a2 2 0 0 1 -2 2h-12a2 2 0 0 1 -2 -2v-12z"/><path d="M16 3v4"/><path d="M8 3v4"/><path d="M4 11h16"/></svg>{{ periodLabel() }}</span>
+          }
+          <a class="secondary-btn overview-action" routerLink="/present"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 4l18 0"/><path d="M4 4v10a2 2 0 0 0 2 2h12a2 2 0 0 0 2 -2v-10"/><path d="M12 16l0 4"/><path d="M9 20l6 0"/><path d="M8 12l3 -3l2 2l3 -3"/></svg>Present</a>
+          <a class="secondary-btn overview-action" routerLink="/reports"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 3v4a1 1 0 0 0 1 1h4"/><path d="M11.5 21h-4.5a2 2 0 0 1 -2 -2v-14a2 2 0 0 1 2 -2h7l5 5v5m-5 6h7m-3 -3l3 3l-3 3"/></svg>Create report</a>
+        </div>
       }
     </header>
     <div class="upload-status" [class.error]="!!error()">{{ error() }}</div>
@@ -39,114 +55,112 @@ const SHORT_MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'S
       <p class="muted overview-loading">Loading {{ brand() }}…</p>
     } @else {
       @if (data(); as d) {
-      <section class="overview-section" aria-labelledby="ovSales">
-        <div class="overview-head">
-          <div><h2 id="ovSales">Sales</h2>@if (d.sales; as s) { @if (s.from && s.to) { <p class="overview-period">Orders from {{ periodText(s.from, s.to) }}</p> } <p class="muted">{{ sourceText(s.fileName, s.date) }}</p> }</div>
-          <a class="overview-link" routerLink="/sales-performance">Open sales</a>
-        </div>
-        @if (d.sales; as s) {
-          <div class="cards overview-cards">
-            <a class="card overview-card-link" routerLink="/sales-performance" title="Open sales"><div class="card-label">Revenue</div><div class="card-value">{{ money(s.totalRevenue, 0) }}</div></a>
-            <a class="card overview-card-link" routerLink="/sales-performance" title="Open sales"><div class="card-label">Orders</div><div class="card-value">{{ number(s.totalOrders) }}</div></a>
-            <a class="card overview-card-link" routerLink="/sales-performance" title="Open sales"><div class="card-label">Units sold</div><div class="card-value">{{ number(s.totalUnits) }}</div></a>
-            <a class="card overview-card-link" routerLink="/sales-performance" title="Open sales"><div class="card-label">Avg order value</div><div class="card-value">{{ money(s.avgOrderValue, 0) }}</div></a>
+        <section class="kpi-row" aria-label="Headline numbers">
+          <a class="card overview-card-link" routerLink="/sales-performance" title="Open sales">
+            <div class="card-label">Revenue</div>
+            <div class="card-value">{{ d.sales ? money(d.sales.totalRevenue, 0) : '-' }}</div>
+            <span class="kpi-note" [class.up]="revenueNote().tone === 'up'" [class.down]="revenueNote().tone === 'down'">{{ revenueNote().text }}</span>
+          </a>
+          <a class="card overview-card-link" routerLink="/sales-performance" title="Open sales">
+            <div class="card-label">Orders</div>
+            <div class="card-value">{{ d.sales ? number(d.sales.totalOrders) : '-' }}</div>
+            <span class="kpi-note" [class.up]="ordersNote().tone === 'up'" [class.down]="ordersNote().tone === 'down'">{{ ordersNote().text }}</span>
+          </a>
+          <a class="card overview-card-link" routerLink="/inventory" title="Open stock">
+            <div class="card-label">Units in stock</div>
+            <div class="card-value">{{ d.inventory ? number(d.inventory.totalStock) : '-' }}</div>
+            @if (d.inventory; as inv) {
+              <span class="kpi-note" [class.down]="inv.outOfStock > 0" [class.up]="inv.outOfStock === 0">{{ inv.outOfStock > 0 ? number(inv.outOfStock) + ' out of stock' : 'Nothing out of stock' }}</span>
+            } @else {
+              <span class="kpi-note">No stock report yet</span>
+            }
+          </a>
+          <a class="card overview-card-link" routerLink="/campaign-analysis" title="Open advertising">
+            <div class="card-label">Return on ad spend</div>
+            <div class="card-value">{{ d.campaign ? (d.campaign.roas === null ? 'n/a' : d.campaign.roas + 'x') : '-' }}</div>
+            @if (d.campaign; as c) {
+              <span class="kpi-note">{{ money(c.adSpend, 0) }} spent in {{ c.periodLabel }}</span>
+            } @else {
+              <span class="kpi-note">No campaign report yet</span>
+            }
+          </a>
+        </section>
+
+        <section class="overview-panels">
+          <div class="overview-list">
+            <div class="panel-head"><h3>Revenue by month</h3><a class="overview-link" routerLink="/monthly-comparison">Compare months</a></div>
+            @if (trendMonths().length) {
+              <div class="month-bars" role="img" [attr.aria-label]="trendLabel()">
+                @for (m of trendMonths(); track m.monthKey; let last = $last) {
+                  <div class="month-bar" [class.partial]="m.partial">
+                    <span class="month-bar-value">{{ compactMoney(m.revenue) }}</span>
+                    <span class="month-bar-track"><span class="month-bar-fill" [style.height.%]="barWidth(m.revenue, trendMax())" [style.opacity]="last ? 1 : 0.45"></span></span>
+                    <span class="month-bar-label">{{ shortMonth(m.monthKey) }}{{ m.partial ? '*' : '' }}</span>
+                  </div>
+                }
+              </div>
+              @if (hasPartial()) { <p class="muted overview-footnote">* Partial month: the uploaded orders don't cover every day of that month.</p> }
+            } @else {
+              <p class="muted">Upload one sales report per month on the Monthly Comparison page to see the trend.</p>
+            }
           </div>
-          <div class="overview-split">
-            <div class="overview-list">
-              <h3>Top cities</h3>
+          <div class="overview-list">
+            <div class="panel-head"><h3>Top cities</h3><a class="overview-link" routerLink="/sales-performance">View all</a></div>
+            @if (d.sales; as s) {
               <ol class="rank-list">
                 @for (c of s.topCities; track c.city) {
                   <li>
-                    <span class="rank-name">{{ c.city }}</span><span class="rank-value">{{ money(c.revenue, 0) }}</span>
+                    <span class="rank-name">{{ c.city }}</span><span class="rank-value">{{ compactMoney(c.revenue) }}</span>
                     <span class="rank-bar" aria-hidden="true"><span [style.width.%]="barWidth(c.revenue, s.topCities[0].revenue)"></span></span>
-                    <span class="rank-share">{{ c.sharePct }}% of revenue</span>
                   </li>
                 }
               </ol>
-              <p class="muted">Sold in {{ s.cityCount }} {{ s.cityCount === 1 ? 'city' : 'cities' }}</p>
-            </div>
-            <div class="overview-list">
-              <h3>Top products</h3>
+            } @else {
+              <p class="muted">No sales report has been uploaded for {{ d.brand }} yet.</p>
+            }
+          </div>
+        </section>
+
+        <section class="overview-panels">
+          <div class="overview-list">
+            <div class="panel-head"><h3>Top products</h3><a class="overview-link" routerLink="/sales-performance">View all</a></div>
+            @if (d.sales; as s) {
               <ol class="rank-list">
                 @for (p of s.topProducts; track p.productName) {
                   <li>
-                    <span class="rank-name">{{ p.productName }}</span><span class="rank-value">{{ money(p.revenue, 0) }}</span>
+                    <span class="rank-name">{{ p.productName }}</span><span class="rank-value">{{ compactMoney(p.revenue) }}</span>
                     <span class="rank-bar" aria-hidden="true"><span [style.width.%]="barWidth(p.revenue, s.topProducts[0].revenue)"></span></span>
                     <span class="rank-share">{{ p.sharePct }}% of revenue, {{ number(p.units) }} units</span>
                   </li>
                 }
               </ol>
-              <p class="muted">{{ s.productCount }} {{ s.productCount === 1 ? 'product' : 'products' }} sold</p>
-            </div>
-          </div>
-        } @else {
-          <p class="overview-none">No sales report has been uploaded for {{ d.brand }} yet.</p>
-        }
-      </section>
-
-      <section class="overview-section" aria-labelledby="ovMonths">
-        <div class="overview-head">
-          <div><h2 id="ovMonths">Monthly revenue</h2>@if (trendMonths().length) { <p class="muted">Last {{ trendMonths().length }} {{ trendMonths().length === 1 ? 'month' : 'months' }} on record</p> }</div>
-          <a class="overview-link" routerLink="/monthly-comparison">Compare months</a>
-        </div>
-        @if (trendMonths().length) {
-          <div class="month-bars" role="img" [attr.aria-label]="trendLabel()">
-            @for (m of trendMonths(); track m.monthKey) {
-              <div class="month-bar" [class.partial]="m.partial">
-                <span class="month-bar-value">{{ money(m.revenue, 0) }}</span>
-                <span class="month-bar-track"><span class="month-bar-fill" [style.height.%]="barWidth(m.revenue, trendMax())"></span></span>
-                <span class="month-bar-label">{{ shortMonth(m.monthKey) }}{{ m.partial ? '*' : '' }}</span>
-              </div>
+            } @else {
+              <p class="muted">No sales report has been uploaded for {{ d.brand }} yet.</p>
             }
           </div>
-          @if (hasPartial()) { <p class="muted overview-footnote">* Partial month: the uploaded orders don't cover every day of that month.</p> }
-        } @else {
-          <p class="overview-none">No monthly sales yet. Upload one sales report per month on the Monthly comparison page to see the trend.</p>
-        }
-      </section>
+          <div class="overview-list">
+            <div class="panel-head"><h3>Best sellers in stock</h3><a class="overview-link" routerLink="/inventory">View all</a></div>
+            @if (d.inventory; as inv) {
+              <ol class="rank-list">
+                @for (p of inv.topSellers; track p.productName) {
+                  <li>
+                    <span class="rank-name">{{ p.productName }}</span><span class="rank-value">{{ number(p.unitsSold30) }} sold</span>
+                    <span class="rank-bar" aria-hidden="true"><span [style.width.%]="barWidth(p.unitsSold30, inv.topSellers[0].unitsSold30)"></span></span>
+                    <span class="rank-share">{{ number(p.stock) }} in stock, sold in the last 30 days</span>
+                  </li>
+                }
+              </ol>
+              <p class="muted">{{ inv.lowStock }} running low{{ inv.date ? ', stock as of ' + dateText(inv.date) : '' }}</p>
+            } @else {
+              <p class="muted">No stock report has been uploaded for {{ d.brand }} yet.</p>
+            }
+          </div>
+        </section>
 
-      <section class="overview-section" aria-labelledby="ovStock">
-        <div class="overview-head">
-          <div><h2 id="ovStock">Stock</h2>@if (d.inventory; as inv) { @if (inv.date) { <p class="overview-period">Stock as of {{ dateText(inv.date) }}</p> } <p class="muted">{{ sourceText(inv.fileName, inv.date) }}</p> }</div>
-          <a class="overview-link" routerLink="/inventory">Open inventory</a>
-        </div>
-        @if (d.inventory; as inv) {
-          <div class="cards overview-cards">
-            <a class="card overview-card-link" routerLink="/inventory" title="Open inventory"><div class="card-label">Products</div><div class="card-value">{{ number(inv.productCount) }}</div></a>
-            <a class="card overview-card-link" routerLink="/inventory" title="Open inventory"><div class="card-label">Units in stock</div><div class="card-value">{{ number(inv.totalStock) }}</div></a>
-            <a class="card overview-card-link" routerLink="/inventory" title="Open inventory"><div class="card-label">Sold in last 30 days</div><div class="card-value">{{ number(inv.unitsSold30) }}</div></a>
-            <a class="card overview-card-link" routerLink="/inventory" title="Open inventory"><div class="card-label">Out of stock</div><div class="card-value">{{ number(inv.outOfStock) }}</div><span class="muted">{{ inv.lowStock }} running low, of {{ inv.listingCount }} warehouse listings</span></a>
-          </div>
-          <div class="table-wrap overview-table">
-            <table>
-              <thead><tr><th>Best sellers</th><th>Sold in last 30 days</th><th>Units in stock</th></tr></thead>
-              <tbody>
-                @for (p of inv.topSellers; track p.productName) { <tr><td>{{ p.productName }}</td><td>{{ number(p.unitsSold30) }}</td><td>{{ number(p.stock) }}</td></tr> }
-              </tbody>
-            </table>
-          </div>
-        } @else {
-          <p class="overview-none">No inventory report has been uploaded for {{ d.brand }} yet.</p>
+        @if (d.campaign?.bestCampaign; as best) {
+          <p class="overview-note-row">Best campaign in {{ d.campaign?.periodLabel }}: <strong>{{ best.name }}</strong>, returning {{ best.roas }}x its spend.</p>
         }
-      </section>
-
-      <section class="overview-section" aria-labelledby="ovAds">
-        <div class="overview-head">
-          <div><h2 id="ovAds">Advertising</h2>@if (d.campaign; as c) { <p class="overview-period">{{ c.periodLabel }}</p><p class="muted">All campaigns in that month</p> }</div>
-          <a class="overview-link" routerLink="/campaign-analysis">Open campaigns</a>
-        </div>
-        @if (d.campaign; as c) {
-          <div class="cards overview-cards">
-            <a class="card overview-card-link" routerLink="/campaign-analysis" title="Open campaigns"><div class="card-label">Ad spend</div><div class="card-value">{{ money(c.adSpend, 0) }}</div></a>
-            <a class="card overview-card-link" routerLink="/campaign-analysis" title="Open campaigns"><div class="card-label">Sales from ads</div><div class="card-value">{{ money(c.sales, 0) }}</div></a>
-            <a class="card overview-card-link" routerLink="/campaign-analysis" title="Open campaigns"><div class="card-label">Return on ad spend</div><div class="card-value">{{ c.roas === null ? 'n/a' : c.roas + 'x' }}</div></a>
-            <a class="card overview-card-link" routerLink="/campaign-analysis" title="Open campaigns"><div class="card-label">Campaigns</div><div class="card-value">{{ number(c.campaignCount) }}</div></a>
-          </div>
-          @if (c.bestCampaign; as best) { <p class="overview-note">Best campaign: <strong>{{ best.name }}</strong>, returning {{ best.roas }}x its spend.</p> }
-        } @else {
-          <p class="overview-none">No campaign report has been uploaded for {{ d.brand }} yet.</p>
-        }
-      </section>
+        <div class="overview-end" aria-hidden="true"></div>
       }
     }
   `,
@@ -164,6 +178,16 @@ export class BrandOverviewPageComponent implements OnInit {
   readonly hasPartial = computed(() => this.trendMonths().some((m) => m.partial));
   readonly trendLabel = computed(() =>
     this.trendMonths().map((m) => `${m.label}: ${money(m.revenue, 0)}`).join('; '));
+  /** Header period: the order dates of the latest sales upload, else the latest month on record. */
+  readonly periodLabel = computed(() => {
+    const d = this.data();
+    if (!d) return '';
+    if (d.sales?.from && d.sales.to) return this.periodText(d.sales.from, d.sales.to);
+    const months = d.months;
+    return months.length ? months[months.length - 1].label : '';
+  });
+  readonly revenueNote = computed(() => this.kpiNote('revenue'));
+  readonly ordersNote = computed(() => this.kpiNote('orderCount'));
   readonly money = money;
   readonly number = number;
   private requestId = 0;
@@ -204,8 +228,39 @@ export class BrandOverviewPageComponent implements OnInit {
     }
   }
 
+  /**
+   * "+12% vs Sep" when the latest sales upload is the latest full month on record and the month
+   * before it exists; otherwise the period the numbers cover. Never compares a partial month.
+   */
+  private kpiNote(metric: 'revenue' | 'orderCount'): KpiNote {
+    const d = this.data();
+    if (!d?.sales) return { text: 'No sales report yet', tone: '' };
+    const period = d.sales.from && d.sales.to ? this.periodText(d.sales.from, d.sales.to) : '';
+    const months = d.months;
+    if (months.length >= 2 && d.sales.to) {
+      const last = months[months.length - 1];
+      const prev = months[months.length - 2];
+      const sameMonth = d.sales.to.slice(0, 7) === last.monthKey;
+      if (sameMonth && !last.partial && prev[metric] > 0) {
+        const change = Math.round(((last[metric] - prev[metric]) / prev[metric]) * 1000) / 10;
+        const prevName = SHORT_MONTHS[Number(prev.monthKey.slice(5, 7)) - 1];
+        return { text: `${change > 0 ? '+' : ''}${change}% vs ${prevName}`, tone: change > 0 ? 'up' : change < 0 ? 'down' : '' };
+      }
+    }
+    return { text: period ? `Orders from ${period}` : 'Latest sales report', tone: '' };
+  }
+
   barWidth(value: number, max: number) {
     return max > 0 ? Math.max(2, Math.round((value / max) * 100)) : 0;
+  }
+
+  /** ₹3.29L / ₹68.8k / ₹950, the way Indian sales teams read figures. */
+  compactMoney(value: number) {
+    const abs = Math.abs(value);
+    if (abs >= 10000000) return `₹${(value / 10000000).toFixed(2)}Cr`;
+    if (abs >= 100000) return `₹${(value / 100000).toFixed(2)}L`;
+    if (abs >= 1000) return `₹${(value / 1000).toFixed(1)}k`;
+    return money(value, 0);
   }
 
   shortMonth(monthKey: string) {
@@ -226,13 +281,6 @@ export class BrandOverviewPageComponent implements OnInit {
 
   dateText(date: string | null) {
     return date ? this.formatDate(date) : '';
-  }
-
-  sourceText(fileName: string | null, date: string | null) {
-    const when = date ? this.formatDate(date) : '';
-    if (fileName && when) return `From ${fileName}, uploaded ${when}`;
-    if (when) return `Uploaded ${when}`;
-    return fileName ? `From ${fileName}` : '';
   }
 
   private formatDate(date: string) {
