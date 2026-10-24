@@ -16,6 +16,7 @@ import { BrandMarkComponent } from '../shared/brand-mark.component';
         <li><a routerLink="/overview" routerLinkActive="active"><span class="sidebar-icon">🏷️</span><span class="sidebar-label">Brand Overview</span></a></li>
         <li><a routerLink="/inventory" routerLinkActive="active"><span class="sidebar-icon">📦</span><span class="sidebar-label">Inventory Dashboard</span></a></li>
         <li><a routerLink="/sales-performance" routerLinkActive="active"><span class="sidebar-icon">📍</span><span class="sidebar-label">Sales Performance</span></a></li>
+        <li><a routerLink="/monthly-comparison" routerLinkActive="active"><span class="sidebar-icon">📅</span><span class="sidebar-label">Monthly Comparison</span></a></li>
         <li><a routerLink="/campaign-analysis" routerLinkActive="active"><span class="sidebar-icon">📊</span><span class="sidebar-label">Campaign Analysis</span></a></li>
       </ul>
 
@@ -43,7 +44,7 @@ import { BrandMarkComponent } from '../shared/brand-mark.component';
 
     @if (leaderActive()) {
       <div class="shortcut-hint" role="status" aria-live="polite">
-        <strong>Go to:</strong> <kbd>O</kbd> Overview <kbd>I</kbd> Inventory <kbd>S</kbd> Sales <kbd>C</kbd> Campaign
+        <strong>Go to:</strong> <kbd>O</kbd> Overview <kbd>I</kbd> Inventory <kbd>S</kbd> Sales <kbd>M</kbd> Monthly <kbd>C</kbd> Campaign
       </div>
     }
 
@@ -121,6 +122,7 @@ export class AppShellComponent implements OnInit {
         o: '/overview',
         i: '/inventory',
         s: '/sales-performance',
+        m: '/monthly-comparison',
         c: '/campaign-analysis',
       };
       if (routes[key]) {

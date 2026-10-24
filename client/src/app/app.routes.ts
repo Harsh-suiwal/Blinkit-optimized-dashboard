@@ -5,6 +5,7 @@ import { InventoryPageComponent } from './pages/inventory-page.component';
 import { SalesPageComponent } from './pages/sales-page.component';
 import { CampaignPageComponent } from './pages/campaign-page.component';
 import { BrandOverviewPageComponent } from './pages/brand-overview-page.component';
+import { MonthlyPageComponent } from './pages/monthly-page.component';
 
 export const routes: Routes = [
   {
@@ -16,6 +17,7 @@ export const routes: Routes = [
       { path: 'overview', component: BrandOverviewPageComponent },
       { path: 'inventory', component: InventoryPageComponent },
       { path: 'sales-performance', component: SalesPageComponent },
+      { path: 'monthly-comparison', component: MonthlyPageComponent },
       { path: 'campaign-analysis', component: CampaignPageComponent },
     ],
   },
