@@ -36,21 +36,25 @@ parser/
   snapshotHistory.js   inventory snapshot log (kv `history`), 45/60d calc
   salesHistory.js      city trend snapshots
   campaignStore.js     raw daily rows (kv `campaignData`) + query-time aggregation
+  salesMonthly.js      monthly sales (kv `salesMonthly`): one slot per (brand, order-date month)
+  brandOverview.js     builds GET brand-overview from already brand-filtered data (pure)
 client/src/app/
   core/    api.service (ALL http), auth.guard, auth.service, feeder-map.ts, formatters.ts, models.ts, ui-state.service
   layout/  app-shell.component (sidebar+header+outlet)
-  pages/   inventory-page | sales-page | campaign-page (.component.ts)
+  pages/   brand-overview-page | inventory-page | sales-page | monthly-page | campaign-page (.component.ts)
   shared/  brand-mark.component, brand-filter.component (brand chip bar)
 public/                static login page only: login.html, login.js, style.css (legacy dashboard files removed)
 data/ (gitignored; legacy JSON, read only by the migration script)   uploads/ (temp, auto-cleaned)
 ```
-Routes: `/app/inventory` (default), `/app/sales-performance`, `/app/campaign-analysis`.
+Routes: `/app/overview` (default, Brand Overview), `/app/inventory`, `/app/sales-performance`, `/app/monthly-comparison`, `/app/campaign-analysis`.
 
 ## API (all `/api/*`; R = any logged-in, A = admin; uploads are multipart field `report`)
 **Inventory:** `POST upload` A · `GET products` R · `GET summary` R · `DELETE products?productName&warehouseName` A · `POST products/restore {row,index}` A
 **Sales:** `POST sales-upload` A · `GET city-performance` · `GET sales-summary` · `GET product-sales?product` · `GET product-city-sales` · `GET brand-sales?brand` (all R) · `DELETE city-performance/:city` A · `POST city-performance/restore` A (incl. history) · `DELETE sales-history` A (wipes all + trends)
 **Campaign** (query: `periodKey`, `brand`, `sheetType`=PRODUCT_BOOSTING|PRODUCT_RECOMMENDATION, omit for both): `POST campaign-upload` A (multipart `report` + optional `campaignBrands` JSON `{campaignName: brand}` to label unresolved campaigns one by one, + optional `defaultBrand` as a one-brand-for-all fallback; `?dryRun=1` returns `plan[]` (one item per period x sheet x brand, incl. `brandName` and `removedCampaigns`), `unresolved[]`, `skippedRows`, `unrecognisedSheets`) · `GET campaign-analysis` (campaigns[] + brandSummaries[]) · `GET campaign-summary` · `GET campaign-brands` · `GET campaign-detail?periodKey&sheetType&campaignId` (targeting + daily) (all R) · `DELETE campaign-analysis {periodKey,sheetType,campaignId}` A returns `undoToken` · `POST campaign-analysis/restore {undoToken}` A (token held in server memory; lost on restart)
-**Lookups:** `GET product-names`, `GET brand-names` (R; includes campaign brands) · `POST brand-alias {raw,canonical}` A (teaches brandResolver; saved to kv `brandAliases`)
+**Monthly sales:** `POST sales-month-upload` A (multipart `report`; only adds months, never changes the Sales tab view; dup guard kind `salesMonthly`) · `GET sales-months?brand` · `GET sales-month-compare?months=YYYY-MM,...&brand` (max 12) (both R) · `DELETE sales-month?brand&month` A returns `removed` slot · `POST sales-month/restore {slot}` A. `POST sales-upload` also files its months.
+**Brand overview:** `GET brand-overview?brand` R (sales, inventory, campaign = brand's latest campaign month, months; a section is null when nothing was uploaded).
+**Lookups:** `GET product-names`, `GET brand-names` (R; includes campaign and monthly brands) · `POST brand-alias {raw,canonical}` A (teaches brandResolver; saved to kv `brandAliases`)
 **Duplicate guard:** an upload endpoint skips (200 `{duplicate:true,skipped:true}`) a file whose SHA-256 was already processed today for that kind (hashes in kv `uploadHashes`, parser/uploadGuard.js); `?force=1` bypasses it and any delete/clear for that kind forgets the hashes.
 **Export (R):** `GET export`, `export-campaign?periodKey&brand&sheetType` (summary + daily sheets), `export-all?periodKey` → .xlsx
 
@@ -58,6 +62,7 @@ Routes: `/app/inventory` (default), `/app/sales-performance`, `/app/campaign-ana
 - Stock: Out = 0, Low ≤ `LOW_STOCK_THRESHOLD` (env, default 10), else OK.
 - 45/60-day sold are computed from upload history (Blinkit only gives 7/15/30). Needs an upload ~30 days before latest (±`ANCHOR_TOLERANCE_DAYS`=5 in snapshotHistory.js). Otherwise shows "Insufficient data".
 - Sales: city revenue change % vs previous upload; tiers top/low by revenue distribution; metrics = revenue, units, orders, AOV, best product.
+- Monthly sales: each order is filed under the month of its Order Date (YYYY-MM-DD, DD-MM-YYYY or Excel serial; unreadable dates are skipped and counted). Re-upload replaces only that (brand, month). A month is "partial" when its orders don't span the 1st to the last day. With all brands, orders are summed per brand (same as Sales). Change % = first vs last selected month.
 - Campaign: the Blinkit export is one row per day x campaign x targeting value, in two sheets (Product Boosting has Targeting Value/Match Type/Position; Recommendation does not). Sheet type is detected from headers, never the sheet name. Re-upload replaces by (periodKey, sheetType, brandName), and only for the brands present in the file; other brands in the same period/sheet type are untouched. periodKey is derived per row from the DD-MM-YYYY date. Aggregation happens at query time; ROAS/ROI/CPM are recomputed from sums, never averaged. The export has no status/duration, so the UI has none. A stored campaignData without a `rows` array (old aggregated format) is treated as empty with a warning.
 - Brands: resolved server-side only; campaigns whose name does not resolve use, in order: `campaignBrands` label (admin picks per campaign in a queue) -> `defaultBrand` -> the upload file name (a multi-brand file named "Oicia..." puts unmatched campaigns under Oicia); aliases only affect future uploads (brandResolver.js); client `brandFor()` just reads `row.brandName`. Unresolvable -> "Unknown" (no first-word guessing). Default aliases live in code; admin additions in kv `brandAliases`.
 - Feeder scoping: `core/feeder-map.ts` maps warehouse regions (Mumbai, Ahmedabad, Lucknow, Rajpura, Bengaluru, Faridabad, Kolkata, Pune, Kundli, Hyderabad, Nagpur, Jaipur) → cities. Cities can appear under several feeders (Delhi, Vadodara, Chandigarh…). Expected.
@@ -83,6 +88,7 @@ Routes: `/app/inventory` (default), `/app/sales-performance`, `/app/campaign-ana
 
 ## Brand-first data model (all tabs)
 - Brand is the primary filter. The sidebar dropdown and each tab chip bar share `ui.focusedBrand`; every tab re-queries with it (server-side `?brand=`).
+- Meeting mode: while a brand is selected, the brand chip bars, the campaign Brand Performance table and the unknown-brand notice are hidden, so no other brand is ever on screen. Switch brands from the sidebar; "All brands" restores everything.
 - Inventory, Sales and Campaign data are all stored per brand and an upload replaces only the brands inside that file. Empty brand in a file -> file name -> "Unknown".
 - Sales: kv `salesLatest` = { brandUploads, cityRows } with one row per (brand, city) and its own trend vs that brand's previous upload (kv `salesHistory` entries carry brandName). `GET city-performance?brand=` combines brand rows per city (orders are summed per brand, so a mixed-brand order counts once per brand) and also returns brandSummaries for the chips. `DELETE city-performance/:city` removes the city for all brands (offered only in the unfiltered view).
 - Clear data always asks which brand (or all): `DELETE inventory-data?brand=` (history kept), `DELETE sales-history?brand=` (removes that brand's trend history), `DELETE campaign-data?brand=` (all months). Shared UI: shared/clear-data-dialog.component.ts.
@@ -98,7 +104,7 @@ Routes: `/app/inventory` (default), `/app/sales-performance`, `/app/campaign-ana
 - `kv.get` returns a clone (mutate freely, then `await kv.set`). `kv.peek` returns the cached object with no copy: READ-ONLY, used for hot read paths (campaign queries, history lookups, aliases, hashes). `set` upserts first and updates the cache only on success; writes per key are serialized.
 - Data-changing routes are wrapped in `mutating()` (server.js): one at a time via `kv.withLock`, every write awaited, 500 if a save fails (upload parse errors stay 400).
 - Write order in multi-write routes: history before the current view, upload hash last (only after the data is saved). City delete removes history first; city restore re-adds history (de-duplicated) before the view.
-- Keys: latest, history, salesLatest, salesByProduct, salesHistory, campaignData, brandAliases, uploadHashes.
+- Keys: latest, history, salesLatest, salesByProduct, salesHistory, campaignData, brandAliases, uploadHashes, salesMonthly.
 - Single server instance only.
 
 ## Review fixes & enhancements (v6)
