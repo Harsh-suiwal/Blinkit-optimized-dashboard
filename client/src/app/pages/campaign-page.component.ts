@@ -62,10 +62,10 @@ const SHEET_LABELS: Record<CampaignSheetFilter, string> = {
       <div class="sheet-tabs" role="tablist">@for (tab of sheetTabs; track tab) { <button type="button" role="tab" class="sheet-tab" [class.active]="sheetType() === tab" (click)="changeSheetType(tab)">{{ sheetLabel(tab) }}</button> }</div>
       <input id="campaignSearch" type="search" aria-label="Search campaigns" [ngModel]="query()" (ngModelChange)="query.set($event)" placeholder="Search campaign...">    </section>
 
-    @if (brandChips().length) {
+    @if (brandChips().length && !ui.focusedBrand()) {
       <section class="brand-bar"><app-brand-filter [brands]="brandChips()" [selected]="ui.focusedBrand()" (select)="ui.setBrand($event)" /></section>
     }
-    @if (hasUnknownBrand() && isAdmin()) {
+    @if (hasUnknownBrand() && isAdmin() && !ui.focusedBrand()) {
       <p class="muted brand-note">Some campaigns couldn't be matched to a brand ("Unknown"). Teach the resolver with <code>POST /api/brand-alias</code> or by editing <code>data/brandAliases.json</code>, then re-upload.</p>
     }
     @if (focusNote()) { <p class="muted brand-note">{{ focusNote() }}</p> }
@@ -97,7 +97,7 @@ const SHEET_LABELS: Record<CampaignSheetFilter, string> = {
       </div>
     </section>
 
-    @if (brandSummaries().length > 1) {
+    @if (brandSummaries().length > 1 && !ui.focusedBrand()) {
       <section class="table-wrap">
         <h2 class="section-title">Brand Performance <span class="muted">(click a brand to drill in; tick 2+ to compare)</span></h2>
         <table id="brandTable"><thead><tr><th></th>

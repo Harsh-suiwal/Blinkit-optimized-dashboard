@@ -25,7 +25,7 @@ type ProductCityRow = CityRow & { sharePct: number };
       </div>
     </header>
     <div class="upload-status" [class.success]="statusType() === 'success'" [class.error]="statusType() === 'error'">{{ status() }}</div>
-    @if (brandChips().length) {
+    @if (brandChips().length && !ui.focusedBrand()) {
       <section class="brand-bar"><app-brand-filter [brands]="brandChips()" [selected]="ui.focusedBrand()" (select)="ui.setBrand($event)" /></section>
     }
     <section class="controls">

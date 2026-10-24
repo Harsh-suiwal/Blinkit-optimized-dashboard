@@ -23,7 +23,7 @@ import { ClearDataDialogComponent } from '../shared/clear-data-dialog.component'
     </header>
     <div class="upload-status" [class.success]="statusType() === 'success'" [class.error]="statusType() === 'error'">{{ status() }}</div>
 
-    @if (brandChips().length) {
+    @if (brandChips().length && !ui.focusedBrand()) {
       <section class="brand-bar"><app-brand-filter unit="units" [brands]="brandChips()" [selected]="ui.focusedBrand()" (select)="ui.setBrand($event)" /></section>
     }
 
