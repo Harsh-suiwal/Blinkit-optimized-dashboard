@@ -43,6 +43,17 @@ const {
 } = require('./parser/campaignStore');
 const { resolveBrand, saveAlias, loadAliases } = require('./parser/brandResolver');
 const { hashFile, isDuplicateUpload, recordUpload, clearUploadHashes } = require('./parser/uploadGuard');
+const {
+  monthLabel,
+  buildMonthSlots,
+  upsertMonthSlots,
+  listMonthlyBrands,
+  listMonths,
+  compareMonths,
+  removeMonth,
+  restoreMonth,
+  MONTH_KEY_RE,
+} = require('./parser/salesMonthly');
 
 const kv = require('./store/kv');
 const { requireAuth, requireAdmin } = require('./middleware/auth');
@@ -425,6 +436,9 @@ app.get('/api/brand-names', requireAuth, (req, res) => {
     if (b !== 'Unknown') brands.add(b);
   });
 
+  // Brands that only have monthly sales uploads must still be selectable.
+  listMonthlyBrands().forEach((b) => add('', b));
+
   res.json({ brands: Array.from(brands).sort((x, y) => x.localeCompare(y)) });
 });
 
@@ -639,6 +653,9 @@ app.post('/api/sales-upload', requireAdmin, uploadReport, mutating(async (req, r
     const oldProducts = loadProductSalesLatest();
     const keptProducts = oldProducts ? oldProducts.productRows.filter((p) => !brands.some((b) => sameBrand(p.brandName, b))) : [];
     await saveProductSalesLatest(keptProducts.concat(productAgg), date, req.file.originalname);
+    // Also file this report's orders under their order-date months (Monthly Comparison page).
+    const monthly = buildMonthSlots(salesRows, req.file.originalname, date);
+    if (monthly.slots.length) await upsertMonthSlots(monthly.slots);
     await recordUpload('sales', fileHash);
 
     res.json({
@@ -655,6 +672,87 @@ app.post('/api/sales-upload', requireAdmin, uploadReport, mutating(async (req, r
   } finally {
     fs.unlink(req.file.path, () => {});
   }
+}));
+
+// --- Monthly sales comparison ------------------------------------------------
+// kv `salesMonthly`: one slot per (brand, order-date month); see parser/salesMonthly.js.
+// This upload only adds months; it does not change the Sales tab's current view.
+app.post('/api/sales-month-upload', requireAdmin, uploadReport, mutating(async (req, res) => {
+  if (!req.file) {
+    return res.status(400).json({ error: 'No file uploaded.' });
+  }
+
+  try {
+    const fileHash = hashFile(req.file.path);
+    if (req.query.force !== '1' && isDuplicateUpload('salesMonthly', fileHash)) {
+      return res.json({ ok: true, duplicate: true, skipped: true });
+    }
+
+    const salesRows = parseSalesRows(req.file.path);
+    // Orders with an empty Brand Name fall back to the file name, then "Unknown" (same as /api/sales-upload).
+    const fileBrand = resolveBrand(path.parse(req.file.originalname).name).brand;
+    salesRows.forEach((row) => {
+      if (!row.brandName) row.brandName = fileBrand;
+    });
+
+    const { slots, skippedRows } = buildMonthSlots(salesRows, req.file.originalname, todayDateString());
+    if (!slots.length) {
+      return res.status(400).json({ error: 'No month was saved: the Order Date column has no readable dates.' });
+    }
+    await upsertMonthSlots(slots);
+    await recordUpload('salesMonthly', fileHash);
+
+    res.json({
+      ok: true,
+      months: slots.map((s) => ({
+        brandName: s.brandName,
+        monthKey: s.monthKey,
+        label: monthLabel(s.monthKey),
+        orderCount: s.totals.orderCount,
+        revenue: s.totals.revenue,
+      })),
+      skippedRows,
+    });
+  } catch (err) {
+    if (err.kvError) throw err; // save failed -> 500 from mutating()
+    res.status(400).json({ error: err.message });
+  } finally {
+    fs.unlink(req.file.path, () => {});
+  }
+}));
+
+// Months stored for ?brand= (empty = all brands combined), oldest first.
+app.get('/api/sales-months', requireAuth, (req, res) => {
+  const brand = typeof req.query.brand === 'string' ? req.query.brand.trim() : '';
+  res.json({ months: listMonths(brand) });
+});
+
+// ?months=2026-08,2026-09,2026-10 (max 12) &brand= : totals, cities and products side by side.
+app.get('/api/sales-month-compare', requireAuth, (req, res) => {
+  const brand = typeof req.query.brand === 'string' ? req.query.brand.trim() : '';
+  const months = typeof req.query.months === 'string'
+    ? req.query.months.split(',').map((m) => m.trim()).filter(Boolean).slice(0, 12)
+    : [];
+  res.json(compareMonths(brand, months));
+});
+
+// Deletes one brand's month; returns the removed slot so the client can undo.
+app.delete('/api/sales-month', requireAdmin, mutating(async (req, res) => {
+  const brand = typeof req.query.brand === 'string' ? req.query.brand.trim() : '';
+  const month = typeof req.query.month === 'string' ? req.query.month.trim() : '';
+  if (!brand || !MONTH_KEY_RE.test(month)) {
+    return res.status(400).json({ error: 'brand and month (YYYY-MM) are required.' });
+  }
+  const removed = await removeMonth(brand, month);
+  if (!removed) return res.status(404).json({ error: 'That month is not stored for this brand.' });
+  await clearUploadHashes('salesMonthly');
+  res.json({ ok: true, removed });
+}));
+
+app.post('/api/sales-month/restore', requireAdmin, mutating(async (req, res) => {
+  const restored = await restoreMonth(req.body && req.body.slot);
+  if (!restored) return res.status(400).json({ error: 'Nothing valid to restore.' });
+  res.json({ ok: true });
 }));
 
 // ?brand= narrows the city table to one brand; brandSummaries always lists every brand.
