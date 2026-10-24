@@ -20,6 +20,10 @@ import {
   ProductSalesRow,
   SalesSummary,
   User,
+  BrandOverview,
+  SalesMonth,
+  SalesMonthComparison,
+  SalesMonthUploadResult,
 } from './models';
 
 @Injectable({ providedIn: 'root' })
@@ -148,6 +152,35 @@ export class ApiService {
 
   addBrandAlias(raw: string, canonical: string) {
     return this.post<{ ok: boolean }>('/api/brand-alias', { raw, canonical });
+  }
+
+  /** Everything for one brand on one screen (Brand Overview page). */
+  brandOverview(brand: string) {
+    return this.get<BrandOverview>(`/api/brand-overview?brand=${encodeURIComponent(brand)}`);
+  }
+
+  salesMonths(brand?: string) {
+    return this.get<{ months: SalesMonth[] }>(`/api/sales-months${this.brandQuery(brand)}`);
+  }
+
+  salesMonthCompare(months: string[], brand?: string) {
+    const query = new URLSearchParams({ months: months.join(',') });
+    if (brand) query.set('brand', brand);
+    return this.get<SalesMonthComparison>(`/api/sales-month-compare?${query}`);
+  }
+
+  /** Adds months to the Monthly Comparison only; the Sales tab's current view is not changed. */
+  uploadSalesMonth(file: File) {
+    return this.upload<SalesMonthUploadResult>('/api/sales-month-upload', file);
+  }
+
+  deleteSalesMonth(brand: string, month: string) {
+    const query = new URLSearchParams({ brand, month });
+    return this.delete<{ ok: boolean; removed: unknown }>(`/api/sales-month?${query}`);
+  }
+
+  restoreSalesMonth(slot: unknown) {
+    return this.post<{ ok: boolean }>('/api/sales-month/restore', { slot });
   }
 
   private brandQuery(brand?: string) {

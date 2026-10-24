@@ -13,6 +13,7 @@ import { BrandMarkComponent } from '../shared/brand-mark.component';
     <nav class="sidebar" [class.collapsed]="ui.collapsed()">
       <div class="sidebar-brand"><app-brand-mark /><span>Blinkit Dashboard</span></div>
       <ul class="sidebar-nav">
+        <li><a routerLink="/overview" routerLinkActive="active"><span class="sidebar-icon">🏷️</span><span class="sidebar-label">Brand Overview</span></a></li>
         <li><a routerLink="/inventory" routerLinkActive="active"><span class="sidebar-icon">📦</span><span class="sidebar-label">Inventory Dashboard</span></a></li>
         <li><a routerLink="/sales-performance" routerLinkActive="active"><span class="sidebar-icon">📍</span><span class="sidebar-label">Sales Performance</span></a></li>
         <li><a routerLink="/campaign-analysis" routerLinkActive="active"><span class="sidebar-icon">📊</span><span class="sidebar-label">Campaign Analysis</span></a></li>
@@ -42,7 +43,7 @@ import { BrandMarkComponent } from '../shared/brand-mark.component';
 
     @if (leaderActive()) {
       <div class="shortcut-hint" role="status" aria-live="polite">
-        <strong>Go to:</strong> <kbd>I</kbd> Inventory <kbd>S</kbd> Sales <kbd>C</kbd> Campaign
+        <strong>Go to:</strong> <kbd>O</kbd> Overview <kbd>I</kbd> Inventory <kbd>S</kbd> Sales <kbd>C</kbd> Campaign
       </div>
     }
 
@@ -117,6 +118,7 @@ export class AppShellComponent implements OnInit {
       this.leaderActive.set(false);
       clearTimeout(this.leaderTimer);
       const routes: Record<string, string> = {
+        o: '/overview',
         i: '/inventory',
         s: '/sales-performance',
         c: '/campaign-analysis',

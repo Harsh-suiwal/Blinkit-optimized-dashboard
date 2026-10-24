@@ -177,3 +177,86 @@ export interface CampaignUploadResult {
   unrecognisedSheets: string[];
   latestPeriodKey: string;
 }
+
+/** One month of sales for a brand (or all brands combined), from GET /api/sales-months. */
+export interface SalesMonth {
+  monthKey: string;      // YYYY-MM
+  label: string;         // e.g. "October 2026"
+  from: string;          // first order date in that month (YYYY-MM-DD)
+  to: string;            // last order date in that month
+  partial: boolean;      // the orders don't cover every day of the month
+  revenue: number;
+  units: number;
+  orderCount: number;
+  avgOrderValue: number;
+  brands: string[];
+}
+
+export interface MonthMetrics {
+  revenue: number;
+  units: number;
+  orderCount: number;
+  avgOrderValue: number;
+}
+
+export interface SalesMonthColumn extends MonthMetrics {
+  monthKey: string;
+  label: string;
+  from: string;
+  to: string;
+  partial: boolean;
+}
+
+/** GET /api/sales-month-compare: months oldest first; byMonth is keyed by monthKey (missing = no sales). */
+export interface SalesMonthComparison {
+  months: SalesMonthColumn[];
+  cities: { city: string; byMonth: Record<string, MonthMetrics> }[];
+  products: { productName: string; brandName: string; byMonth: Record<string, MonthMetrics> }[];
+}
+
+export interface SalesMonthUploadResult {
+  ok: boolean;
+  duplicate?: boolean;
+  skipped?: boolean;
+  months?: { brandName: string; monthKey: string; label: string; orderCount: number; revenue: number }[];
+  skippedRows?: number;
+}
+
+/** GET /api/brand-overview: a section is null when nothing was uploaded for the brand. */
+export interface BrandOverview {
+  brand: string;
+  sales: {
+    date: string | null;
+    fileName: string | null;
+    totalRevenue: number;
+    totalUnits: number;
+    totalOrders: number;
+    avgOrderValue: number;
+    cityCount: number;
+    productCount: number;
+    topCities: { city: string; revenue: number; sharePct: number }[];
+    topProducts: { productName: string; revenue: number; units: number; sharePct: number }[];
+  } | null;
+  inventory: {
+    date: string | null;
+    fileName: string | null;
+    productCount: number;
+    listingCount: number;
+    totalStock: number;
+    unitsSold30: number;
+    outOfStock: number;
+    lowStock: number;
+    topSellers: { productName: string; unitsSold30: number; stock: number }[];
+  } | null;
+  campaign: {
+    periodKey: string;
+    periodLabel: string;
+    adSpend: number;
+    sales: number;
+    roas: number | null;
+    roiPct: number | null;
+    campaignCount: number;
+    bestCampaign: { name: string; roas: number } | null;
+  } | null;
+  months: SalesMonth[];
+}
