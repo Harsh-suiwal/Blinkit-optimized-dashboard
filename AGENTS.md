@@ -46,7 +46,7 @@ client/src/app/
 public/                static login page only: login.html, login.js, style.css (legacy dashboard files removed)
 data/ (gitignored; legacy JSON, read only by the migration script)   uploads/ (temp, auto-cleaned)
 ```
-Routes: `/app/overview` (default), `/app/sales-performance` (Sales), `/app/inventory` (Stock), `/app/campaign-analysis` (Advertising), `/app/monthly-comparison` (Trends). Page and nav names are plain: Overview, Sales, Stock, Advertising, Trends; the sidebar title is "Analytics" and the brand switcher sits at the top of the sidebar.
+Routes: `/app/overview` (default), `/app/sales-performance` (Sales), `/app/inventory` (Stock), `/app/campaign-analysis` (Advertising), `/app/monthly-comparison` (Trends). Page and nav names are plain: Overview, Sales, Stock, Advertising, Trends; the sidebar has no logo or title: the brand switcher is the first thing in it (`shared/brand-mark.component.ts` is no longer used in the app).
 
 ## API (all `/api/*`; R = any logged-in, A = admin; uploads are multipart field `report`)
 **Inventory:** `POST upload` A · `GET products` R · `GET summary` R · `DELETE products?productName&warehouseName` A · `POST products/restore {row,index}` A

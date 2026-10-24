@@ -2819,3 +2819,11 @@ th {
     grid-template-columns: 1fr;
   }
 }
+
+/* Sidebar starts with the brand switcher (no logo or title above it) */
+.sidebar-focus.sidebar-workspace {
+  margin-top: 0;
+  padding-top: 18px;
+  border-top: 0;
+  border-bottom: 1px solid var(--sidebar-border);
+}

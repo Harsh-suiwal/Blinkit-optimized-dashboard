@@ -4,14 +4,12 @@ import { Router, RouterLink, RouterLinkActive, RouterOutlet } from '@angular/rou
 import { ApiService } from '../core/api.service';
 import { AuthService } from '../core/auth.service';
 import { UiStateService } from '../core/ui-state.service';
-import { BrandMarkComponent } from '../shared/brand-mark.component';
 
 @Component({
   selector: 'app-shell',
-  imports: [FormsModule, RouterLink, RouterLinkActive, RouterOutlet, BrandMarkComponent],
+  imports: [FormsModule, RouterLink, RouterLinkActive, RouterOutlet],
   template: `
     <nav class="sidebar" [class.collapsed]="ui.collapsed()">
-      <div class="sidebar-brand"><app-brand-mark /><span>Analytics</span></div>
       <div class="sidebar-focus sidebar-workspace">
         <label class="sidebar-focus-label" for="brandFocusSelect">Brand</label>
         <div class="brand-switcher">
