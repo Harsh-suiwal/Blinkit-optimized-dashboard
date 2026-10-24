@@ -54,6 +54,7 @@ const {
   restoreMonth,
   MONTH_KEY_RE,
 } = require('./parser/salesMonthly');
+const { buildBrandOverview } = require('./parser/brandOverview');
 
 const kv = require('./store/kv');
 const { requireAuth, requireAdmin } = require('./middleware/auth');
@@ -754,6 +755,35 @@ app.post('/api/sales-month/restore', requireAdmin, mutating(async (req, res) => 
   if (!restored) return res.status(400).json({ error: 'Nothing valid to restore.' });
   res.json({ ok: true });
 }));
+
+// --- Brand overview (one brand's dashboard) -----------------------------------
+// Everything for ?brand= (required) on one screen: sales, inventory, advertising, monthly trend.
+app.get('/api/brand-overview', requireAuth, (req, res) => {
+  const brand = typeof req.query.brand === 'string' ? req.query.brand.trim() : '';
+  if (!brand) return res.status(400).json({ error: 'brand is required.' });
+
+  const aliases = loadAliases();
+  const uploadFor = (brandUploads) => {
+    const key = Object.keys(brandUploads || {}).find((b) => sameBrand(b, brand));
+    return key ? brandUploads[key] : null;
+  };
+  const inventory = loadLatest();
+  const salesLatest = loadSalesLatest();
+  const productSales = loadProductSalesLatest();
+
+  res.json(buildBrandOverview({
+    brand,
+    cityRows: salesLatest ? combineCityRows(salesRowsForBrand(salesLatest, brand)) : [],
+    productRows: productSales ? (productSales.productRows || []).filter((p) => sameBrand(p.brandName, brand)) : [],
+    salesUpload: salesLatest ? uploadFor(salesLatest.brandUploads) : null,
+    inventoryRows: inventory
+      ? inventory.rows.filter((r) => sameBrand(brandOf(r.productName, r.brandName, aliases) || 'Unknown', brand))
+      : [],
+    inventoryUpload: inventory ? uploadFor(inventory.brandUploads) : null,
+    campaignStore: loadCampaignStore(),
+    months: listMonths(brand),
+  }));
+});
 
 // ?brand= narrows the city table to one brand; brandSummaries always lists every brand.
 app.get('/api/city-performance', requireAuth, (req, res) => {
