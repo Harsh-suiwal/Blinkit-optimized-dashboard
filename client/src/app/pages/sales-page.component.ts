@@ -174,7 +174,8 @@ export class SalesPageComponent implements OnInit {
       sharePct: product.revenue > 0 ? Math.round((city.revenue / product.revenue) * 1000) / 10 : 0,
     }));
   });
-  readonly productTopCity = computed(() => [...this.productCityRows()].sort((a, b) => b.revenue - a.revenue)[0] ?? null);
+  // Typed as possibly null: a product can have no city rows, and then [0] is undefined at runtime.
+  readonly productTopCity = computed<ProductCityRow | null>(() => [...this.productCityRows()].sort((a, b) => b.revenue - a.revenue)[0] ?? null);
   readonly displayedProductCities = computed(() => {
     const key = this.productCitySortKey();
     const direction = this.productCitySortAsc() ? 1 : -1;

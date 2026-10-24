@@ -157,8 +157,10 @@ interface KpiNote { text: string; tone: '' | 'up' | 'down'; }
           </div>
         </section>
 
-        @if (d.campaign?.bestCampaign; as best) {
-          <p class="overview-note-row">Best campaign in {{ d.campaign?.periodLabel }}: <strong>{{ best.name }}</strong>, returning {{ best.roas }}x its spend.</p>
+        @if (d.campaign; as c) {
+          @if (c.bestCampaign; as best) {
+            <p class="overview-note-row">Best campaign in {{ c.periodLabel }}: <strong>{{ best.name }}</strong>, returning {{ best.roas }}x its spend.</p>
+          }
         }
         <div class="overview-end" aria-hidden="true"></div>
       }
