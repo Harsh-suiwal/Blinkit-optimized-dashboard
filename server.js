@@ -50,12 +50,16 @@ const {
   upsertMonthSlots,
   listMonthlyBrands,
   listMonths,
+  slotsFor,
   compareMonths,
   removeMonth,
   restoreMonth,
   MONTH_KEY_RE,
 } = require('./parser/salesMonthly');
 const { buildBrandOverview } = require('./parser/brandOverview');
+const { parseCostFile } = require('./parser/parseBrandCosts');
+const { getBrandCosts, saveBrandProducts, setOtherCost } = require('./parser/brandCosts');
+const { buildBrandProfit } = require('./parser/brandProfit');
 
 const kv = require('./store/kv');
 const { requireAuth, requireAdmin } = require('./middleware/auth');
@@ -786,6 +790,61 @@ app.get('/api/brand-overview', requireAuth, (req, res) => {
     months: listMonths(brand),
   }));
 });
+
+// --- Profit (admin only: it shows what a brand really earns) -------------------
+// Costs come from an uploaded cost sheet (one row per product) plus an "other costs" amount per
+// month; sales come from the monthly sales store; ad spend from the campaign uploads. ?brand= is required.
+const PROFIT_PLATFORM = 'blinkit';
+
+app.get('/api/brand-profit', requireAdmin, (req, res) => {
+  const brand = typeof req.query.brand === 'string' ? req.query.brand.trim() : '';
+  if (!brand) return res.status(400).json({ error: 'brand is required.' });
+
+  const store = loadCampaignStore();
+  const adSpendByMonth = {};
+  new Set(store.rows.filter((r) => sameBrand(r.brandName, brand)).map((r) => r.periodKey)).forEach((periodKey) => {
+    adSpendByMonth[periodKey] = aggregateCampaignTotals(selectCampaignRows(store, { periodKey, brand })).adSpend;
+  });
+
+  res.json(buildBrandProfit({
+    brand,
+    monthInfo: listMonths(brand, PROFIT_PLATFORM),
+    slots: slotsFor(brand, PROFIT_PLATFORM),
+    costs: getBrandCosts(brand),
+    adSpendByMonth,
+  }));
+});
+
+// Cost sheet for one brand (multipart `report`, ?brand=). Replaces the brand's product costs; other costs are kept.
+app.post('/api/brand-costs-upload', requireAdmin, uploadReport, mutating(async (req, res) => {
+  const brand = typeof req.query.brand === 'string' ? req.query.brand.trim() : '';
+  if (!req.file) return res.status(400).json({ error: 'No file uploaded.' });
+  try {
+    if (!brand) return res.status(400).json({ error: 'brand is required.' });
+    const { products, skippedRows } = parseCostFile(req.file.path);
+    await saveBrandProducts(brand, products, req.file.originalname, todayDateString());
+    res.json({ ok: true, productCount: products.length, skippedRows });
+  } catch (err) {
+    if (err.kvError) throw err; // save failed -> 500 from mutating()
+    res.status(400).json({ error: err.message });
+  } finally {
+    fs.unlink(req.file.path, () => {});
+  }
+}));
+
+// One month's other costs in rupees, body { brand, monthKey: 'YYYY-MM', amount }. 0 clears it.
+app.post('/api/brand-other-costs', requireAdmin, mutating(async (req, res) => {
+  const brand = typeof req.body.brand === 'string' ? req.body.brand.trim() : '';
+  const monthKey = typeof req.body.monthKey === 'string' ? req.body.monthKey : '';
+  const amount = Number(req.body.amount);
+  if (!brand) return res.status(400).json({ error: 'brand is required.' });
+  if (!MONTH_KEY_RE.test(monthKey)) return res.status(400).json({ error: 'monthKey must look like 2026-10.' });
+  if (!Number.isFinite(amount) || amount < 0 || amount > 1e9) {
+    return res.status(400).json({ error: 'amount must be a number of 0 or more.' });
+  }
+  await setOtherCost(brand, monthKey, amount);
+  res.json({ ok: true });
+}));
 
 // ?brand= narrows the city table to one brand; brandSummaries always lists every brand.
 app.get('/api/city-performance', requireAuth, (req, res) => {

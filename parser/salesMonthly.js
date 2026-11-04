@@ -330,6 +330,7 @@ module.exports = {
   listMonthlyBrands,
   listMonthlyPlatforms,
   listMonths,
+  slotsFor,
   compareMonths,
   removeMonth,
   restoreMonth,
