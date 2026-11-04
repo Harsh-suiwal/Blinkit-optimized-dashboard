@@ -8,6 +8,7 @@ import { BrandOverviewPageComponent } from './pages/brand-overview-page.componen
 import { MonthlyPageComponent } from './pages/monthly-page.component';
 import { ComingSoonPageComponent } from './pages/coming-soon-page.component';
 import { ProfilePageComponent } from './pages/profile-page.component';
+import { ProfitPageComponent } from './pages/profit-page.component';
 
 export const routes: Routes = [
   {
@@ -21,6 +22,7 @@ export const routes: Routes = [
       { path: 'sales-performance', component: SalesPageComponent },
       { path: 'monthly-comparison', component: MonthlyPageComponent },
       { path: 'profile', component: ProfilePageComponent },
+      { path: 'profit', component: ProfitPageComponent },
       // Planned features: each shows a "Coming soon" page until it is built.
       { path: 'reports', component: ComingSoonPageComponent, data: { title: 'Reports', description: 'Create a client-ready report for one brand: pick the months and sections, then download it as a PDF.' } },
       { path: 'uploads', component: ComingSoonPageComponent, data: { title: 'Uploads', description: 'One place to upload every report, see what was uploaded for each brand, and undo an upload. Until then, upload from the Sales, Stock, Advertising and Trends pages.' } },

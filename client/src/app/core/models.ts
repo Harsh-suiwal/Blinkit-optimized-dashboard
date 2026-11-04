@@ -262,3 +262,81 @@ export interface BrandOverview {
   } | null;
   months: SalesMonth[];
 }
+
+/** GET /api/brand-profit (admin). Money fields are null for a month where no sold product has a cost row. */
+export interface ProfitUnmatchedProduct {
+  productName: string;
+  revenue: number;
+  units: number;
+}
+
+export interface ProfitMonth {
+  monthKey: string;
+  label: string;
+  from: string;
+  to: string;
+  partial: boolean;
+  status: 'ok' | 'incomplete' | 'no-costs';
+  grossSales: number;
+  units: number;
+  matchedUnits: number;
+  matchedRevenuePct: number | null;
+  netSales: number | null;
+  productCost: number | null;
+  fees: number | null;
+  adSpend: number;
+  adDataMissing: boolean;
+  otherCosts: number;
+  totalCosts: number | null;
+  profit: number | null;
+  marginPct: number | null;
+  roiPct: number | null;
+  unmatchedProducts: ProfitUnmatchedProduct[];
+}
+
+export interface ProfitTotals {
+  months: number;
+  incompleteMonths: number;
+  grossSales: number;
+  units: number;
+  netSales: number;
+  productCost: number;
+  fees: number;
+  adSpend: number;
+  otherCosts: number;
+  totalCosts: number;
+  profit: number;
+  marginPct: number | null;
+  roiPct: number | null;
+}
+
+export interface ProfitProduct {
+  productName: string;
+  units: number;
+  grossSales: number;
+  netSales: number;
+  productCost: number;
+  fees: number;
+  profitBeforeAds: number;
+  profitPerUnit: number | null;
+  sellingPrice: number;
+  taxPct: number;
+  commissionPct: number;
+  listUnitProfit: number;
+}
+
+export interface BrandProfit {
+  brand: string;
+  hasCosts: boolean;
+  costsUpload: { fileName: string; uploadedAt: string; productCount: number } | null;
+  months: ProfitMonth[];
+  totals: ProfitTotals | null;
+  products: ProfitProduct[];
+  unmatchedProducts: ProfitUnmatchedProduct[];
+}
+
+export interface BrandCostsUploadResult {
+  ok: boolean;
+  productCount: number;
+  skippedRows: number;
+}

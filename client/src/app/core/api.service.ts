@@ -24,6 +24,8 @@ import {
   SalesMonth,
   SalesMonthComparison,
   SalesMonthUploadResult,
+  BrandCostsUploadResult,
+  BrandProfit,
 } from './models';
 
 @Injectable({ providedIn: 'root' })
@@ -181,6 +183,21 @@ export class ApiService {
 
   restoreSalesMonth(slot: unknown) {
     return this.post<{ ok: boolean }>('/api/sales-month/restore', { slot });
+  }
+
+  /** Monthly profit / loss and ROI for one brand (admin only). */
+  brandProfit(brand: string) {
+    return this.get<BrandProfit>(`/api/brand-profit?brand=${encodeURIComponent(brand)}`);
+  }
+
+  /** Cost sheet (one row per product); replaces the brand's product costs. */
+  uploadBrandCosts(brand: string, file: File) {
+    return this.upload<BrandCostsUploadResult>(`/api/brand-costs-upload?brand=${encodeURIComponent(brand)}`, file);
+  }
+
+  /** One month's other costs in rupees; 0 clears it. */
+  setOtherCost(brand: string, monthKey: string, amount: number) {
+    return this.post<{ ok: boolean }>('/api/brand-other-costs', { brand, monthKey, amount });
   }
 
   private brandQuery(brand?: string) {
