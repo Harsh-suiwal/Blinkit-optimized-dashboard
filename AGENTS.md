@@ -39,9 +39,9 @@ parser/
   salesMonthly.js      monthly sales (kv `salesMonthly`): one slot per (brand, order-date month)
   brandOverview.js     builds GET brand-overview from already brand-filtered data (pure)
 client/src/app/
-  core/    api.service (ALL http), auth.guard, auth.service, feeder-map.ts, formatters.ts, models.ts, ui-state.service
+  core/    api.service (ALL http), auth.guard, auth.service, feeder-map.ts, formatters.ts, models.ts, product-months.logic.ts, ui-state.service
   layout/  app-shell.component (sidebar+header+outlet)
-  pages/   brand-overview-page | inventory-page | sales-page | monthly-page | campaign-page (.component.ts)
+  pages/   brand-overview-page | inventory-page | sales-page | product-months (the Sales "Month by month" tab) | monthly-page | campaign-page (.component.ts)
   shared/  brand-mark.component, brand-filter.component (brand chip bar)
 public/                static login page only: login.html, login.js, style.css (legacy dashboard files removed)
 data/ (gitignored; legacy JSON, read only by the migration script)   uploads/ (temp, auto-cleaned)
@@ -129,3 +129,10 @@ Routes: `/app/overview` (default), `/app/sales-performance` (Sales), `/app/inven
 - Per-product profit is always "profit before ads": ad spend is brand/campaign level and is never allocated to a product.
 - Env flag `PRODUCT_PROFIT_ADMIN_ONLY` (default false, read once in `server.js`). When true and the user is not an admin, this endpoint returns `profitVisible: false`, `months[].profit = null`, `brandMonths = []`, `brandTotals = null`. This is a deliberate exception to "profit is admin-only" for this endpoint only; brand-profit, brand-costs-upload and brand-other-costs stay admin-only and unchanged.
 - Files: `parser/productMonthDetail.js` (pure builder and `canSeeProductProfit`), `buildProductMonthProfit` in `parser/brandProfit.js` (shares `productFigures` with `buildBrandProfit`), tests in `scripts/profit-smoke.js`.
+
+## Sales page tabs (v7)
+- Tabs: City wise, Product wise, Month by month. City wise with a feeder city picked reads: Feeder city, Product breakdown, City totals, the four KPI cards, the colour legend, then the green/red product table. With no feeder: Feeder city, the four cards, the legend, then the city table.
+- Month by month is its own component, `pages/product-months.component.ts` (mounted by `sales-page.component.ts`, which only owns the tab button, the `view` signal and the header title "Sales by month"). Its pure helpers (wins, change text, tiers, brand totals) are in `core/product-months.logic.ts`. Data: `GET product-month-detail` (see "Product by month data").
+- It needs a brand; without one it shows "Pick a brand to see its products by month". Layout: product selector, month chips, wins strip, one card per month, revenue bar chart, month table, city table for one month (click a month card), and the whole-brand profit strip.
+- Wins are shown only when true: record month, growth vs the previous selected month, growth since the first selected month, a growth streak of 2+ months, new cities, profit per unit up. Percentages are rounded down, partial months are never compared, a zero base is never used, and declines are never listed as wins (they appear as neutral grey text in the cards and table).
+- Per-product profit is labelled "Profit before ads" (ad spend is brand level) and is drawn only when the server says `profitVisible`. Missing data is stated plainly: months stored before cities were recorded say "City split not available for this month. Re-upload that month's sales report."; a product without a cost-sheet row says "No cost sheet row for this product"; a month without an advertising upload says "Ad spend not uploaded".
