@@ -35,12 +35,6 @@ type ProductCityRow = CityRow & { sharePct: number };
       </div>
     </section>
     @if (view() === 'city') {
-    <section class="cards">
-      <div class="card"><div class="card-label">{{ ui.focusedFeeder() ? 'Feeder Revenue' : 'Total Revenue' }}</div><div class="card-value">{{ money(ui.focusedFeeder() ? feederSummary().revenue : summary().totalRevenue) }}</div></div>
-      <div class="card"><div class="card-label">Total Units Sold</div><div class="card-value">{{ ui.focusedFeeder() ? feederSummary().units : summary().totalUnits }}</div></div>
-      <div class="card"><div class="card-label">{{ ui.focusedFeeder() ? 'Product Orders*' : 'Total Orders' }}</div><div class="card-value">{{ ui.focusedFeeder() ? (feederOrderMetricsReady() ? feederSummary().orders : 'N/A') : ordersLabel() }}</div></div>
-      <div class="card"><div class="card-label">{{ ui.focusedFeeder() ? 'Cities in Feeder' : 'Top City' }}</div><div class="card-value">{{ ui.focusedFeeder() ? feederSummary().cities : (summary().topCity || '-') }}</div></div>
-    </section>
     <section class="controls">
       <label class="filter-label" for="feederSelect">Feeder city</label>
       <select id="feederSelect" class="styled-select" [value]="ui.focusedFeeder()" (change)="selectFeeder($event)">
@@ -59,12 +53,6 @@ type ProductCityRow = CityRow & { sharePct: number };
         @if (!feederOrderMetricsReady()) { <span class="muted">Re-upload the sales report to populate product-level orders and AOV.</span> }
         @else { <span class="muted">* Orders and AOV are counted per product per city.</span> }
       </section>
-    }
-    <section class="legend">
-      <span class="legend-item"><span class="dot dot-top"></span> Top 25%</span>
-      <span class="legend-item"><span class="dot dot-low"></span> Bottom 25%</span>
-    </section>
-    @if (ui.focusedFeeder()) {
     <section class="table-wrap">
       <h3>City totals</h3>
       <p class="muted">All products, per mapped city. A city that belongs to several feeders (e.g. Delhi) shows its full city total here, not a share for this feeder.</p>
@@ -73,6 +61,18 @@ type ProductCityRow = CityRow & { sharePct: number };
       </tbody></table>
       @if (!feederCityTotals().length) { <p class="muted">No sales for this feeder's cities.</p> }
     </section>
+    }
+    <section class="cards">
+      <div class="card"><div class="card-label">{{ ui.focusedFeeder() ? 'Feeder Revenue' : 'Total Revenue' }}</div><div class="card-value">{{ money(ui.focusedFeeder() ? feederSummary().revenue : summary().totalRevenue) }}</div></div>
+      <div class="card"><div class="card-label">Total Units Sold</div><div class="card-value">{{ ui.focusedFeeder() ? feederSummary().units : summary().totalUnits }}</div></div>
+      <div class="card"><div class="card-label">{{ ui.focusedFeeder() ? 'Product Orders*' : 'Total Orders' }}</div><div class="card-value">{{ ui.focusedFeeder() ? (feederOrderMetricsReady() ? feederSummary().orders : 'N/A') : ordersLabel() }}</div></div>
+      <div class="card"><div class="card-label">{{ ui.focusedFeeder() ? 'Cities in Feeder' : 'Top City' }}</div><div class="card-value">{{ ui.focusedFeeder() ? feederSummary().cities : (summary().topCity || '-') }}</div></div>
+    </section>
+    <section class="legend">
+      <span class="legend-item"><span class="dot dot-top"></span> Top 25%</span>
+      <span class="legend-item"><span class="dot dot-low"></span> Bottom 25%</span>
+    </section>
+    @if (ui.focusedFeeder()) {
     <section class="table-wrap">
       <table id="feederProductTable"><thead><tr><th (click)="sortFeederBy('city')">City {{ feederSortIndicator('city') }}</th><th (click)="sortFeederBy('productName')">Product {{ feederSortIndicator('productName') }}</th><th (click)="sortFeederBy('revenue')">Revenue {{ feederSortIndicator('revenue') }}</th><th (click)="sortFeederBy('units')">Units Sold {{ feederSortIndicator('units') }}</th><th (click)="sortFeederBy('orderCount')">Orders {{ feederSortIndicator('orderCount') }}</th><th (click)="sortFeederBy('avgOrderValue')">Avg Order Value {{ feederSortIndicator('avgOrderValue') }}</th></tr></thead><tbody>
         @for (row of displayedFeederRows(); track row.city + '::' + row.productName) { <tr [class.row-top]="row.tier === 'top'" [class.row-low]="row.tier === 'low'"><td>{{ row.city }}</td><td>{{ row.productName }}</td><td>{{ money(row.revenue) }}</td><td>{{ row.units }}</td><td>{{ row.orderCount ?? 'N/A' }}</td><td>@if (row.avgOrderValue === undefined) { <span class="na">N/A</span> } @else { {{ money(row.avgOrderValue) }} }</td></tr> }
