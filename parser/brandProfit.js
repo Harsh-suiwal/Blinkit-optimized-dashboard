@@ -19,6 +19,17 @@ const ratioPct = (num, den) => (den > 0 ? round1((num / den) * 100) : null);
 
 const emptySums = () => ({ net: 0, cogs: 0, commission: 0, inward: 0, fulfilment: 0, storage: 0 });
 
+/** The money figures for `units` units / `revenue` rupees of one product with this cost row. Every profit view uses it. */
+function productFigures(cost, revenue, units) {
+  const net = revenue / (1 + cost.taxPct / 100);
+  const productCost = units * cost.cogs;
+  const commission = (revenue * cost.commissionPct) / 100;
+  const inward = units * cost.inwardFee;
+  const fulfilment = units * cost.fulfilmentFee;
+  const storage = units * cost.storageFee;
+  return { net, productCost, commission, inward, fulfilment, storage, fees: commission + inward + fulfilment + storage };
+}
+
 /**
  * brand: name. monthInfo: listMonths(brand, platform). slots: slotsFor(brand, platform).
  * costs: stored entry from brandCosts.js or null. adSpendByMonth: { 'YYYY-MM': rupees }.
@@ -52,28 +63,23 @@ function buildBrandProfit({ brand, monthInfo, slots, costs, adSpendByMonth }) {
           }
           continue;
         }
-        const net = p.revenue / (1 + cost.taxPct / 100);
-        const productCost = p.units * cost.cogs;
-        const commission = (p.revenue * cost.commissionPct) / 100;
-        const inward = p.units * cost.inwardFee;
-        const fulfilment = p.units * cost.fulfilmentFee;
-        const storage = p.units * cost.storageFee;
+        const f = productFigures(cost, p.revenue, p.units);
 
         matchedGross += p.revenue;
         matchedUnits += p.units;
-        sums.net += net;
-        sums.cogs += productCost;
-        sums.commission += commission;
-        sums.inward += inward;
-        sums.fulfilment += fulfilment;
-        sums.storage += storage;
+        sums.net += f.net;
+        sums.cogs += f.productCost;
+        sums.commission += f.commission;
+        sums.inward += f.inward;
+        sums.fulfilment += f.fulfilment;
+        sums.storage += f.storage;
 
         const total = productSums.get(productKey(p.productName));
         total.units += p.units;
         total.gross += p.revenue;
-        total.net += net;
-        total.productCost += productCost;
-        total.fees += commission + inward + fulfilment + storage;
+        total.net += f.net;
+        total.productCost += f.productCost;
+        total.fees += f.fees;
       }
     }
 
@@ -171,4 +177,40 @@ function buildBrandProfit({ brand, monthInfo, slots, costs, adSpendByMonth }) {
   };
 }
 
-module.exports = { buildBrandProfit };
+/**
+ * One product, month by month, with the same formulas as buildBrandProfit (productFigures).
+ * Returns one entry per month in monthInfo. Profit fields are null when the product has no
+ * cost-sheet row (never 0). Ad spend is brand level, so nothing is allocated to a product.
+ */
+function buildProductMonthProfit({ productName, monthInfo, slots, costs }) {
+  const key = productKey(productName);
+  const costProducts = costs && Array.isArray(costs.products) ? costs.products : [];
+  const cost = costProducts.find((p) => productKey(p.productName) === key) || null;
+  return monthInfo.map((info) => {
+    let revenue = 0;
+    let units = 0;
+    for (const slot of slots.filter((s) => s.monthKey === info.monthKey)) {
+      for (const p of slot.products || []) {
+        if (productKey(p.productName) === key) { revenue += p.revenue; units += p.units; }
+      }
+    }
+    const base = {
+      monthKey: info.monthKey, revenue: round2(revenue), units,
+      netSales: null, productCost: null, fees: null, profitBeforeAds: null, profitPerUnit: null, marginPct: null,
+    };
+    if (!cost) return base;
+    const f = productFigures(cost, revenue, units);
+    const profit = f.net - f.productCost - f.fees;
+    return {
+      ...base,
+      netSales: round2(f.net),
+      productCost: round2(f.productCost),
+      fees: round2(f.fees),
+      profitBeforeAds: round2(profit),
+      profitPerUnit: units > 0 ? round2(profit / units) : null,
+      marginPct: ratioPct(profit, f.net),
+    };
+  });
+}
+
+module.exports = { buildBrandProfit, buildProductMonthProfit };
