@@ -29,8 +29,13 @@ interface KpiNote { text: string; tone: '' | 'up' | 'down'; }
             <a routerLink="/platforms/zepto">Zepto</a>
             <a routerLink="/platforms/flipkart-minutes">Flipkart Minutes</a>
           </nav>
-          @if (periodLabel()) {
-            <span class="context-pill" title="Period"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7a2 2 0 0 1 2 -2h12a2 2 0 0 1 2 2v12a2 2 0 0 1 -2 2h-12a2 2 0 0 1 -2 -2v-12z"/><path d="M16 3v4"/><path d="M8 3v4"/><path d="M4 11h16"/></svg>{{ periodLabel() }}</span>
+          @if (data()) {
+            <label class="context-pill" for="overviewMonth" title="Period"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7a2 2 0 0 1 2 -2h12a2 2 0 0 1 2 2v12a2 2 0 0 1 -2 2h-12a2 2 0 0 1 -2 -2v-12z"/><path d="M16 3v4"/><path d="M8 3v4"/><path d="M4 11h16"/></svg>
+              <select id="overviewMonth" class="context-select" aria-label="Month shown" [value]="selectedMonth()" (change)="selectMonth($event)">
+                <option value="" [selected]="selectedMonth() === ''">{{ latestOptionLabel() }}</option>
+                @for (m of monthOptions(); track m.monthKey) { <option [value]="m.monthKey" [selected]="m.monthKey === selectedMonth()">{{ m.label }}{{ m.partial ? ' (partial)' : '' }}</option> }
+              </select>
+            </label>
           }
           <a class="secondary-btn overview-action" routerLink="/present"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 4l18 0"/><path d="M4 4v10a2 2 0 0 0 2 2h12a2 2 0 0 0 2 -2v-10"/><path d="M12 16l0 4"/><path d="M9 20l6 0"/><path d="M8 12l3 -3l2 2l3 -3"/></svg>Present</a>
           <a class="secondary-btn overview-action" routerLink="/reports"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 3v4a1 1 0 0 0 1 1h4"/><path d="M11.5 21h-4.5a2 2 0 0 1 -2 -2v-14a2 2 0 0 1 2 -2h7l5 5v5m-5 6h7m-3 -3l3 3l-3 3"/></svg>Create report</a>
@@ -55,7 +60,7 @@ interface KpiNote { text: string; tone: '' | 'up' | 'down'; }
       <p class="muted overview-loading">Loading {{ brand() }}…</p>
     } @else {
       @if (data(); as d) {
-        <section class="kpi-row" aria-label="Headline numbers">
+        <section class="kpi-row" aria-label="Headline numbers" [class.is-loading]="loading()">
           <a class="card overview-card-link" routerLink="/sales-performance" title="Open sales">
             <div class="card-label">Revenue</div>
             <div class="card-value">{{ d.sales ? money(d.sales.totalRevenue, 0) : '-' }}</div>
@@ -81,13 +86,13 @@ interface KpiNote { text: string; tone: '' | 'up' | 'down'; }
             @if (d.campaign; as c) {
               <span class="kpi-note">{{ money(c.adSpend, 0) }} spent in {{ c.periodLabel }}</span>
             } @else {
-              <span class="kpi-note">No campaign report yet</span>
+              <span class="kpi-note">{{ loadedMonth() ? 'No ads data for ' + monthLabel(loadedMonth()) : 'No campaign report yet' }}</span>
             }
           </a>
         </section>
 
         <section class="overview-panels">
-          <div class="overview-list">
+          <div class="overview-list" [class.is-loading]="loading()">
             <div class="panel-head"><h3>Revenue by month</h3><a class="overview-link" routerLink="/monthly-comparison">Compare months</a></div>
             @if (trendMonths().length) {
               <div class="month-bars" role="img" [attr.aria-label]="trendLabel()">
@@ -104,7 +109,7 @@ interface KpiNote { text: string; tone: '' | 'up' | 'down'; }
               <p class="muted">Upload one sales report per month on the Monthly Comparison page to see the trend.</p>
             }
           </div>
-          <div class="overview-list">
+          <div class="overview-list" [class.is-loading]="loading()">
             <div class="panel-head"><h3>Top cities</h3><a class="overview-link" routerLink="/sales-performance">View all</a></div>
             @if (d.sales; as s) {
               <ol class="rank-list">
@@ -116,13 +121,13 @@ interface KpiNote { text: string; tone: '' | 'up' | 'down'; }
                 }
               </ol>
             } @else {
-              <p class="muted">No sales report has been uploaded for {{ d.brand }} yet.</p>
+              <p class="muted">{{ loadedMonth() ? 'No sales for ' + monthLabel(loadedMonth()) : 'No sales report has been uploaded for ' + d.brand + ' yet.' }}</p>
             }
           </div>
         </section>
 
         <section class="overview-panels">
-          <div class="overview-list">
+          <div class="overview-list" [class.is-loading]="loading()">
             <div class="panel-head"><h3>Top products</h3><a class="overview-link" routerLink="/sales-performance">View all</a></div>
             @if (d.sales; as s) {
               <ol class="rank-list">
@@ -135,7 +140,7 @@ interface KpiNote { text: string; tone: '' | 'up' | 'down'; }
                 }
               </ol>
             } @else {
-              <p class="muted">No sales report has been uploaded for {{ d.brand }} yet.</p>
+              <p class="muted">{{ loadedMonth() ? 'No sales for ' + monthLabel(loadedMonth()) : 'No sales report has been uploaded for ' + d.brand + ' yet.' }}</p>
             }
           </div>
           <div class="overview-list">
@@ -180,14 +185,15 @@ export class BrandOverviewPageComponent implements OnInit {
   readonly hasPartial = computed(() => this.trendMonths().some((m) => m.partial));
   readonly trendLabel = computed(() =>
     this.trendMonths().map((m) => `${m.label}: ${money(m.revenue, 0)}`).join('; '));
-  /** Header period: the order dates of the latest sales upload, else the latest month on record. */
-  readonly periodLabel = computed(() => {
-    const d = this.data();
-    if (!d) return '';
-    if (d.sales?.from && d.sales.to) return this.periodText(d.sales.from, d.sales.to);
-    const months = d.months;
-    return months.length ? months[months.length - 1].label : '';
-  });
+  /** The month whose figures are on screen ('' = the latest upload). Set only once that month's data has arrived. */
+  readonly loadedMonth = signal('');
+  /** What the dropdown shows ('' = Latest upload). It differs from loadedMonth only while a month is loading. */
+  readonly selectedMonth = signal('');
+  /** Period of the latest upload, kept while a month is shown: "1-20 Oct 2026". */
+  readonly latestPeriod = signal('');
+  readonly latestOptionLabel = computed(() => (this.latestPeriod() ? `Latest upload (${this.latestPeriod()})` : 'Latest upload'));
+  /** Months for the dropdown, newest first. */
+  readonly monthOptions = computed<SalesMonth[]>(() => [...(this.data()?.months ?? [])].reverse());
   readonly revenueNote = computed(() => this.kpiNote('revenue'));
   readonly ordersNote = computed(() => this.kpiNote('orderCount'));
   readonly money = money;
@@ -197,7 +203,10 @@ export class BrandOverviewPageComponent implements OnInit {
   constructor() {
     effect(() => {
       const brand = this.ui.focusedBrand();
-      untracked(() => void this.load(brand));
+      untracked(() => {
+        this.selectedMonth.set(''); // a new brand starts on its latest upload
+        void this.load(brand, '');
+      });
     });
   }
 
@@ -209,7 +218,7 @@ export class BrandOverviewPageComponent implements OnInit {
     }
   }
 
-  private async load(brand: string) {
+  private async load(brand: string, month: string) {
     const id = ++this.requestId;
     this.error.set('');
     if (!brand) {
@@ -218,13 +227,24 @@ export class BrandOverviewPageComponent implements OnInit {
       return;
     }
     // Never show the previous brand's figures under the new brand's name.
-    if (this.data()?.brand !== brand) this.data.set(null);
+    if (this.data()?.brand !== brand) {
+      this.data.set(null);
+      this.loadedMonth.set('');
+      this.latestPeriod.set('');
+    }
     this.loading.set(true);
     try {
-      const result = await this.api.brandOverview(brand);
-      if (id === this.requestId) this.data.set(result);
+      const result = await this.api.brandOverview(brand, month);
+      if (id === this.requestId) {
+        this.data.set(result);
+        this.loadedMonth.set(month);
+        if (!month) this.latestPeriod.set(this.latestPeriodOf(result));
+      }
     } catch (error) {
-      if (id === this.requestId) this.error.set(error instanceof Error ? error.message : 'The request failed.');
+      if (id === this.requestId) {
+        this.error.set(error instanceof Error ? error.message : 'The request failed.');
+        this.selectedMonth.set(this.loadedMonth()); // the dropdown goes back to what is still on screen
+      }
     } finally {
       if (id === this.requestId) this.loading.set(false);
     }
@@ -235,6 +255,8 @@ export class BrandOverviewPageComponent implements OnInit {
    * before it exists; otherwise the period the numbers cover. Never compares a partial month.
    */
   private kpiNote(metric: 'revenue' | 'orderCount'): KpiNote {
+    const month = this.loadedMonth();
+    if (month) return this.monthNote(metric, month);
     const d = this.data();
     if (!d?.sales) return { text: 'No sales report yet', tone: '' };
     const period = d.sales.from && d.sales.to ? this.periodText(d.sales.from, d.sales.to) : '';
@@ -250,6 +272,46 @@ export class BrandOverviewPageComponent implements OnInit {
       }
     }
     return { text: period ? `Orders from ${period}` : 'Latest sales report', tone: '' };
+  }
+
+  selectMonth(event: Event) {
+    const month = (event.target as HTMLSelectElement).value;
+    this.selectedMonth.set(month);
+    void this.load(this.brand(), month);
+  }
+
+  /** Period of the latest upload, else the latest month on record. */
+  private latestPeriodOf(d: BrandOverview) {
+    if (d.sales?.from && d.sales.to) return this.periodText(d.sales.from, d.sales.to);
+    return d.months.length ? d.months[d.months.length - 1].label : '';
+  }
+
+  monthLabel(monthKey: string) {
+    return this.data()?.months.find((m) => m.monthKey === monthKey)?.label ?? monthKey;
+  }
+
+  private previousMonthKey(monthKey: string) {
+    const [year, month] = monthKey.split('-').map(Number);
+    return month === 1 ? `${year - 1}-12` : `${year}-${String(month - 1).padStart(2, '0')}`;
+  }
+
+  /**
+   * A selected month's second line: "+12% vs Sep" against the calendar month before it when that month
+   * is on record, "Partial month" when either month is partial (never compared), else the dates covered.
+   */
+  private monthNote(metric: 'revenue' | 'orderCount', month: string): KpiNote {
+    const d = this.data();
+    if (!d?.sales) return { text: `No sales for ${this.monthLabel(month)}`, tone: '' };
+    const current = d.months.find((m) => m.monthKey === month);
+    const previous = d.months.find((m) => m.monthKey === this.previousMonthKey(month));
+    if (current?.partial || previous?.partial) return { text: 'Partial month', tone: '' };
+    if (current && previous && previous[metric] > 0) {
+      const change = Math.round(((current[metric] - previous[metric]) / previous[metric]) * 1000) / 10;
+      const prevName = SHORT_MONTHS[Number(previous.monthKey.slice(5, 7)) - 1];
+      return { text: `${change > 0 ? '+' : ''}${change}% vs ${prevName}`, tone: change > 0 ? 'up' : change < 0 ? 'down' : '' };
+    }
+    const period = this.periodText(d.sales.from, d.sales.to);
+    return { text: period ? `Orders from ${period}` : this.monthLabel(month), tone: '' };
   }
 
   barWidth(value: number, max: number) {
