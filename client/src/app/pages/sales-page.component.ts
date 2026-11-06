@@ -7,6 +7,7 @@ import { UiStateService } from '../core/ui-state.service';
 import { BrandFilterComponent, mergeKnownBrands } from '../shared/brand-filter.component';
 import { ClearDataDialogComponent } from '../shared/clear-data-dialog.component';
 import { FEEDER_CITY_MAP, feederCities } from '../core/feeder-map';
+import { ProductMonthsComponent } from './product-months.component';
 
 type ProductSortKey = 'productName' | 'revenue' | 'units' | 'orderCount' | 'avgOrderValue' | 'topCity';
 type ProductCitySortKey = 'city' | 'revenue' | 'sharePct' | 'units' | 'orderCount' | 'avgOrderValue';
@@ -14,10 +15,10 @@ type ProductCityRow = CityRow & { sharePct: number };
 
 @Component({
   selector: 'app-sales-page',
-  imports: [BrandFilterComponent, ClearDataDialogComponent],
+  imports: [BrandFilterComponent, ClearDataDialogComponent, ProductMonthsComponent],
   template: `
     <header class="topbar">
-      <div class="topbar-left"><div><h1>{{ view() === 'product' ? 'Sales by product' : 'Sales by city' }}</h1><span class="muted">{{ lastUpdated() }}</span></div></div>
+      <div class="topbar-left"><div><h1>{{ view() === 'months' ? 'Sales by month' : view() === 'product' ? 'Sales by product' : 'Sales by city' }}</h1><span class="muted">{{ lastUpdated() }}</span></div></div>
       <div class="topbar-right">
         @if (isAdmin()) { <label class="upload-btn">Upload Sales Report<input type="file" accept=".xlsx" hidden (change)="upload($event)"></label> }
         <button class="secondary-btn" (click)="getSheet()">Get Sheet</button>
@@ -32,6 +33,7 @@ type ProductCityRow = CityRow & { sharePct: number };
       <div class="sheet-tabs" role="tablist">
         <button type="button" role="tab" class="sheet-tab" [class.active]="view() === 'city'" (click)="setView('city')">City wise</button>
         <button type="button" role="tab" class="sheet-tab" [class.active]="view() === 'product'" (click)="setView('product')">Product wise</button>
+        <button type="button" role="tab" class="sheet-tab" [class.active]="view() === 'months'" (click)="setView('months')">Month by month</button>
       </div>
     </section>
     @if (view() === 'city') {
@@ -96,7 +98,7 @@ type ProductCityRow = CityRow & { sharePct: number };
       @if (!displayedRows().length) { <p class="muted">{{ emptyMessage() }}</p> }
     </section>
     }
-    } @else {
+    } @else if (view() === 'product') {
     <section class="controls">
       <label class="filter-label" for="productSearch">Product</label>
       <input id="productSearch" class="styled-select" type="search" aria-label="Search products" placeholder="Search a product, e.g. Stainless Spoon" [value]="productQuery()" (input)="onProductSearch($event)">
@@ -138,6 +140,8 @@ type ProductCityRow = CityRow & { sharePct: number };
       </tbody></table>
       @if (!listedProducts().length) { <p class="muted">No products found. Upload the sales report, or clear the search box.</p> }
     </section>
+    } @else {
+    <app-product-months />
     }
     @if (clearOpen()) {
       <app-clear-data-dialog scope="sales" note="Its trend history is removed too." [brands]="brandNames()" [initialBrand]="ui.focusedBrand()" (confirm)="clearData($event)" (cancel)="clearOpen.set(false)" />
@@ -155,7 +159,7 @@ export class SalesPageComponent implements OnInit {
   readonly productSortAsc = signal(false);
 
   // --- Product wise tab: pick one product, see its total and every city it sold in ---
-  readonly view = signal<'city' | 'product'>('city');
+  readonly view = signal<'city' | 'product' | 'months'>('city');
   readonly productQuery = signal('');
   readonly selectedProductKey = signal('');
   readonly productCitySortKey = signal<ProductCitySortKey>('revenue');
@@ -311,7 +315,7 @@ export class SalesPageComponent implements OnInit {
     this.productSortKey.set(key);
   }
   productSortIndicator(key: ProductSortKey) { return this.productSortKey() === key ? (this.productSortAsc() ? '↑' : '↓') : ''; }
-  setView(view: 'city' | 'product') { this.view.set(view); }
+  setView(view: 'city' | 'product' | 'months') { this.view.set(view); }
   // Name + brand, so the same product name under two brands stays two products.
   productKey(product: ProductSalesRow) { return `${product.productName}::${product.brandName ?? ''}`; }
   isSelectedProduct(product: ProductSalesRow) { return this.productKey(product) === this.selectedProductKey(); }
