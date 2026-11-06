@@ -26,6 +26,8 @@ import {
   SalesMonthUploadResult,
   BrandCostsUploadResult,
   BrandProfit,
+  ProductMonthDetail,
+  ProductMonthNames,
 } from './models';
 
 @Injectable({ providedIn: 'root' })
@@ -198,6 +200,17 @@ export class ApiService {
   /** One month's other costs in rupees; 0 clears it. */
   setOtherCost(brand: string, monthKey: string, amount: number) {
     return this.post<{ ok: boolean }>('/api/brand-other-costs', { brand, monthKey, amount });
+  }
+
+  /** Names of the products that have monthly data for a brand (the Month by month selector). */
+  productMonthNames(brand: string) {
+    return this.get<ProductMonthNames>(`/api/product-month-detail?brand=${encodeURIComponent(brand)}`);
+  }
+
+  /** One product month by month, plus the brand's monthly profit. Profit fields are empty when the server hides them. */
+  productMonthDetail(brand: string, product: string) {
+    const query = new URLSearchParams({ brand, product });
+    return this.get<ProductMonthDetail>(`/api/product-month-detail?${query}`);
   }
 
   private brandQuery(brand?: string) {

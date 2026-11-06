@@ -340,3 +340,77 @@ export interface BrandCostsUploadResult {
   productCount: number;
   skippedRows: number;
 }
+/** GET /api/product-month-detail: the Sales > Month by month tab. Without `product` it returns only the names. */
+export interface ProductMonthNames {
+  products: string[];
+}
+
+export interface ProductMonthCity {
+  city: string;
+  revenue: number;
+  units: number;
+  orderCount: number;
+  avgOrderValue: number;
+  sharePct: number;
+}
+
+/** This product only, before ad spend. Null when the product has no cost-sheet row or the server hides profit. */
+export interface ProductMonthProfit {
+  netSales: number | null;
+  productCost: number | null;
+  fees: number | null;
+  profitBeforeAds: number | null;
+  profitPerUnit: number | null;
+  marginPct: number | null;
+}
+
+export interface ProductMonthRow {
+  monthKey: string;
+  label: string;
+  from: string;
+  to: string;
+  partial: boolean;
+  revenue: number;
+  units: number;
+  orderCount: number;
+  avgOrderValue: number;
+  cityDataMissing: boolean;
+  topCity: { city: string; revenue: number; sharePct: number } | null;
+  cities: ProductMonthCity[];
+  profit: ProductMonthProfit | null;
+}
+
+/** The whole brand's month (not the product): profit before and after ad spend. */
+export interface ProductMonthBrandRow {
+  monthKey: string;
+  label: string;
+  partial: boolean;
+  status: 'ok' | 'incomplete' | 'no-costs';
+  netSales: number | null;
+  profitBeforeAds: number | null;
+  adSpend: number;
+  adDataMissing: boolean;
+  otherCosts: number;
+  profitAfterAds: number | null;
+  marginPct: number | null;
+}
+
+export interface ProductMonthBrandTotals {
+  months: number;
+  incompleteMonths: number;
+  netSales: number;
+  profitBeforeAds: number;
+  adSpend: number;
+  otherCosts: number;
+  profitAfterAds: number;
+  marginPct: number | null;
+}
+
+export interface ProductMonthDetail {
+  brand: string;
+  product: string;
+  profitVisible: boolean;
+  months: ProductMonthRow[];
+  brandMonths: ProductMonthBrandRow[];
+  brandTotals: ProductMonthBrandTotals | null;
+}
