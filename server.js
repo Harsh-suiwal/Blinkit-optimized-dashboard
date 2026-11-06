@@ -770,6 +770,9 @@ app.post('/api/sales-month/restore', requireAdmin, mutating(async (req, res) => 
 app.get('/api/brand-overview', requireAuth, (req, res) => {
   const brand = typeof req.query.brand === 'string' ? req.query.brand.trim() : '';
   if (!brand) return res.status(400).json({ error: 'brand is required.' });
+  // Optional ?month=YYYY-MM: sales and advertising for that month instead of the latest upload.
+  const month = typeof req.query.month === 'string' ? req.query.month.trim() : '';
+  if (month && !MONTH_KEY_RE.test(month)) return res.status(400).json({ error: 'month must look like 2026-10.' });
 
   const aliases = loadAliases();
   const uploadFor = (brandUploads) => {
@@ -791,6 +794,8 @@ app.get('/api/brand-overview', requireAuth, (req, res) => {
     inventoryUpload: inventory ? uploadFor(inventory.brandUploads) : null,
     campaignStore: loadCampaignStore(),
     months: listMonths(brand),
+    month,
+    monthSlots: month ? slotsFor(brand, 'blinkit').filter((s) => s.monthKey === month) : [],
   }));
 });
 

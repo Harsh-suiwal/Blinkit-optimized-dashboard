@@ -21,13 +21,19 @@ const TOP_N = 5;
  * @param {{date:string,fileName:string}|null} input.inventoryUpload
  * @param {object} input.campaignStore   loadCampaignStore() result
  * @param {object[]} input.months        salesMonthly listMonths(brand) result
+ * @param {string} [input.month]      'YYYY-MM': sales and campaign for that month instead of the latest upload
+ * @param {object[]} [input.monthSlots] the brand's monthly slots (any months; the requested one is used)
  */
 function buildBrandOverview(input) {
+  const month = input.month || '';
   return {
     brand: input.brand,
-    sales: salesSection(input.cityRows || [], input.productRows || [], input.salesUpload || null),
+    sales: month
+      ? monthSalesSection(input.monthSlots || [], month, input.months || [])
+      : salesSection(input.cityRows || [], input.productRows || [], input.salesUpload || null),
+    // Stock is always the current snapshot, never month-specific.
     inventory: inventorySection(input.inventoryRows || [], input.inventoryUpload || null),
-    campaign: campaignSection(input.campaignStore, input.brand),
+    campaign: campaignSection(input.campaignStore, input.brand, month),
     months: input.months || [],
   };
 }
@@ -60,6 +66,56 @@ function salesSection(cityRows, productRows, upload) {
   };
 }
 
+/** Sales for one calendar month from its stored monthly slot(s); null when the brand has none. */
+function monthSalesSection(slots, monthKey, months) {
+  const own = slots.filter((s) => s.monthKey === monthKey);
+  if (!own.length) return null;
+  const cities = new Map();
+  const products = new Map();
+  let revenue = 0;
+  let units = 0;
+  let orders = 0;
+  let from = own[0].from;
+  let to = own[0].to;
+  for (const s of own) {
+    revenue += s.totals.revenue;
+    units += s.totals.units;
+    orders += s.totals.orderCount;
+    if (s.from < from) from = s.from;
+    if (s.to > to) to = s.to;
+    for (const c of s.cities || []) cities.set(c.city, (cities.get(c.city) || 0) + c.revenue);
+    for (const p of s.products || []) {
+      const row = products.get(p.productName) || { productName: p.productName, revenue: 0, units: 0 };
+      row.revenue += p.revenue;
+      row.units += p.units;
+      products.set(p.productName, row);
+    }
+  }
+  const info = months.find((m) => m.monthKey === monthKey);
+  const share = (value) => (revenue > 0 ? Math.round((value / revenue) * 1000) / 10 : 0);
+  return {
+    date: own[0].uploadedAt || null,
+    fileName: own[0].fileName || null,
+    monthKey,
+    from,
+    to,
+    partial: info ? info.partial : false,
+    totalRevenue: round2(revenue),
+    totalUnits: units,
+    totalOrders: orders,
+    avgOrderValue: orders > 0 ? round2(revenue / orders) : 0,
+    cityCount: cities.size,
+    productCount: products.size,
+    topCities: Array.from(cities, ([city, value]) => ({ city, revenue: round2(value), sharePct: share(value) }))
+      .sort((a, b) => b.revenue - a.revenue)
+      .slice(0, TOP_N),
+    topProducts: Array.from(products.values())
+      .sort((a, b) => b.revenue - a.revenue)
+      .slice(0, TOP_N)
+      .map((p) => ({ productName: p.productName, revenue: round2(p.revenue), units: p.units, sharePct: share(p.revenue) })),
+  };
+}
+
 function inventorySection(rows, upload) {
   if (!rows.length) return null;
   const byProduct = new Map();
@@ -84,14 +140,15 @@ function inventorySection(rows, upload) {
   };
 }
 
-/** The brand's most recent campaign month, both sheet types together. */
-function campaignSection(store, brand) {
+/** The brand's campaign month (the most recent one, or `month` when given), both sheet types together. */
+function campaignSection(store, brand, month) {
   if (!store || !Array.isArray(store.rows) || !brand) return null;
   const want = String(brand).toLowerCase();
   const brandRows = store.rows.filter((r) => String(r.brandName || '').toLowerCase() === want);
   if (!brandRows.length) return null;
-  const periodKey = brandRows.reduce((latest, r) => (r.periodKey > latest ? r.periodKey : latest), brandRows[0].periodKey);
+  const periodKey = month || brandRows.reduce((latest, r) => (r.periodKey > latest ? r.periodKey : latest), brandRows[0].periodKey);
   const rows = selectRows(store, { periodKey, brand, sheetType: '' });
+  if (!rows.length) return null; // no campaign rows in the requested month
   const totals = aggregateTotals(rows);
   const campaigns = aggregateByCampaign(rows);
   const ranked = campaigns.filter((c) => c.adSpend > 0 && c.roas !== null);
