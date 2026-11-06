@@ -159,8 +159,9 @@ export class ApiService {
   }
 
   /** Everything for one brand on one screen (Brand Overview page). */
-  brandOverview(brand: string) {
-    return this.get<BrandOverview>(`/api/brand-overview?brand=${encodeURIComponent(brand)}`);
+  brandOverview(brand: string, month = '') {
+    const monthQuery = month ? `&month=${encodeURIComponent(month)}` : '';
+    return this.get<BrandOverview>(`/api/brand-overview?brand=${encodeURIComponent(brand)}${monthQuery}`);
   }
 
   salesMonths(brand?: string) {

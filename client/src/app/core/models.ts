@@ -230,6 +230,8 @@ export interface BrandOverview {
     fileName: string | null;
     from: string | null;   // first order date covered (null for uploads made before this was recorded)
     to: string | null;     // last order date covered
+    monthKey?: string;     // only when a month was requested
+    partial?: boolean;     // only when a month was requested: its orders don't cover every day
     totalRevenue: number;
     totalUnits: number;
     totalOrders: number;
