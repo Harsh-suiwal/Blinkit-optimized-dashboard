@@ -3,7 +3,7 @@ import { ApiService } from '../core/api.service';
 import { money, number } from '../core/formatters';
 import { ProductMonthBrandRow, ProductMonthDetail, ProductMonthRow } from '../core/models';
 import { UiStateService } from '../core/ui-state.service';
-import { changeText, monthChange, shortMonth, signedMoney, withTiers } from '../core/product-months.logic';
+import { brandStripTotal, changeText, compactMoney, computeWins, monthChange, shortMonth, signedMoney, withTiers } from '../core/product-months.logic';
 
 const CITY_MISSING = "City split not available for this month. Re-upload that month's sales report.";
 
@@ -41,6 +41,11 @@ const CITY_MISSING = "City split not available for this month. Re-upload that mo
               }
             </div>
           </section>
+          @if (wins().length) {
+            <section class="wins-strip" aria-label="Highlights">
+              @for (w of wins(); track w.key) { <span class="win-item">{{ w.text }}</span> }
+            </section>
+          }
           <section class="cards month-cards" aria-label="Revenue by month">
             @for (m of columns(); track m.monthKey; let i = $index) {
               <div class="card month-card month-card-pick" role="button" tabindex="0" [class.picked]="m.monthKey === cityMonthKey()" [attr.aria-pressed]="m.monthKey === cityMonthKey()" (click)="cityMonth.set(m.monthKey)" (keydown.enter)="cityMonth.set(m.monthKey)">
@@ -57,6 +62,18 @@ const CITY_MISSING = "City split not available for this month. Re-upload that mo
                 @if (m.cityDataMissing) { <p class="muted month-card-note">{{ cityMissingText }}</p> }
               </div>
             }
+          </section>
+          <section class="overview-section" aria-labelledby="pmChart">
+            <div class="overview-head"><div><h2 id="pmChart">Revenue by month</h2></div></div>
+            <div class="month-bars" role="img" [attr.aria-label]="chartLabel()">
+              @for (m of columns(); track m.monthKey) {
+                <div class="month-bar" [class.partial]="m.partial">
+                  <span class="month-bar-value">{{ compactMoney(m.revenue) }}</span>
+                  <span class="month-bar-track"><span class="month-bar-fill" [style.height.%]="barHeight(m.revenue)"></span></span>
+                  <span class="month-bar-label">{{ shortMonth(m.monthKey) }}{{ m.partial ? '*' : '' }}</span>
+                </div>
+              }
+            </div>
           </section>
           <section class="table-wrap compare-table">
             <h3>{{ d.product }} by month</h3>
@@ -105,6 +122,36 @@ const CITY_MISSING = "City split not available for this month. Re-upload that mo
                   }
                 </tbody></table>
               }
+            </section>
+          }
+          @if (profitVisible() && brandRows().length) {
+            <section class="table-wrap compare-table brand-strip">
+              <h3>Brand total (all products)</h3>
+              <p class="muted">This is the whole brand, not {{ d.product }}. Advertising is brand level.</p>
+              <table id="productMonthsBrandTable">
+                <thead><tr><th>Month</th><th>Profit before ads</th><th>Ad spend</th><th>Profit after ads</th><th>Margin</th></tr></thead>
+                <tbody>
+                  @for (r of brandRows(); track r.monthKey) {
+                    <tr>
+                      <td>{{ r.label }}{{ r.partial ? '*' : '' }}</td>
+                      <td>{{ r.profitBeforeAds === null ? 'No cost sheet' : signedMoney(r.profitBeforeAds, 0) }}</td>
+                      <td>{{ r.adDataMissing ? 'Ad spend not uploaded' : money(r.adSpend, 0) }}</td>
+                      <td>{{ afterAdsText(r) }}</td>
+                      <td>{{ marginAfterText(r) }}</td>
+                    </tr>
+                  }
+                  @if (brandTotal(); as t) {
+                    <tr>
+                      <td><strong>Total</strong></td>
+                      <td><strong>{{ signedMoney(t.profitBeforeAds, 0) }}</strong></td>
+                      <td><strong>{{ t.adDataMissing ? 'Not for every month' : money(t.adSpend, 0) }}</strong></td>
+                      <td><strong>{{ t.profitAfterAds === null ? 'n/a' : signedMoney(t.profitAfterAds, 0) }}</strong></td>
+                      <td><strong>{{ t.marginPct === null ? 'n/a' : t.marginPct + '%' }}</strong></td>
+                    </tr>
+                  }
+                </tbody>
+              </table>
+              <p class="muted overview-footnote">Profit after ads also takes off the other costs entered on the Profit tab. Months without a cost sheet are not counted.</p>
             </section>
           }
         }
@@ -162,6 +209,15 @@ export class ProductMonthsComponent {
     const row = this.cityMonthRow();
     return row ? withTiers(row.cities) : [];
   });
+  readonly wins = computed(() => computeWins({ columns: this.columns(), allMonths: this.allMonths(), profitVisible: this.profitVisible() }));
+  readonly chartMax = computed(() => Math.max(0, ...this.columns().map((m) => m.revenue)));
+  readonly chartLabel = computed(() => this.columns().map((m) => `${m.label}: ${money(m.revenue, 0)}`).join('; '));
+  readonly compactMoney = compactMoney;
+  readonly brandRows = computed<ProductMonthBrandRow[]>(() => {
+    const keys = this.selected();
+    return (this.detail()?.brandMonths ?? []).filter((r) => keys.includes(r.monthKey));
+  });
+  readonly brandTotal = computed(() => brandStripTotal(this.brandRows()));
 
   constructor() {
     effect(() => {
@@ -199,6 +255,16 @@ export class ProductMonthsComponent {
   perUnitText(m: ProductMonthRow) {
     const value = m.profit?.profitPerUnit ?? null;
     return value === null ? '-' : signedMoney(value, 2);
+  }
+  barHeight(value: number) {
+    const max = this.chartMax();
+    return max > 0 ? Math.max(2, Math.round((value / max) * 100)) : 0;
+  }
+  afterAdsText(r: ProductMonthBrandRow) {
+    return r.adDataMissing || r.profitAfterAds === null ? 'n/a' : signedMoney(r.profitAfterAds, 0);
+  }
+  marginAfterText(r: ProductMonthBrandRow) {
+    return r.adDataMissing || r.marginPct === null ? 'n/a' : `${r.marginPct}%`;
   }
 
   private async loadNames(brand: string) {

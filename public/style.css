@@ -2651,6 +2651,27 @@ a.secondary-btn {
   font-size: 12px;
 }
 
+.wins-strip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 0 0 16px;
+}
+
+.win-item {
+  padding: 8px 14px;
+  border-radius: 980px;
+  border: 1px solid rgba(var(--success-rgb), 0.35);
+  background: rgba(var(--success-rgb), 0.12);
+  color: var(--text);
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.brand-strip {
+  margin-top: 20px;
+}
+
 /* ==========================================================================
    Pro look (v7): flat, quiet surfaces for client meetings.
    Applies only when <html data-look="pro"> (Profile > Appearance). Without it the
@@ -2940,4 +2961,10 @@ html[data-look="pro"] .badge-partial {
 
 html[data-look="pro"] .month-card-pick.picked {
   outline-color: var(--accent);
+}
+html[data-look="pro"] .win-item {
+  border-radius: 8px;
+  border-color: var(--border);
+  border-left: 3px solid var(--success);
+  background: var(--surface);
 }
