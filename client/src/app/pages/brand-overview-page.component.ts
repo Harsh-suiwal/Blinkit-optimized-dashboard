@@ -72,7 +72,7 @@ interface KpiNote { text: string; tone: '' | 'up' | 'down'; }
             <span class="kpi-note" [class.up]="ordersNote().tone === 'up'" [class.down]="ordersNote().tone === 'down'">{{ ordersNote().text }}</span>
           </a>
           <a class="card overview-card-link" routerLink="/inventory" title="Open stock">
-            <div class="card-label">Units in stock</div>
+            <div class="card-label">Units in stock <span class="stock-tag">Current stock</span></div>
             <div class="card-value">{{ d.inventory ? number(d.inventory.totalStock) : '-' }}</div>
             @if (d.inventory; as inv) {
               <span class="kpi-note" [class.down]="inv.outOfStock > 0" [class.up]="inv.outOfStock === 0">{{ inv.outOfStock > 0 ? number(inv.outOfStock) + ' out of stock' : 'Nothing out of stock' }}</span>
@@ -99,7 +99,7 @@ interface KpiNote { text: string; tone: '' | 'up' | 'down'; }
                 @for (m of trendMonths(); track m.monthKey; let last = $last) {
                   <div class="month-bar" [class.partial]="m.partial">
                     <span class="month-bar-value">{{ compactMoney(m.revenue) }}</span>
-                    <span class="month-bar-track"><span class="month-bar-fill" [style.height.%]="barWidth(m.revenue, trendMax())" [style.opacity]="last ? 1 : 0.45"></span></span>
+                    <span class="month-bar-track"><span class="month-bar-fill" [style.height.%]="barWidth(m.revenue, trendMax())" [style.opacity]="barOpacity(m.monthKey, last)"></span></span>
                     <span class="month-bar-label">{{ shortMonth(m.monthKey) }}{{ m.partial ? '*' : '' }}</span>
                   </div>
                 }
@@ -144,7 +144,7 @@ interface KpiNote { text: string; tone: '' | 'up' | 'down'; }
             }
           </div>
           <div class="overview-list">
-            <div class="panel-head"><h3>Best sellers in stock</h3><a class="overview-link" routerLink="/inventory">View all</a></div>
+            <div class="panel-head"><h3>Best sellers in stock <span class="stock-tag">Current stock</span></h3><a class="overview-link" routerLink="/inventory">View all</a></div>
             @if (d.inventory; as inv) {
               <ol class="rank-list">
                 @for (p of inv.topSellers; track p.productName) {
@@ -180,7 +180,14 @@ export class BrandOverviewPageComponent implements OnInit {
   readonly data = signal<BrandOverview | null>(null);
   readonly loading = signal(false);
   readonly error = signal('');
-  readonly trendMonths = computed<SalesMonth[]>(() => (this.data()?.months ?? []).slice(-6));
+  /** The last 6 months; when a chosen month is older than that, the 6 months ending at it. */
+  readonly trendMonths = computed<SalesMonth[]>(() => {
+    const months = this.data()?.months ?? [];
+    const month = this.loadedMonth();
+    const index = month ? months.findIndex((m) => m.monthKey === month) : -1;
+    const end = index >= 0 && index < months.length - 6 ? index + 1 : months.length;
+    return months.slice(Math.max(0, end - 6), end);
+  });
   readonly trendMax = computed(() => Math.max(0, ...this.trendMonths().map((m) => m.revenue)));
   readonly hasPartial = computed(() => this.trendMonths().some((m) => m.partial));
   readonly trendLabel = computed(() =>
@@ -312,6 +319,12 @@ export class BrandOverviewPageComponent implements OnInit {
     }
     const period = this.periodText(d.sales.from, d.sales.to);
     return { text: period ? `Orders from ${period}` : this.monthLabel(month), tone: '' };
+  }
+
+  /** Latest upload: the newest bar stands out, as before. A chosen month: that month's bar stands out. */
+  barOpacity(monthKey: string, last: boolean) {
+    const month = this.loadedMonth();
+    return (month ? monthKey === month : last) ? 1 : 0.45;
   }
 
   barWidth(value: number, max: number) {
