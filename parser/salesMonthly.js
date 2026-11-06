@@ -1,6 +1,6 @@
 // Monthly sales history for the Monthly Comparison page and the Brand Overview trend.
 // Every order row is filed under the calendar month of its Order Date, per brand, as
-// pre-aggregated totals (overall, per city, per product). Stored in kv `salesMonthly`
+// pre-aggregated totals (overall, per city, per product, and each product's cities). Stored in kv `salesMonthly`
 // as { slots: [...] }, one slot per (brand, platform, month). An upload replaces only the
 // (brand, platform, month) slots it contains; everything else stays. `platform` is
 // 'blinkit' today; Zepto / Flipkart Minutes uploads will add their own slots later.
@@ -93,7 +93,7 @@ function buildMonthSlots(salesRows, fileName, uploadedAt, platform = DEFAULT_PLA
     const brandName = row.brandName || 'Unknown';
     const key = `${brandKey(brandName)}|${monthKey}`;
     if (!groups.has(key)) {
-      groups.set(key, { brandName, monthKey, from: day, to: day, totals: newTotals(), cities: new Map(), products: new Map() });
+      groups.set(key, { brandName, monthKey, from: day, to: day, totals: newTotals(), cities: new Map(), products: new Map(), productCities: new Map() });
     }
     const g = groups.get(key);
     if (day < g.from) g.from = day;
@@ -105,6 +105,11 @@ function buildMonthSlots(salesRows, fileName, uploadedAt, platform = DEFAULT_PLA
     if (row.productName) {
       if (!g.products.has(row.productName)) g.products.set(row.productName, newTotals());
       addTo(g.products.get(row.productName), row);
+      // The same product in each city: orders are the orders that contain the product, as in the product totals.
+      if (!g.productCities.has(row.productName)) g.productCities.set(row.productName, new Map());
+      const byCity = g.productCities.get(row.productName);
+      if (!byCity.has(city)) byCity.set(city, newTotals());
+      addTo(byCity.get(city), row);
     }
   }
 
@@ -115,7 +120,11 @@ function buildMonthSlots(salesRows, fileName, uploadedAt, platform = DEFAULT_PLA
     }).sort((a, b) => b.revenue - a.revenue);
     const products = Array.from(g.products, ([productName, t]) => {
       const f = finishTotals(t);
-      return { productName, revenue: f.revenue, units: f.units, orderCount: f.orderCount };
+      const productCities = Array.from(g.productCities.get(productName) || [], ([city, ct]) => {
+        const c = finishTotals(ct);
+        return { city, revenue: c.revenue, units: c.units, orderCount: c.orderCount };
+      }).sort((a, b) => b.revenue - a.revenue);
+      return { productName, revenue: f.revenue, units: f.units, orderCount: f.orderCount, cities: productCities };
     }).sort((a, b) => b.revenue - a.revenue);
     return {
       brandName: g.brandName,
@@ -295,7 +304,14 @@ function validSlot(slot) {
       productCount: num(slot.totals.productCount),
     },
     cities: slot.cities.filter((c) => c && typeof c.city === 'string').map((c) => ({ city: c.city, ...metrics(c) })),
-    products: slot.products.filter((p) => p && typeof p.productName === 'string').map((p) => ({ productName: p.productName, ...metrics(p) })),
+    products: slot.products.filter((p) => p && typeof p.productName === 'string').map((p) => ({
+      productName: p.productName,
+      ...metrics(p),
+      // Older months have no cities: keep them absent (never invent data), keep them when present.
+      ...(Array.isArray(p.cities)
+        ? { cities: p.cities.filter((c) => c && typeof c.city === 'string').map((c) => ({ city: c.city, ...metrics(c) })) }
+        : {}),
+    })),
   };
 }
 
