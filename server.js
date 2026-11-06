@@ -60,6 +60,7 @@ const { buildBrandOverview } = require('./parser/brandOverview');
 const { parseCostFile } = require('./parser/parseBrandCosts');
 const { getBrandCosts, saveBrandProducts, setOtherCost } = require('./parser/brandCosts');
 const { buildBrandProfit } = require('./parser/brandProfit');
+const { buildProductMonthDetail, canSeeProductProfit } = require('./parser/productMonthDetail');
 
 const kv = require('./store/kv');
 const { requireAuth, requireAdmin } = require('./middleware/auth');
@@ -80,6 +81,8 @@ const LOW_STOCK_THRESHOLD =
   envLowStock && envLowStock.trim() !== '' && Number.isFinite(Number(envLowStock)) && Number(envLowStock) >= 0
     ? Number(envLowStock)
     : 10;
+// "true" hides per-product profit on Sales > Month by month from non-admins (default: shown to everyone logged in).
+const PRODUCT_PROFIT_ADMIN_ONLY = String(process.env.PRODUCT_PROFIT_ADMIN_ONLY || '').trim().toLowerCase() === 'true';
 
 if (!fs.existsSync(UPLOAD_DIR)) fs.mkdirSync(UPLOAD_DIR, { recursive: true });
 
@@ -796,22 +799,26 @@ app.get('/api/brand-overview', requireAuth, (req, res) => {
 // month; sales come from the monthly sales store; ad spend from the campaign uploads. ?brand= is required.
 const PROFIT_PLATFORM = 'blinkit';
 
-app.get('/api/brand-profit', requireAdmin, (req, res) => {
-  const brand = typeof req.query.brand === 'string' ? req.query.brand.trim() : '';
-  if (!brand) return res.status(400).json({ error: 'brand is required.' });
-
+// { 'YYYY-MM': rupees }: the brand's campaign spend (all sheet types) for each month it has campaign rows.
+function adSpendByMonthFor(brand) {
   const store = loadCampaignStore();
   const adSpendByMonth = {};
   new Set(store.rows.filter((r) => sameBrand(r.brandName, brand)).map((r) => r.periodKey)).forEach((periodKey) => {
     adSpendByMonth[periodKey] = aggregateCampaignTotals(selectCampaignRows(store, { periodKey, brand })).adSpend;
   });
+  return adSpendByMonth;
+}
+
+app.get('/api/brand-profit', requireAdmin, (req, res) => {
+  const brand = typeof req.query.brand === 'string' ? req.query.brand.trim() : '';
+  if (!brand) return res.status(400).json({ error: 'brand is required.' });
 
   res.json(buildBrandProfit({
     brand,
     monthInfo: listMonths(brand, PROFIT_PLATFORM),
     slots: slotsFor(brand, PROFIT_PLATFORM),
     costs: getBrandCosts(brand),
-    adSpendByMonth,
+    adSpendByMonth: adSpendByMonthFor(brand),
   }));
 });
 
@@ -845,6 +852,31 @@ app.post('/api/brand-other-costs', requireAdmin, mutating(async (req, res) => {
   await setOtherCost(brand, monthKey, amount);
   res.json({ ok: true });
 }));
+
+// --- Product by month (Sales > Month by month) ---------------------------------
+// ?brand= is required. Without ?product= it lists the product names that have monthly data; with it
+// the product is shown month by month plus the whole brand's profit. Profit fields are removed when
+// PRODUCT_PROFIT_ADMIN_ONLY is on and the user is not an admin (this endpoint only).
+app.get('/api/product-month-detail', requireAuth, (req, res) => {
+  const brand = typeof req.query.brand === 'string' ? req.query.brand.trim() : '';
+  if (!brand) return res.status(400).json({ error: 'brand is required.' });
+  const product = typeof req.query.product === 'string' ? req.query.product.trim() : '';
+
+  const slots = slotsFor(brand, PROFIT_PLATFORM);
+  if (!product) return res.json(buildProductMonthDetail({ slots }));
+
+  const monthInfo = listMonths(brand, PROFIT_PLATFORM);
+  const costs = getBrandCosts(brand);
+  res.json(buildProductMonthDetail({
+    brand,
+    product,
+    monthInfo,
+    slots,
+    costs,
+    brandProfit: buildBrandProfit({ brand, monthInfo, slots, costs, adSpendByMonth: adSpendByMonthFor(brand) }),
+    profitVisible: canSeeProductProfit(PRODUCT_PROFIT_ADMIN_ONLY, req.session.user),
+  }));
+});
 
 // ?brand= narrows the city table to one brand; brandSummaries always lists every brand.
 app.get('/api/city-performance', requireAuth, (req, res) => {
