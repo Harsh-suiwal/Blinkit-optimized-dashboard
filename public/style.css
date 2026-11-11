@@ -2707,6 +2707,57 @@ a.secondary-btn {
   vertical-align: middle;
 }
 
+/* Admin Uploads panel (v7) */
+.upload-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 16px;
+  padding: 20px 24px;
+}
+
+.upload-card {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 16px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface);
+  color: var(--text);
+}
+
+.upload-card h3 {
+  margin: 0;
+  font-size: 16px;
+}
+
+.upload-card p {
+  margin: 0;
+  font-size: 13px;
+}
+
+.upload-card .styled-select {
+  width: 100%;
+}
+
+.upload-note.success {
+  color: var(--success);
+}
+
+.upload-note.error {
+  color: var(--danger);
+}
+
+.upload-hint a {
+  color: var(--accent);
+}
+
+.upload-btn.disabled {
+  opacity: 0.55;
+  pointer-events: none;
+}
+
 /* ==========================================================================
    Pro look (v7): flat, quiet surfaces for client meetings.
    Applies only when <html data-look="pro"> (Profile > Appearance). Without it the
