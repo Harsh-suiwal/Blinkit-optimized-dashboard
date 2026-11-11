@@ -63,6 +63,7 @@ const { buildBrandProfit } = require('./parser/brandProfit');
 const { buildProductMonthDetail, canSeeProductProfit } = require('./parser/productMonthDetail');
 
 const kv = require('./store/kv');
+const { captureUndo, listUndo, undoUpload, UNDO_KINDS } = require('./store/uploadUndo');
 const KvSessionStore = require('./store/sessionStore');
 const { requireAuth, requireAdmin } = require('./middleware/auth');
 const authRoutes = require('./routes/auth');
@@ -283,6 +284,7 @@ app.post('/api/upload', requireAdmin, uploadReport, mutating(async (req, res) =>
     // windows for it, so today's own snapshot is available for future uploads.
     // Write order: history, then the current view, then the upload hash. Each step is
     // idempotent on retry, and the hash is only recorded once the data is saved.
+    await captureUndo('inventory', { fileName: req.file.originalname, brands: Array.from(new Set(parsedRows.map((r) => r.brandName))) });
     await appendSnapshot(parsedRows, date);
 
     const newRows = buildConsolidatedRows(parsedRows, date);
@@ -652,6 +654,7 @@ app.post('/api/sales-upload', requireAdmin, uploadReport, mutating(async (req, r
     // Log this upload's per-brand city totals BEFORE computing the trend, so it
     // becomes the comparison point for that brand's next upload.
     // Write order: history, city view, product view, then the upload hash (see /api/upload).
+    await captureUndo('sales', { fileName: req.file.originalname, brands: brands });
     await appendCitySnapshot(cityAgg, date);
     const withTrend = attachTrend(cityAgg, date);
 
@@ -716,6 +719,7 @@ app.post('/api/sales-month-upload', requireAdmin, uploadReport, mutating(async (
     if (!slots.length) {
       return res.status(400).json({ error: 'No month was saved: the Order Date column has no readable dates.' });
     }
+    await captureUndo('salesMonthly', { fileName: req.file.originalname, brands: slots.map((s) => s.brandName) });
     await upsertMonthSlots(slots);
     await recordUpload('salesMonthly', fileHash);
 
@@ -806,6 +810,20 @@ app.get('/api/brand-overview', requireAuth, (req, res) => {
   }));
 });
 
+// --- Uploads panel (admin): undo the last upload of a report type ---------------
+// Each upload route saves the previous data first (store/uploadUndo.js). Undo puts it back and
+// forgets the file's hash, so the same file can be uploaded again.
+const UPLOAD_HASH_KIND = { inventory: 'inventory', sales: 'sales', salesMonthly: 'salesMonthly', campaign: 'campaign' };
+
+app.post('/api/uploads/undo', requireAdmin, mutating(async (req, res) => {
+  const kind = req.body && typeof req.body.kind === 'string' ? req.body.kind : '';
+  if (!UNDO_KINDS.includes(kind)) return res.status(400).json({ error: 'Unknown report type.' });
+  const undone = await undoUpload(kind);
+  if (!undone) return res.status(404).json({ error: 'Nothing to undo for this report.' });
+  if (UPLOAD_HASH_KIND[kind]) await clearUploadHashes(UPLOAD_HASH_KIND[kind]);
+  res.json({ ok: true, ...undone });
+}));
+
 // --- Profit (admin only: it shows what a brand really earns) -------------------
 // Costs come from an uploaded cost sheet (one row per product) plus an "other costs" amount per
 // month; sales come from the monthly sales store; ad spend from the campaign uploads. ?brand= is required.
@@ -841,6 +859,7 @@ app.post('/api/brand-costs-upload', requireAdmin, uploadReport, mutating(async (
   try {
     if (!brand) return res.status(400).json({ error: 'brand is required.' });
     const { products, skippedRows } = parseCostFile(req.file.path);
+    await captureUndo('costs', { fileName: req.file.originalname, brands: [brand] });
     await saveBrandProducts(brand, products, req.file.originalname, todayDateString());
     res.json({ ok: true, productCount: products.length, skippedRows });
   } catch (err) {
@@ -1166,6 +1185,7 @@ app.post('/api/campaign-upload', requireAdmin, uploadReport, mutating(async (req
       return res.json({ ok: true, duplicate: true, skipped: true });
     }
 
+    await captureUndo('campaign', { fileName: req.file.originalname, brands: parsed.uploads.map((u) => u.brandName) });
     const store = await upsertCampaignUpload(parsed);
     await recordUpload('campaign', fileHash);
     res.json({
