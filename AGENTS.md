@@ -155,3 +155,11 @@ Routes: `/app/overview` (default), `/app/sales-performance` (Sales), `/app/inven
 - One admin rule: `AuthService.isAdmin` (admin and not presenting). Every page's `isAdmin()` uses it, so upload, clear, delete and cost-entry controls disappear. Also hidden while presenting: the "Get Sheet" downloads; on Overview the platform tabs, Present and Create report; and all per-product profit on Sales > Month by month (`profitVisible` also needs `!ui.presenting()`).
 - `notWhilePresentingGuard` sends `/profit`, `/profile`, `/reports`, `/uploads` and `/platforms/*` back to the Overview while presenting.
 - This is a display mode, not access control: the API still serves data to any logged-in user. For client-facing screens use a non-admin login (and `PRODUCT_PROFIT_ADMIN_ONLY` if profit must stay private).
+
+## Reports page (v7)
+- `/reports` (any logged-in user): a client report for the brand picked in the sidebar, laid out as 16:9 slides with inline SVG charts (no chart library). "Download PDF" = `window.print()`; the page sets `@page` to the slide size with no margins, and the print rules in the Layout block of `public/style.css` hide everything except the slides.
+- Data: `GET /api/brand-report?brand=&months=YYYY-MM,...&profit=1` (requireAuth) -> `parser/brandReport.js` (pure; reads nothing itself). Default months: the latest four with data. `profit=1` is honoured only for an admin; anyone else gets `profit: null`. Campaign figures go through `aggregateTotals` / `aggregateByCampaign`, so ROAS is always recomputed from sums.
+- Drawing: `client/src/app/core/report-render.ts` builds the whole report as one HTML string; every value and text is escaped there, which is why the page may show it with `bypassSecurityTrustHtml`. Keep it that way: never insert unescaped text into the report.
+- Optional inputs on the page (price range, availability per product with store count, the three decisions) live only in the browser and are never saved. Each group has a "Use it in the report" switch; empty or switched-off inputs simply remove their slide or tile. Takeaways and suggested decisions are rule-based from the numbers.
+- The "Include profit and cost figures" switch (admins only, off by default) adds the Profit and ROI slide and the cost-sheet break-even ROAS. Leave it off for anything that goes to a client.
+- Tests: `node scripts/report-smoke.js`.
