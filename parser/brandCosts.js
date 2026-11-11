@@ -53,4 +53,14 @@ async function setOtherCost(brand, monthKey, amount) {
   await kv.set(KEY, { brands });
 }
 
-module.exports = { getBrandCosts, saveBrandProducts, setOtherCost };
+/** One summary line per brand that has stored costs (no product data). */
+function listBrandCosts() {
+  return peekBrands().map((b) => ({
+    brandName: b.brandName,
+    fileName: b.fileName || '',
+    uploadedAt: b.uploadedAt || '',
+    productCount: Array.isArray(b.products) ? b.products.length : 0,
+  }));
+}
+
+module.exports = { getBrandCosts, saveBrandProducts, setOtherCost, listBrandCosts };

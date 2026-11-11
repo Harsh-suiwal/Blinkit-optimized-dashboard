@@ -73,5 +73,42 @@ const { captureUndo, listUndo, undoUpload, UNDO_KINDS } = require('../store/uplo
   await undoUpload('campaign');
   assert.deepStrictEqual(memory.get('campaignData'), { rows: [1] });
 
+// --- What is uploaded for each brand -------------------------------------------------------
+{
+  const { buildUploadsOverview } = require('../parser/uploadsOverview');
+  const overview = buildUploadsOverview({
+    stockUploads: { Oicia: { date: '2026-11-01', fileName: 'stock.xlsx' } },
+    salesUploads: { oicia: { date: '2026-11-02', fileName: 'sales.xlsx', from: '2026-10-01', to: '2026-10-20' }, Smarteez: { date: '2026-11-02', fileName: 'sales.xlsx' } },
+    monthlySlots: [
+      { brandName: 'Oicia', platform: 'blinkit', monthKey: '2026-09', fileName: 'sep.xlsx', uploadedAt: '2026-10-02' },
+      { brandName: 'Oicia', platform: 'blinkit', monthKey: '2026-10', fileName: 'oct.xlsx', uploadedAt: '2026-11-02' },
+      { brandName: 'OICIA', platform: 'blinkit', monthKey: '2026-08', fileName: 'aug.xlsx', uploadedAt: '2026-09-01' },
+    ],
+    campaignUploads: [
+      { brandName: 'Oicia', periodKey: '2026-09', fileName: 'ads-sep.xls', uploadedDate: '2026-10-03' },
+      { brandName: 'Oicia', periodKey: '2026-10', sheetType: 'PRODUCT_BOOSTING', fileName: 'ads-oct.xls', uploadedDate: '2026-11-03' },
+      { brandName: 'Oicia', periodKey: '2026-10', sheetType: 'PRODUCT_RECOMMENDATION', fileName: 'ads-oct.xls', uploadedDate: '2026-11-03' },
+      { periodKey: '2026-10', fileName: 'old-shape.xls' },
+    ],
+    campaignPeriods: [{ periodKey: '2026-09', periodLabel: 'September 2026' }, { periodKey: '2026-10', periodLabel: 'October 2026' }],
+    costs: [{ brandName: 'Oicia', fileName: 'costs.xlsx', uploadedAt: '2026-11-04', productCount: 10 }, { brandName: 'Empty', fileName: '', uploadedAt: '', productCount: 0 }],
+    undo: [{ kind: 'inventory', label: 'Stock report', fileName: 'stock.xlsx', at: '2026-11-01T10:00:00.000Z', brands: ['Oicia'] }],
+  });
+  assert.deepStrictEqual(overview.brands.map((b) => b.brand), ['Oicia', 'Smarteez'], 'one row per brand, any spelling of the name');
+  const oicia = overview.brands[0];
+  assert.deepStrictEqual(oicia.stock, { fileName: 'stock.xlsx', date: '2026-11-01' });
+  assert.deepStrictEqual(oicia.sales, { fileName: 'sales.xlsx', date: '2026-11-02', from: '2026-10-01', to: '2026-10-20' });
+  assert.deepStrictEqual(oicia.monthly, { months: 3, first: 'August 2026', last: 'October 2026', fileName: 'oct.xlsx', date: '2026-11-02' });
+  assert.deepStrictEqual(oicia.advertising, { periods: ['September 2026', 'October 2026'], fileName: 'ads-oct.xls', date: '2026-11-03' });
+  assert.deepStrictEqual(oicia.costs, { fileName: 'costs.xlsx', date: '2026-11-04', productCount: 10 });
+  const smarteez = overview.brands[1];
+  assert.deepStrictEqual(smarteez.sales, { fileName: 'sales.xlsx', date: '2026-11-02', from: null, to: null });
+  assert.strictEqual(smarteez.stock, null); assert.strictEqual(smarteez.monthly, null);
+  assert.strictEqual(smarteez.advertising, null); assert.strictEqual(smarteez.costs, null);
+  assert.strictEqual(overview.undo.length, 1);
+  assert.deepStrictEqual(buildUploadsOverview({}), { brands: [], undo: [] });
+}
+
+
   console.log('uploads smoke test passed');
 })().catch((err) => { console.error('uploads smoke test FAILED:', err.message); process.exit(1); });

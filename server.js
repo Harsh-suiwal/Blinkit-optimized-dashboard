@@ -58,7 +58,8 @@ const {
 } = require('./parser/salesMonthly');
 const { buildBrandOverview } = require('./parser/brandOverview');
 const { parseCostFile } = require('./parser/parseBrandCosts');
-const { getBrandCosts, saveBrandProducts, setOtherCost } = require('./parser/brandCosts');
+const { getBrandCosts, saveBrandProducts, setOtherCost, listBrandCosts } = require('./parser/brandCosts');
+const { buildUploadsOverview } = require('./parser/uploadsOverview');
 const { buildBrandProfit } = require('./parser/brandProfit');
 const { buildProductMonthDetail, canSeeProductProfit } = require('./parser/productMonthDetail');
 
@@ -823,6 +824,22 @@ app.post('/api/uploads/undo', requireAdmin, mutating(async (req, res) => {
   if (UPLOAD_HASH_KIND[kind]) await clearUploadHashes(UPLOAD_HASH_KIND[kind]);
   res.json({ ok: true, ...undone });
 }));
+
+// What is uploaded for each brand, and which uploads can be undone.
+app.get('/api/uploads-overview', requireAdmin, (req, res) => {
+  const inventory = loadLatest();
+  const sales = loadSalesLatest();
+  const campaignStore = loadCampaignStore();
+  res.json(buildUploadsOverview({
+    stockUploads: (inventory && inventory.brandUploads) || {},
+    salesUploads: (sales && sales.brandUploads) || {},
+    monthlySlots: slotsFor(''),
+    campaignUploads: campaignStore.uploads,
+    campaignPeriods: listCampaignPeriods(campaignStore),
+    costs: listBrandCosts(),
+    undo: listUndo(),
+  }));
+});
 
 // --- Profit (admin only: it shows what a brand really earns) -------------------
 // Costs come from an uploaded cost sheet (one row per product) plus an "other costs" amount per
