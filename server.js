@@ -62,6 +62,7 @@ const { getBrandCosts, saveBrandProducts, setOtherCost, listBrandCosts } = requi
 const { buildUploadsOverview } = require('./parser/uploadsOverview');
 const { buildBrandProfit } = require('./parser/brandProfit');
 const { buildProductMonthDetail, canSeeProductProfit } = require('./parser/productMonthDetail');
+const { buildBrandReport } = require('./parser/brandReport');
 
 const kv = require('./store/kv');
 const { captureUndo, listUndo, undoUpload, UNDO_KINDS } = require('./store/uploadUndo');
@@ -928,6 +929,37 @@ app.get('/api/product-month-detail', requireAuth, (req, res) => {
     costs,
     brandProfit: buildBrandProfit({ brand, monthInfo, slots, costs, adSpendByMonth: adSpendByMonthFor(brand) }),
     profitVisible: canSeeProductProfit(PRODUCT_PROFIT_ADMIN_ONLY, req.session.user),
+  }));
+});
+
+// --- Reports (the client report: one brand, a few months, everything the slides need) ---------
+// ?brand= is required, ?months=2026-09,2026-10 optional (default: the latest months with data).
+// ?profit=1 adds the profit figures, and only for an admin (anyone else simply gets no profit section).
+app.get('/api/brand-report', requireAuth, (req, res) => {
+  const brand = typeof req.query.brand === 'string' ? req.query.brand.trim() : '';
+  if (!brand) return res.status(400).json({ error: 'brand is required.' });
+  const monthKeys = typeof req.query.months === 'string'
+    ? req.query.months.split(',').map((m) => m.trim()).filter((m) => MONTH_KEY_RE.test(m)).slice(0, 12)
+    : [];
+  const wantsProfit = req.query.profit === '1' && Boolean(req.session.user && req.session.user.role === 'admin');
+
+  const slots = slotsFor(brand, PROFIT_PLATFORM);
+  const campaignStore = loadCampaignStore();
+  const inventory = loadLatest();
+  const aliases = loadAliases();
+  res.json(buildBrandReport({
+    brand,
+    monthKeys,
+    slots,
+    campaignRows: campaignStore.rows.filter((r) => sameBrand(r.brandName, brand)),
+    campaignPeriods: listCampaignPeriods(campaignStore),
+    inventoryRows: inventory
+      ? inventory.rows.filter((r) => sameBrand(brandOf(r.productName, r.brandName, aliases) || 'Unknown', brand))
+      : [],
+    profit: wantsProfit
+      ? buildBrandProfit({ brand, monthInfo: listMonths(brand, PROFIT_PLATFORM), slots, costs: getBrandCosts(brand), adSpendByMonth: adSpendByMonthFor(brand) })
+      : null,
+    today: todayDateString(),
   }));
 });
 

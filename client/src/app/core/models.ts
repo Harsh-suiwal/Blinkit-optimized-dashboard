@@ -449,3 +449,63 @@ export interface UploadUndoResult {
   fileName: string;
   brands: string[];
 }
+
+/** GET /api/brand-report: everything the client Report slides need for one brand. A section is null when its data was not uploaded. */
+export interface ReportMonthRef { monthKey: string; label: string; hasSales: boolean; hasAds: boolean; units: number | null; }
+export interface ReportSalesMonth {
+  monthKey: string; label: string; from: string; to: string; days: number; fullDays: number; partial: boolean;
+  units: number; revenue: number; orders: number; aov: number; unitsPerDay: number;
+  products: { name: string; units: number; revenue: number; orders: number }[];
+  cities: { city: string; revenue: number; units: number }[]; cityCount: number;
+}
+export interface ReportProductRow {
+  name: string; perMonth: number[]; prevPerDay: number | null; latestPerDay: number; rateChangePct: number | null;
+  mixPct: number; runRate: number; latestUnits: number;
+}
+export interface ReportShareSplit { label: string; units: number; topUnits: number; restUnits: number; top1: number | null; top2: number | null; rest: number | null; topShare: number | null; }
+export interface ReportSales {
+  months: ReportSalesMonth[]; latest: ReportSalesMonth; previous: ReportSalesMonth | null;
+  rows: ReportProductRow[]; rateChangePct: number | null; multiple: number | null;
+  projection: { units: number; perDay: number; days: number } | null;
+  concentration: {
+    top: string[]; previous: ReportShareSplit; latest: ReportShareSplit; topPerDay: { previous: number; latest: number };
+    restPerDay: { previous: number; latest: number }; totalPerDay: { previous: number; latest: number }; topChange: number; restChange: number; netChange: number;
+  } | null;
+  productCount: number;
+}
+export interface ReportCampaign { name: string; type: string; spend: number; units: number; sales: number; roas: number | null; spendPerUnit: number | null; status: string; }
+export interface ReportAdsMonth {
+  periodKey: string; label: string; from: string; to: string; days: number; activeDays: number;
+  spend: number; sales: number; units: number; impressions: number; atc: number; roas: number | null;
+  spendPerUnit: number | null; spendPerRupee: number | null; spendPer1000: number | null; revenuePer1000: number | null; salesPerUnit: number | null;
+  byType: { sheetType: string; label: string; spend: number }[]; campaigns: ReportCampaign[]; campaignCount: number;
+}
+export interface ReportAds {
+  months: ReportAdsMonth[]; latest: ReportAdsMonth | null; previous: ReportAdsMonth | null;
+  change: { spend: number | null; impressions: number | null; units: number | null; sales: number | null; roas: number | null; spendPerUnit: number | null; spendPerRupee: number | null; spendPer1000: number | null; revenuePer1000: number | null } | null;
+}
+export interface ReportWeekdayRow { weekday: string; short: string; daysWithData: number; impressions: number; atc: number; units: number; revenue: number; spend: number; roas: number | null; spendPerUnit: number | null; }
+export interface ReportWeekday {
+  days: ReportWeekdayRow[]; totals: { daysWithData: number; impressions: number; atc: number; units: number; revenue: number; spend: number; roas: number | null };
+  winners: string[]; priorities: string[]; winnerShare: { spend: number; units: number }; priorityShare: { spend: number; units: number };
+}
+export interface ReportFunnel { impressions: number; atc: number; units: number; spend: number; atcRatePct: number | null; unitsPerAtcPct: number | null; spendPerAtc: number | null; spendPerUnit: number | null; }
+export interface ReportKeyword { keyword: string; spend: number; units: number; sales: number; roas: number | null; impressions: number; decision: string; tone: 'red' | 'amber' | 'grey'; evidence: string; signal: string; action: string; }
+export interface ReportStock { products: { name: string; stock: number; sold30: number; lowOrOut: number; rows: number }[]; totals: { stock: number; sold30: number; listings: number; lowOrOut: number; products: number }; }
+export interface ReportProfit {
+  months: { label: string; partial: boolean; netSales: number | null; productCost: number | null; fees: number | null; adSpend: number; otherCosts: number; totalCosts: number | null; profit: number | null; marginPct: number | null; roiPct: number | null; adDataMissing: boolean }[];
+  totals: { netSales: number; totalCosts: number; profit: number; adSpend: number };
+  contributionMarginPct: number | null; breakEvenRoas: number | null;
+  products: { name: string; units: number; profitPerUnit: number | null; listUnitProfit: number; marginPct: number | null }[];
+}
+export interface BrandReport {
+  brand: string; generatedOn: string; availableMonths: ReportMonthRef[]; selectedMonths: string[];
+  sales: ReportSales | null; ads: ReportAds | null; weekday: ReportWeekday | null; funnel: ReportFunnel | null;
+  keywords: { list: ReportKeyword[]; total: number } | null; stock: ReportStock | null; profit: ReportProfit | null;
+  coverage: { sales: { from: string; to: string } | null; ads: { label: string; from: string; to: string }[]; adDays: number };
+  insights: {
+    decisions: string[]; management: { continue: string[]; optimize: string[]; restrict: string[]; fix: string[]; measure: string[] };
+    trajectory?: string; products?: string; concentration?: string; ads?: Record<string, string>; efficiency?: string; weekday?: string; funnel?: string;
+  };
+  available: { sales: boolean; trajectory: boolean; concentration: boolean; ads: boolean; efficiency: boolean; weekday: boolean; funnel: boolean; keywords: boolean; stock: boolean; profit: boolean };
+}

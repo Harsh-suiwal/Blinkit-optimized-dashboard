@@ -10,6 +10,7 @@ import { ComingSoonPageComponent } from './pages/coming-soon-page.component';
 import { ProfilePageComponent } from './pages/profile-page.component';
 import { ProfitPageComponent } from './pages/profit-page.component';
 import { UploadsPageComponent } from './pages/uploads-page.component';
+import { ReportsPageComponent } from './pages/reports-page.component';
 import { notWhilePresentingGuard, presentGuard } from './core/present.guard';
 
 export const routes: Routes = [
@@ -26,7 +27,7 @@ export const routes: Routes = [
       { path: 'profile', component: ProfilePageComponent, canActivate: [notWhilePresentingGuard] },
       { path: 'profit', component: ProfitPageComponent, canActivate: [notWhilePresentingGuard] },
       // Planned features: each shows a "Coming soon" page until it is built.
-      { path: 'reports', component: ComingSoonPageComponent, canActivate: [notWhilePresentingGuard], data: { title: 'Reports', description: 'Create a client-ready report for one brand: pick the months and sections, then download it as a PDF.' } },
+      { path: 'reports', component: ReportsPageComponent, canActivate: [notWhilePresentingGuard], data: { title: 'Reports', description: 'Create a client-ready report for one brand: pick the months and sections, then download it as a PDF.' } },
       { path: 'uploads', component: UploadsPageComponent, canActivate: [notWhilePresentingGuard], data: { title: 'Uploads', description: 'One place to upload every report, see what was uploaded for each brand, and undo an upload. Until then, upload from the Sales, Stock, Advertising and Trends pages.' } },
       { path: 'present', canActivate: [presentGuard], children: [] },
       { path: 'platforms/all', component: ComingSoonPageComponent, canActivate: [notWhilePresentingGuard], data: { title: 'All platforms', description: 'One combined view of a brand across Blinkit, Zepto and Flipkart Minutes.' } },

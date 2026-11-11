@@ -31,6 +31,7 @@ import {
   UploadKind,
   UploadsOverview,
   UploadUndoResult,
+  BrandReport,
 } from './models';
 
 @Injectable({ providedIn: 'root' })
@@ -265,6 +266,14 @@ export class ApiService {
   private fileNameFrom(header: string | null): string {
     const match = header ? /filename="?([^";]+)"?/i.exec(header) : null;
     return match ? match[1] : '';
+  }
+
+  /** Everything the client Report needs for one brand. Profit is included only when asked for, and only for an admin. */
+  brandReport(brand: string, months: string[] = [], includeProfit = false) {
+    const query = new URLSearchParams({ brand });
+    if (months.length) query.set('months', months.join(','));
+    if (includeProfit) query.set('profit', '1');
+    return this.get<BrandReport>(`/api/brand-report?${query}`);
   }
 
   private brandQuery(brand?: string) {
