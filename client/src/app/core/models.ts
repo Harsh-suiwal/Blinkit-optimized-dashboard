@@ -416,3 +416,36 @@ export interface ProductMonthDetail {
   brandMonths: ProductMonthBrandRow[];
   brandTotals: ProductMonthBrandTotals | null;
 }
+
+/** GET /api/uploads-overview (admin): what is uploaded for each brand, and which uploads can still be undone. */
+export type UploadKind = 'inventory' | 'sales' | 'salesMonthly' | 'campaign' | 'costs';
+
+export interface UploadsBrandRow {
+  brand: string;
+  stock: { fileName: string; date: string } | null;
+  sales: { fileName: string; date: string; from: string | null; to: string | null } | null;
+  monthly: { months: number; first: string; last: string; fileName: string; date: string } | null;
+  advertising: { periods: string[]; fileName: string; date: string } | null;
+  costs: { fileName: string; date: string; productCount: number } | null;
+}
+
+export interface UploadsUndoItem {
+  kind: UploadKind;
+  label: string;
+  fileName: string;
+  at: string;
+  brands: string[];
+}
+
+export interface UploadsOverview {
+  brands: UploadsBrandRow[];
+  undo: UploadsUndoItem[];
+}
+
+export interface UploadUndoResult {
+  ok: boolean;
+  kind: UploadKind;
+  label: string;
+  fileName: string;
+  brands: string[];
+}

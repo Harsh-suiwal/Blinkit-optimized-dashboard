@@ -28,6 +28,9 @@ import {
   BrandProfit,
   ProductMonthDetail,
   ProductMonthNames,
+  UploadKind,
+  UploadsOverview,
+  UploadUndoResult,
 } from './models';
 
 @Injectable({ providedIn: 'root' })
@@ -212,6 +215,16 @@ export class ApiService {
   productMonthDetail(brand: string, product: string) {
     const query = new URLSearchParams({ brand, product });
     return this.get<ProductMonthDetail>(`/api/product-month-detail?${query}`);
+  }
+
+  /** What is uploaded for each brand, and which uploads can be undone (admin only). */
+  uploadsOverview() {
+    return this.get<UploadsOverview>('/api/uploads-overview');
+  }
+
+  /** Puts the report back as it was before its latest upload (admin only). */
+  undoUpload(kind: UploadKind) {
+    return this.post<UploadUndoResult>('/api/uploads/undo', { kind });
   }
 
   private brandQuery(brand?: string) {
