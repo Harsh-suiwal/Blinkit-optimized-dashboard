@@ -1,4 +1,4 @@
-import { HttpClient, HttpErrorResponse } from '@angular/common/http';
+import { HttpClient, HttpErrorResponse, HttpResponse } from '@angular/common/http';
 import { Injectable, inject } from '@angular/core';
 import { firstValueFrom, Observable } from 'rxjs';
 import {
@@ -225,6 +225,46 @@ export class ApiService {
   /** Puts the report back as it was before its latest upload (admin only). */
   undoUpload(kind: UploadKind) {
     return this.post<UploadUndoResult>('/api/uploads/undo', { kind });
+  }
+
+  /**
+   * Downloads a file through the app. A plain link shows raw JSON when something goes wrong (for
+   * example an expired login); here a failure becomes a readable message.
+   */
+  async download(url: string, fallbackName: string): Promise<void> {
+    let response: HttpResponse<Blob>;
+    try {
+      response = await firstValueFrom(this.http.get(url, { responseType: 'blob', observe: 'response' }));
+    } catch (error) {
+      const httpError = error as HttpErrorResponse;
+      if (httpError.status === 401) window.location.assign('/login');
+      throw new Error(await this.downloadErrorMessage(httpError));
+    }
+    if (!response.body) throw new Error('The download was empty.');
+    const objectUrl = URL.createObjectURL(response.body);
+    const link = document.createElement('a');
+    link.href = objectUrl;
+    link.download = this.fileNameFrom(response.headers.get('Content-Disposition')) || fallbackName;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    setTimeout(() => URL.revokeObjectURL(objectUrl), 1000);
+  }
+
+  /** With responseType 'blob' the server's JSON error arrives as a Blob. */
+  private async downloadErrorMessage(error: HttpErrorResponse): Promise<string> {
+    if (error.error instanceof Blob) {
+      try {
+        const parsed = JSON.parse(await error.error.text());
+        if (parsed && typeof parsed.error === 'string') return parsed.error;
+      } catch { /* not JSON: use the generic message */ }
+    }
+    return error.message || 'The download failed.';
+  }
+
+  private fileNameFrom(header: string | null): string {
+    const match = header ? /filename="?([^";]+)"?/i.exec(header) : null;
+    return match ? match[1] : '';
   }
 
   private brandQuery(brand?: string) {

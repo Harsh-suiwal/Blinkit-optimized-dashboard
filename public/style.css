@@ -2758,6 +2758,138 @@ a.secondary-btn {
   pointer-events: none;
 }
 
+/* Advertising: selected campaigns (v7) */
+.selection-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 20px;
+  margin: 0 24px 12px;
+  padding: 12px 16px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface-alt);
+  color: var(--text);
+}
+
+.selection-stat {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.selection-stat span {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.selection-stat strong {
+  font-size: 15px;
+  font-variant-numeric: tabular-nums;
+}
+
+.select-col {
+  width: 32px;
+}
+
+/* Presentation mode (v7): no sidebar, a thin top bar, larger text */
+html[data-presenting="true"] {
+  --present-bar-height: 52px;
+  --present-zoom: 1.1;
+}
+
+.present-bar {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: var(--present-bar-height);
+  z-index: 200;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 0 20px;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  color: var(--text);
+}
+
+.present-brand {
+  max-width: 30vw;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 16px;
+  font-weight: 700;
+}
+
+.present-tabs {
+  display: flex;
+  flex: 1 1 auto;
+  gap: 4px;
+  min-width: 0;
+  overflow-x: auto;
+}
+
+.present-tabs a {
+  padding: 6px 12px;
+  border-radius: 8px;
+  color: var(--text-muted);
+  font-size: 14px;
+  font-weight: 600;
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.present-tabs a:hover {
+  color: var(--text);
+  background: var(--surface-alt);
+}
+
+.present-tabs a.active {
+  color: var(--accent);
+  background: var(--surface-alt);
+}
+
+.present-exit {
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 6px 12px;
+  cursor: pointer;
+}
+
+.present-exit:hover {
+  background: var(--surface-alt);
+}
+
+.present-exit:focus-visible,
+.present-tabs a:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* The zoom enlarges the page text for a projector; the bar itself is not zoomed, so its height is divided out. */
+.main-content.presenting {
+  margin-left: 0;
+  padding-top: calc(var(--present-bar-height) / var(--present-zoom));
+  zoom: var(--present-zoom);
+}
+
+.main-content.presenting .topbar {
+  top: calc(var(--present-bar-height) / var(--present-zoom));
+}
+
+/* Platform tabs are hidden until Zepto and Flipkart Minutes are built. To bring them back, remove the
+   hidden attribute from the platform-tabs nav in the Overview template and delete this rule. */
+.platform-tabs[hidden] {
+  display: none;
+}
+
 /* ==========================================================================
    Pro look (v7): flat, quiet surfaces for client meetings.
    Applies only when <html data-look="pro"> (Profile > Appearance). Without it the

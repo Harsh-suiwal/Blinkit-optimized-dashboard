@@ -191,7 +191,7 @@ export class ProductMonthsComponent {
     const picked = this.selectedName();
     return picked && !filtered.includes(picked) ? [picked, ...filtered] : filtered;
   });
-  readonly profitVisible = computed(() => this.detail()?.profitVisible === true);
+  readonly profitVisible = computed(() => this.detail()?.profitVisible === true && !this.ui.presenting());
   readonly allMonths = computed(() => this.detail()?.months ?? []);
   readonly columns = computed(() => {
     const keys = this.selected();

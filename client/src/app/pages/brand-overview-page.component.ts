@@ -23,12 +23,14 @@ interface KpiNote { text: string; tone: '' | 'up' | 'down'; }
       <div class="topbar-left"><div><h1>{{ brand() || 'Brand overview' }}</h1><span class="muted">{{ brand() ? 'Overview' : 'Choose a brand to begin' }}</span></div></div>
       @if (brand()) {
         <div class="topbar-right overview-context">
-          <nav class="platform-tabs" aria-label="Platform">
-            <a routerLink="/platforms/all">All</a>
-            <a class="active" aria-current="page">Blinkit</a>
-            <a routerLink="/platforms/zepto">Zepto</a>
-            <a routerLink="/platforms/flipkart-minutes">Flipkart Minutes</a>
-          </nav>
+          @if (!ui.presenting()) {
+            <nav class="platform-tabs" aria-label="Platform" hidden>
+              <a routerLink="/platforms/all">All</a>
+              <a class="active" aria-current="page">Blinkit</a>
+              <a routerLink="/platforms/zepto">Zepto</a>
+              <a routerLink="/platforms/flipkart-minutes">Flipkart Minutes</a>
+            </nav>
+          }
           @if (data()) {
             <label class="context-pill" for="overviewMonth" title="Period"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7a2 2 0 0 1 2 -2h12a2 2 0 0 1 2 2v12a2 2 0 0 1 -2 2h-12a2 2 0 0 1 -2 -2v-12z"/><path d="M16 3v4"/><path d="M8 3v4"/><path d="M4 11h16"/></svg>
               <select id="overviewMonth" class="context-select" aria-label="Month shown" [value]="selectedMonth()" (change)="selectMonth($event)">
@@ -37,8 +39,10 @@ interface KpiNote { text: string; tone: '' | 'up' | 'down'; }
               </select>
             </label>
           }
-          <a class="secondary-btn overview-action" routerLink="/present"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 4l18 0"/><path d="M4 4v10a2 2 0 0 0 2 2h12a2 2 0 0 0 2 -2v-10"/><path d="M12 16l0 4"/><path d="M9 20l6 0"/><path d="M8 12l3 -3l2 2l3 -3"/></svg>Present</a>
-          <a class="secondary-btn overview-action" routerLink="/reports"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 3v4a1 1 0 0 0 1 1h4"/><path d="M11.5 21h-4.5a2 2 0 0 1 -2 -2v-14a2 2 0 0 1 2 -2h7l5 5v5m-5 6h7m-3 -3l3 3l-3 3"/></svg>Create report</a>
+          @if (!ui.presenting()) {
+            <button type="button" class="secondary-btn overview-action" (click)="ui.startPresenting()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 4l18 0"/><path d="M4 4v10a2 2 0 0 0 2 2h12a2 2 0 0 0 2 -2v-10"/><path d="M12 16l0 4"/><path d="M9 20l6 0"/><path d="M8 12l3 -3l2 2l3 -3"/></svg>Present</button>
+            <a class="secondary-btn overview-action" routerLink="/reports"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 3v4a1 1 0 0 0 1 1h4"/><path d="M11.5 21h-4.5a2 2 0 0 1 -2 -2v-14a2 2 0 0 1 2 -2h7l5 5v5m-5 6h7m-3 -3l3 3l-3 3"/></svg>Create report</a>
+          }
         </div>
       }
     </header>

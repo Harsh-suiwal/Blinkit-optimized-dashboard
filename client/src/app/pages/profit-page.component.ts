@@ -160,7 +160,7 @@ export class ProfitPageComponent {
     });
   }
 
-  isAdmin() { return this.auth.user()?.role === 'admin'; }
+  isAdmin() { return this.auth.isAdmin(); }
   cell(value: number | null) { return value === null ? 'n/a' : money(value, 0); }
   signed(value: number) { return value < 0 ? `-${money(-value, 0)}` : money(value, 0); }
   percent(value: number | null) {

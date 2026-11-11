@@ -475,9 +475,13 @@ app.post('/api/brand-alias', requireAdmin, mutating(async (req, res) => {
 // --- Export (any authenticated user) ----------------------------------------
 
 /** Builds the Inventory worksheet, or null if nothing has been uploaded. */
-function buildInventoryWorksheet() {
+function buildInventoryWorksheet(brand = '') {
   const latest = loadLatest();
   if (!latest) return null;
+  // A brand view exports only that brand's rows.
+  const aliases = loadAliases();
+  const rows = brand ? latest.rows.filter((r) => sameBrand(brandOf(r.productName, r.brandName, aliases) || 'Unknown', brand)) : latest.rows;
+  if (brand && !rows.length) return null;
 
   const headers = [
     'Product Name',
@@ -491,7 +495,7 @@ function buildInventoryWorksheet() {
     'Incoming Inventory',
   ];
 
-  const dataRows = latest.rows.map((r) => [
+  const dataRows = rows.map((r) => [
     r.productName,
     r.warehouseName,
     r.totalStockAvailable,
@@ -509,8 +513,9 @@ function buildInventoryWorksheet() {
 }
 
 app.get('/api/export', requireAuth, (req, res) => {
-  const built = buildInventoryWorksheet();
-  if (!built) return res.status(400).json({ error: 'No report uploaded yet.' });
+  const brand = typeof req.query.brand === 'string' ? req.query.brand.trim() : '';
+  const built = buildInventoryWorksheet(brand);
+  if (!built) return res.status(400).json({ error: brand ? `No stock rows found for ${brand}.` : 'No report uploaded yet.' });
 
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, built.ws, 'Consolidated Report');

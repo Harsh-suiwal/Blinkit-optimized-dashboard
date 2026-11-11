@@ -3,6 +3,7 @@ import { FormsModule } from '@angular/forms';
 import { ApiService } from '../core/api.service';
 import { AuthService } from '../core/auth.service';
 import { brandFor, compareValues } from '../core/formatters';
+import { byProductThenWarehouse, stockTotals } from '../core/inventory-totals';
 import { BrandUpload, InventorySummary, ProductRow } from '../core/models';
 import { UiStateService } from '../core/ui-state.service';
 import { BrandFilterComponent, mergeKnownBrands } from '../shared/brand-filter.component';
@@ -16,7 +17,7 @@ import { ClearDataDialogComponent } from '../shared/clear-data-dialog.component'
       <div class="topbar-left"><div><h1>Stock</h1><span class="muted">{{ lastUpdated() }}</span></div></div>
       <div class="topbar-right">
         @if (isAdmin()) { <label class="upload-btn">Upload Inventory<input type="file" accept=".xlsx" hidden (change)="upload($event)"></label> }
-        <button class="secondary-btn" (click)="download('/api/export')">Get Sheet</button>
+        @if (!ui.presenting()) { <button class="secondary-btn" (click)="download('/api/export')">Get Sheet</button> }
         <button class="secondary-btn full-report-btn" (click)="download('/api/export-all')">📊 Full Report</button>
         @if (isAdmin()) { <button class="secondary-btn danger-btn" (click)="clearOpen.set(true)">🗑️ Clear Data</button> }
       </div>
@@ -44,7 +45,16 @@ import { ClearDataDialogComponent } from '../shared/clear-data-dialog.component'
           <td><span class="status-pill" [class.status-ok]="row.stockStatus === 'ok'" [class.status-low]="row.stockStatus === 'low'" [class.status-out]="row.stockStatus === 'out'">{{ row.stockStatus === 'ok' ? 'OK' : row.stockStatus === 'low' ? 'Low' : 'Out' }}</span></td>
           <td>@if (isAdmin()) { <button class="delete-btn" [class.confirming]="pendingDelete() === rowKey(row)" (click)="deleteRow(row)">{{ pendingDelete() === rowKey(row) ? 'Confirm?' : '🗑️' }}</button> }</td>
         </tr> }
-      </tbody></table>
+      </tbody>
+      @if (displayedRows().length) {
+        <tfoot><tr>
+          <td><strong>Total</strong></td><td><strong>{{ totals().rows }} rows</strong></td>
+          <td><strong>{{ totals().stock }}</strong></td><td><strong>{{ totals().sold7 }}</strong></td><td><strong>{{ totals().sold15 }}</strong></td><td><strong>{{ totals().sold30 }}</strong></td>
+          <td><strong>{{ totals().sold45 ?? 'n/a' }}</strong></td><td><strong>{{ totals().sold60 ?? 'n/a' }}</strong></td><td><strong>{{ totals().incoming }}</strong></td>
+          <td><strong>{{ totals().lowOrOut }} low / out</strong></td><td></td>
+        </tr></tfoot>
+      }
+      </table>
       @if (!displayedRows().length) { <p class="muted">{{ emptyMessage() }}</p> }
     </section>
     @if (clearOpen()) {
@@ -70,13 +80,15 @@ export class InventoryPageComponent implements OnInit {
   readonly brandChips = computed(() => mergeKnownBrands(this.brandStock(), this.knownBrands()));
   readonly brandNames = computed(() => this.brandStock().map((chip) => chip.brandName));
   readonly lastUpdated = computed(() => this.describeUpdate());
-  // Derived from the loaded rows so the cards follow the brand/product filter instantly,
+  // Derived from the loaded rows so the cards follow the brand, product and search filters instantly,
   // even if a reload fails (e.g. a 401 after a server restart).
-  readonly summary = computed<InventorySummary>(() => this.summarize(this.scopedRows()));
+  readonly summary = computed<InventorySummary>(() => this.summarize(this.searchedRows()));
   readonly status = signal('');
   readonly statusType = signal<'success' | 'error' | ''>('');
   readonly pendingDelete = signal('');
+  readonly searchedRows = computed(() => this.searchRows());
   readonly displayedRows = computed(() => this.filterRows());
+  readonly totals = computed(() => stockTotals(this.displayedRows()));
   readonly query = signal('');
   readonly sortKey = signal<keyof ProductRow | null>(null);
   readonly sortAsc = signal(true);
@@ -98,11 +110,18 @@ export class InventoryPageComponent implements OnInit {
     await this.load();
   }
 
-  isAdmin() { return this.auth.user()?.role === 'admin'; }
+  isAdmin() { return this.auth.isAdmin(); }
   rowKey(row: ProductRow) { return `${row.productName}::${row.warehouseName}`; }
   sortBy(key: keyof ProductRow) { this.sortAsc.set(this.sortKey() === key ? !this.sortAsc() : true); this.sortKey.set(key); }
   sortIndicator(key: keyof ProductRow) { return this.sortKey() === key ? (this.sortAsc() ? '↑' : '↓') : ''; }
-  download(url: string) { window.location.assign(url); }
+  /** Downloads through the app so a failure shows a message instead of raw JSON. The Stock sheet is limited to the brand picked in the sidebar. */
+  async download(url: string) {
+    const brand = this.ui.focusedBrand();
+    const target = brand && url === '/api/export' ? `${url}?brand=${encodeURIComponent(brand)}` : url;
+    try {
+      await this.api.download(target, 'Stock_report.xlsx');
+    } catch (error) { this.setStatus(this.message(error), 'error'); }
+  }
 
   async upload(event: Event) {
     const input = event.target as HTMLInputElement;
@@ -197,12 +216,19 @@ export class InventoryPageComponent implements OnInit {
     return this.lastDate() ? `Last updated: ${this.lastDate()}` : 'No report uploaded yet';
   }
 
+  /** The rows shown: the search applied, then sorted. While searching with no column sort, a product's warehouse rows stay together. */
   private filterRows() {
-    const query = this.query().trim().toLowerCase();
-    let values = this.scopedRows().filter((row) => row.productName.toLowerCase().includes(query) || row.warehouseName.toLowerCase().includes(query));
+    let values = this.searchedRows();
     const sortKey = this.sortKey();
     if (sortKey) values = [...values].sort((a, b) => (this.sortAsc() ? 1 : -1) * compareValues(a, b, sortKey));
+    else if (this.query().trim()) values = [...values].sort(byProductThenWarehouse);
     return values;
+  }
+
+  /** Rows narrowed by the focused brand and product, then by the search box. */
+  private searchRows() {
+    const query = this.query().trim().toLowerCase();
+    return this.scopedRows().filter((row) => row.productName.toLowerCase().includes(query) || row.warehouseName.toLowerCase().includes(query));
   }
 
   /** Rows narrowed by the focused brand and product (not the search box). */

@@ -9,6 +9,7 @@ import { UiStateService } from '../core/ui-state.service';
   selector: 'app-shell',
   imports: [FormsModule, RouterLink, RouterLinkActive, RouterOutlet],
   template: `
+    @if (!ui.presenting()) {
     <nav class="sidebar" [class.collapsed]="ui.collapsed()">
       <div class="sidebar-focus sidebar-workspace">
         <label class="sidebar-focus-label" for="brandFocusSelect">Brand</label>
@@ -50,6 +51,7 @@ import { UiStateService } from '../core/ui-state.service';
     <button type="button" class="sidebar-collapse-toggle" [class.collapsed]="ui.collapsed()" [style.left.px]="ui.collapsed() ? 0 : ui.sidebarWidth() - 14" [attr.aria-expanded]="!ui.collapsed()" (click)="ui.toggleSidebar()" title="Collapse sidebar (Ctrl+Shift+E)">
       <span class="arrow">→</span>
     </button>
+    }
 
     @if (leaderActive()) {
       <div class="shortcut-hint" role="status" aria-live="polite">
@@ -57,7 +59,21 @@ import { UiStateService } from '../core/ui-state.service';
       </div>
     }
 
-    <main class="main-content" [class.sidebar-collapsed]="ui.collapsed()">
+    @if (ui.presenting()) {
+      <header class="present-bar" aria-label="Presentation">
+        <span class="present-brand">{{ ui.focusedBrand() }}</span>
+        <nav class="present-tabs" aria-label="Pages">
+          <a routerLink="/overview" routerLinkActive="active">Overview</a>
+          <a routerLink="/sales-performance" routerLinkActive="active">Sales</a>
+          <a routerLink="/inventory" routerLinkActive="active">Stock</a>
+          <a routerLink="/campaign-analysis" routerLinkActive="active">Advertising</a>
+          <a routerLink="/monthly-comparison" routerLinkActive="active">Trends</a>
+        </nav>
+        <button type="button" class="present-exit" (click)="ui.stopPresenting()" title="Exit presentation (Esc)">Exit</button>
+      </header>
+    }
+
+    <main class="main-content" [class.sidebar-collapsed]="ui.collapsed()" [class.presenting]="ui.presenting()">
       <router-outlet />
     </main>
   `,
@@ -110,6 +126,15 @@ export class AppShellComponent implements OnInit {
   @HostListener('document:mouseup')
   stopResize() {
     this.resizing = false;
+  }
+
+  /** Esc leaves presentation mode (not while typing in a field, where Esc clears or closes things). */
+  @HostListener('document:keydown.escape', ['$event'])
+  leavePresenting(event: Event) {
+    if (!this.ui.presenting()) return;
+    const tag = (event.target as HTMLElement | null)?.tagName;
+    if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
+    this.ui.stopPresenting();
   }
 
   @HostListener('document:keydown', ['$event'])

@@ -2,6 +2,7 @@
 import { FormsModule } from '@angular/forms';
 import { ApiService } from '../core/api.service';
 import { AuthService } from '../core/auth.service';
+import { selectionTotals } from '../core/campaign-selection';
 import { brandFor, compareValues, money, number } from '../core/formatters';
 import {
   CampaignBrandRow, CampaignDailyRow, CampaignPeriod, CampaignRow, CampaignSheetFilter,
@@ -28,7 +29,7 @@ const SHEET_LABELS: Record<CampaignSheetFilter, string> = {
       <div class="topbar-left"><div><h1>Advertising</h1><span class="muted">{{ lastUpdated() }}</span></div></div>
       <div class="topbar-right">
         @if (isAdmin()) { <label class="upload-btn">Upload Campaign Sheet<input type="file" accept=".xls,.xlsx" hidden (change)="upload($event)"></label> }
-        <button class="secondary-btn" (click)="exportCampaign()">Get Sheet</button>
+        @if (!ui.presenting()) { <button class="secondary-btn" (click)="exportCampaign()">Get Sheet</button> }
         @if (isAdmin()) { <button class="secondary-btn danger-btn" (click)="clearOpen.set(true)">🗑️ Clear Data</button> }
       </div>
     </header>
@@ -125,8 +126,23 @@ const SHEET_LABELS: Record<CampaignSheetFilter, string> = {
     }
 
     <section class="legend"><span class="legend-item"><span class="dot dot-top"></span> Top 25%</span><span class="legend-item"><span class="dot dot-low"></span> Bottom 25%</span><span class="legend-item muted">Click a campaign for its keyword/category breakdown and daily trend.</span></section>
+    @if (selection().count) {
+      <section class="selection-bar" aria-live="polite">
+        <strong>{{ selection().count }} of {{ displayedRows().length }} campaigns selected</strong>
+        <div class="selection-stat"><span>Ad spend</span><strong>{{ money(selection().adSpend) }}</strong></div>
+        <div class="selection-stat"><span>Sales</span><strong>{{ money(selection().sales) }}</strong></div>
+        <div class="selection-stat"><span>ROAS</span><strong>{{ roas(selection().roas) }}</strong></div>
+        <div class="selection-stat"><span>ROI</span><strong>{{ percent(selection().roiPct) }}</strong></div>
+        <div class="selection-stat"><span>Impressions</span><strong>{{ number(selection().impressions) }}</strong></div>
+        <div class="selection-stat"><span>Add to cart</span><strong>{{ number(selection().atc) }}</strong></div>
+        <div class="selection-stat"><span>Qty sold</span><strong>{{ number(selection().qtySold) }}</strong></div>
+        <div class="selection-stat"><span>New users</span><strong>{{ number(selection().newUsers) }}</strong></div>
+        <button type="button" class="secondary-btn" (click)="clearSelection()">Clear selection</button>
+      </section>
+    }
     <section class="table-wrap">
       <table id="campaignListTable"><thead><tr>
+        <th class="select-col"><input type="checkbox" [checked]="allShownSelected()" [indeterminate]="selectedRows().length > 0 && !allShownSelected()" (change)="toggleSelectAll()" aria-label="Select all campaigns shown"></th>
         <th>#</th>
         <th (click)="sortBy('campaignName')">Campaign {{ sortIndicator('campaignName') }}</th>
         <th (click)="sortBy('brandName')">Brand {{ sortIndicator('brandName') }}</th>
@@ -136,14 +152,14 @@ const SHEET_LABELS: Record<CampaignSheetFilter, string> = {
         <th></th>
       </tr></thead><tbody>
         @for (row of displayedRows(); track rowKey(row); let index = $index) {
-          <tr class="clickable" [class.row-top]="row.tier === 'top'" [class.row-low]="row.tier === 'low'" (click)="toggleExpand(row)">
-            <td>{{ index + 1 }}</td><td [title]="row.campaignName">{{ row.campaignName }}</td><td>{{ row.brandName }}</td><td>{{ sheetLabel(row.sheetType) }}</td><td>{{ row.targetingTypes.join(', ') }}</td>
+          <tr class="clickable" [class.row-top]="row.tier === 'top'" [class.row-low]="row.tier === 'low'" [class.row-selected]="isSelected(row)" (click)="toggleExpand(row)">
+            <td (click)="$event.stopPropagation()"><input type="checkbox" [checked]="isSelected(row)" (change)="toggleSelect(row)" [attr.aria-label]="'Select ' + row.campaignName"></td><td>{{ index + 1 }}</td><td [title]="row.campaignName">{{ row.campaignName }}</td><td>{{ row.brandName }}</td><td>{{ sheetLabel(row.sheetType) }}</td><td>{{ row.targetingTypes.join(', ') }}</td>
             <td class="num">{{ money(row.adSpend) }}</td><td class="num">{{ money(row.sales) }}</td><td class="num">{{ roas(row.roas) }}</td><td class="num">{{ roas(row.directRoas) }}</td><td class="num">{{ percent(row.roiPct) }}</td>
             <td class="num">{{ number(row.impressions) }}</td><td class="num">{{ number(row.directAtc) }} / {{ number(row.indirectAtc) }}</td><td class="num">{{ number(row.directQtySold) }} / {{ number(row.indirectQtySold) }}</td><td class="num">{{ number(row.newUsersAcquired) }}</td>
             <td (click)="$event.stopPropagation()">@if (isAdmin()) { <button class="delete-btn" [class.confirming]="pendingDelete() === rowKey(row)" (click)="deleteCampaign(row)">{{ pendingDelete() === rowKey(row) ? 'Confirm?' : '🗑️' }}</button> }</td>
           </tr>
           @if (expandedKey() === rowKey(row)) {
-            <tr class="detail-row"><td colspan="15">
+            <tr class="detail-row"><td colspan="16">
               @if (detailLoading()) { <span class="muted">Loading…</span> } @else {
                 <div class="detail-grid">
                   <div>
@@ -222,6 +238,11 @@ export class CampaignPageComponent implements OnInit {
   readonly brandSortKey = signal<keyof CampaignBrandRow>('adSpend');
   readonly brandSortAsc = signal(false);
   readonly compareSet = signal<Set<string>>(new Set());
+  /** Campaigns ticked in the table (by rowKey). Cleared whenever the list is reloaded. */
+  readonly selectedKeys = signal<Set<string>>(new Set());
+  readonly selectedRows = computed(() => this.displayedRows().filter((row) => this.selectedKeys().has(this.rowKey(row))));
+  readonly selection = computed(() => selectionTotals(this.selectedRows()));
+  readonly allShownSelected = computed(() => this.displayedRows().length > 0 && this.selectedRows().length === this.displayedRows().length);
   readonly expandedKey = signal<string | null>(null);
   readonly detailLoading = signal(false);
   readonly detailTargeting = signal<CampaignTargetingRow[]>([]);
@@ -273,7 +294,7 @@ export class CampaignPageComponent implements OnInit {
   }
 
   async ngOnInit() { this.initialized = true; await this.load(); }
-  isAdmin() { return this.auth.user()?.role === 'admin'; }
+  isAdmin() { return this.auth.isAdmin(); }
   sheetLabel(type: CampaignSheetFilter) { return SHEET_LABELS[type] ?? type; }
   rowKey(row: CampaignRow) { return `${row.sheetType}|${row.campaignId}`; }
   isFocusedBrand(name: string) { return this.ui.focusedBrand().toLowerCase() === name.toLowerCase(); }
@@ -284,6 +305,26 @@ export class CampaignPageComponent implements OnInit {
   sortIndicator(key: keyof CampaignRow) { return this.sortKey() === key ? (this.sortAsc() ? '↑' : '↓') : ''; }
   sortBrands(key: keyof CampaignBrandRow) { this.brandSortAsc.set(this.brandSortKey() === key ? !this.brandSortAsc() : true); this.brandSortKey.set(key); }
   brandIndicator(key: keyof CampaignBrandRow) { return this.brandSortKey() === key ? (this.brandSortAsc() ? '↑' : '↓') : ''; }
+
+  isSelected(row: CampaignRow) { return this.selectedKeys().has(this.rowKey(row)); }
+
+  toggleSelect(row: CampaignRow) {
+    const key = this.rowKey(row);
+    this.selectedKeys.update((current) => { const next = new Set(current); if (!next.delete(key)) next.add(key); return next; });
+  }
+
+  /** Ticks every campaign shown (after the search), or clears them when they are all ticked already. */
+  toggleSelectAll() {
+    const shown = this.displayedRows().map((row) => this.rowKey(row));
+    this.selectedKeys.update((current) => {
+      const next = new Set(current);
+      if (shown.every((key) => next.has(key))) shown.forEach((key) => next.delete(key));
+      else shown.forEach((key) => next.add(key));
+      return next;
+    });
+  }
+
+  clearSelection() { this.selectedKeys.set(new Set()); }
 
   toggleCompare(name: string) {
     this.compareSet.update((current) => { const next = new Set(current); if (!next.delete(name)) next.add(name); return next; });
@@ -313,12 +354,14 @@ export class CampaignPageComponent implements OnInit {
     finally { if (this.expandedKey() === key) this.detailLoading.set(false); }
   }
 
-  exportCampaign() {
+  async exportCampaign() {
     if (!this.selectedPeriod()) { this.setStatus('Upload a campaign report first.', 'error'); return; }
     const query = new URLSearchParams({ periodKey: this.selectedPeriod() });
     if (this.ui.focusedBrand()) query.set('brand', this.ui.focusedBrand());
     if (this.sheetType() !== 'ALL') query.set('sheetType', this.sheetType());
-    window.location.assign(`/api/export-campaign?${query}`);
+    try {
+      await this.api.download(`/api/export-campaign?${query}`, 'Campaign_Analysis.xlsx');
+    } catch (error) { this.setStatus(this.message(error), 'error'); }
   }
 
   async upload(event: Event) {
@@ -488,6 +531,7 @@ export class CampaignPageComponent implements OnInit {
       this.periods.set(data.periods || []);
       this.selectedPeriod.set(data.periodKey || data.latestPeriodKey || '');
       this.rows.set(data.campaigns || []);
+      this.selectedKeys.set(new Set());
       this.brandSummaries.set(data.brandSummaries || []);
       this.allBrands.set(data.allBrands || []);
       this.knownBrands.set((await this.api.brandNames()).brands);

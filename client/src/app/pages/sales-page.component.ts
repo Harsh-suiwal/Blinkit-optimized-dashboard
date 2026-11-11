@@ -21,7 +21,7 @@ type ProductCityRow = CityRow & { sharePct: number };
       <div class="topbar-left"><div><h1>{{ view() === 'months' ? 'Sales by month' : view() === 'product' ? 'Sales by product' : 'Sales by city' }}</h1><span class="muted">{{ lastUpdated() }}</span></div></div>
       <div class="topbar-right">
         @if (isAdmin()) { <label class="upload-btn">Upload Sales Report<input type="file" accept=".xlsx" hidden (change)="upload($event)"></label> }
-        <button class="secondary-btn" (click)="getSheet()">Get Sheet</button>
+        @if (!ui.presenting()) { <button class="secondary-btn" (click)="getSheet()">Get Sheet</button> }
         @if (isAdmin()) { <button class="secondary-btn danger-btn" (click)="clearOpen.set(true)">🗑️ Clear Data</button> }
       </div>
     </header>
@@ -296,7 +296,7 @@ export class SalesPageComponent implements OnInit {
   }
 
   async ngOnInit() { this.initialized = true; await this.load(); }
-  isAdmin() { return this.auth.user()?.role === 'admin'; }
+  isAdmin() { return this.auth.isAdmin(); }
   // Deleting a city removes it for every brand, so it is only offered in the unfiltered view.
   isFocused() { return Boolean(this.ui.focusedBrand()) || Boolean(this.ui.focusedFeeder()); }
   ordersLabel() { return this.summary().totalOrders; }
@@ -370,7 +370,13 @@ export class SalesPageComponent implements OnInit {
     } catch (error) { this.setStatus(this.message(error), 'error'); }
   }
 
-  getSheet() { window.location.assign('/api/export-sales'); }
+  /** The Sales sheet for the brand picked in the sidebar (all brands when none is picked). */
+  async getSheet() {
+    const brand = this.ui.focusedBrand();
+    try {
+      await this.api.download(`/api/export-sales${brand ? `?brand=${encodeURIComponent(brand)}` : ''}`, 'Sales_by_City.xlsx');
+    } catch (error) { this.setStatus(this.message(error), 'error'); }
+  }
 
   /** Deletes one brand's sales data (or all brands when brand is empty). */
   async clearData(brand: string) {
