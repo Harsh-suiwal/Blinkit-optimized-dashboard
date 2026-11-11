@@ -8,13 +8,13 @@ require.cache[kvPath] = { id: kvPath, filename: kvPath, loaded: true, exports: {
 const { buildBrandOverview } = require('../parser/brandOverview');
 
 const row = (periodKey, sheetType, campaignId, spend, sales) => ({
-  periodKey, sheetType, date: `${periodKey}-05`, campaignId, campaignName: `Campaign ${campaignId}`, brandName: 'Oicia',
+  periodKey, sheetType, date: `${periodKey}-05`, campaignId, campaignName: `Campaign ${campaignId}`, brandName: 'Demo Brand',
   estimatedBudgetConsumed: spend, directSales: sales, indirectSales: 0, impressions: 1000,
   directAtc: 0, indirectAtc: 0, directQtySold: 1, indirectQtySold: 0, newUsersAcquired: 0,
 });
 const store = { uploads: [], rows: [row('2026-09', 'PRODUCT_BOOSTING', 'a', 100, 400), row('2026-10', 'PRODUCT_BOOSTING', 'b', 200, 1200), row('2026-10', 'PRODUCT_RECOMMENDATION', 'c', 100, 300)] };
 const slot = (monthKey, products, cities, totals) => ({
-  brandName: 'Oicia', platform: 'blinkit', monthKey, from: `${monthKey}-01`, to: `${monthKey}-30`, fileName: `${monthKey}.xlsx`, uploadedAt: '2026-11-02',
+  brandName: 'Demo Brand', platform: 'blinkit', monthKey, from: `${monthKey}-01`, to: `${monthKey}-30`, fileName: `${monthKey}.xlsx`, uploadedAt: '2026-11-02',
   totals, cities, products,
 });
 const months = [
@@ -26,7 +26,7 @@ const octSlot = slot('2026-10',
   [{ city: 'Jaipur', revenue: 1300, units: 7, orderCount: 6 }, { city: 'Delhi', revenue: 700, units: 4, orderCount: 4 }],
   { revenue: 2000, units: 11, orderCount: 10 });
 const base = {
-  brand: 'Oicia',
+  brand: 'Demo Brand',
   cityRows: [{ city: 'Jaipur', revenue: 900, units: 4, orderCount: 3 }],
   productRows: [{ productName: 'P1', revenue: 900, units: 4 }],
   salesUpload: { date: '2026-11-01', fileName: 'latest.xlsx', from: '2026-10-01', to: '2026-10-20' },

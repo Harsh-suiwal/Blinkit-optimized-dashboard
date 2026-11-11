@@ -79,7 +79,7 @@ Routes: `/app/overview` (default), `/app/sales-performance` (Sales), `/app/inven
 `db/schema.sql` also creates `inventory_products`, `snapshot_history`, `upload_meta`; nothing reads or writes them. Report data is in `kv_store`.
 
 ## Done checklist
-`npm run dev` boots and Angular compiles; parser changes tested with a real export (campaign: samples/Oicia Campaign Sheet.xls -> 1168 + 80 rows).
+`npm run dev` boots and Angular compiles; parser changes tested with a real export (campaign: a real Blinkit campaign export, kept out of git, -> 1168 + 80 rows).
 
 ## Inventory storage (per brand)
 - kv `latest` = { rows, brandUploads:{brand:{date,fileName}} }. An upload replaces only the brands in that file; other brands stay. Empty Brand Name -> file name -> "Unknown".
