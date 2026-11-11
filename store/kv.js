@@ -81,4 +81,10 @@ function withLock(fn) {
   return run;
 }
 
-module.exports = { init, get, peek, set, delete: del, withLock };
+/** Every key currently stored (housekeeping, e.g. removing expired sessions). */
+function keys() {
+  assertReady();
+  return Array.from(cache.keys());
+}
+
+module.exports = { init, get, peek, set, delete: del, withLock, keys };

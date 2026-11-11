@@ -63,6 +63,7 @@ const { buildBrandProfit } = require('./parser/brandProfit');
 const { buildProductMonthDetail, canSeeProductProfit } = require('./parser/productMonthDetail');
 
 const kv = require('./store/kv');
+const KvSessionStore = require('./store/sessionStore');
 const { requireAuth, requireAdmin } = require('./middleware/auth');
 const authRoutes = require('./routes/auth');
 
@@ -116,7 +117,8 @@ const mutating = (handler) => (req, res) =>
 // --- Session setup --------------------------------------------------------
 
 // No hardcoded fallback: production refuses to start without a secret; elsewhere a random
-// per-process one is used (sessions live in memory anyway, so restarts log everyone out).
+// per-process one is used (sessions are saved in kv_store, but a new random secret invalidates them
+// on every restart, so set SESSION_SECRET).
 let sessionSecret = process.env.SESSION_SECRET;
 if (!sessionSecret) {
   if (process.env.NODE_ENV === 'production') {
@@ -127,11 +129,16 @@ if (!sessionSecret) {
   console.warn('SESSION_SECRET is not set; using a random one for this run.');
 }
 
+// Wake-up / uptime ping (no login, no data). Point a free monitor such as UptimeRobot at /health every
+// 10 minutes so Render's free tier does not fall asleep.
+app.get('/health', (req, res) => res.json({ ok: true }));
+
 // Behind Render's HTTPS proxy: trust the first hop so req.secure / client IPs are right.
 app.set('trust proxy', 1);
 
 app.use(
   session({
+    store: new KvSessionStore(), // logins survive restarts (kv_store)
     secret: sessionSecret,
     resave: false,
     saveUninitialized: false,
