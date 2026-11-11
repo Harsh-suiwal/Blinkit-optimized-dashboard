@@ -22,12 +22,17 @@ export class UiStateService {
   readonly focusedFeeder = signal(this.read(FEEDER_FILTER_KEY));
   /** Bumped after any upload / clear so the sidebar re-fetches its brand list. */
   readonly lookupsVersion = signal(0);
+  /** True while the dashboard is in presentation mode (client meetings). Never saved: a reload ends it. */
+  readonly presenting = signal(false);
+  private fullscreenEntered = false;
 
   constructor() {
     this.setFocus('');
     this.applyTheme(this.theme());
     this.applyLook(this.look());
     this.applySidebarWidth(this.sidebarWidth());
+    // Esc in fullscreen is taken by the browser: leaving fullscreen ends the presentation too.
+    this.document.addEventListener('fullscreenchange', () => this.onFullscreenChange());
   }
 
   toggleTheme() {
@@ -85,6 +90,34 @@ export class UiStateService {
     this.setFocus('');
     this.setBrand('');
     this.setFeeder('');
+  }
+
+  /** Starts presenting the brand picked in the sidebar. Returns false (and does nothing) when no brand is picked. */
+  startPresenting(): boolean {
+    if (!this.focusedBrand()) return false;
+    this.presenting.set(true);
+    const root = this.document.documentElement;
+    root.setAttribute('data-presenting', 'true');
+    // Best effort: browsers allow fullscreen only after a click, so opening /present by link skips it.
+    if (!this.document.fullscreenElement && typeof root.requestFullscreen === 'function') {
+      root.requestFullscreen().then(
+        () => { this.fullscreenEntered = true; },
+        () => { /* refused: carry on without fullscreen */ },
+      );
+    }
+    return true;
+  }
+
+  stopPresenting() {
+    if (!this.presenting()) return;
+    this.presenting.set(false);
+    this.document.documentElement.removeAttribute('data-presenting');
+    if (this.fullscreenEntered && this.document.fullscreenElement) void this.document.exitFullscreen().catch(() => undefined);
+    this.fullscreenEntered = false;
+  }
+
+  private onFullscreenChange() {
+    if (this.fullscreenEntered && !this.document.fullscreenElement) this.stopPresenting();
   }
 
   private applyLook(look: string) {

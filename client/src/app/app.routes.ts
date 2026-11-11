@@ -9,6 +9,7 @@ import { MonthlyPageComponent } from './pages/monthly-page.component';
 import { ComingSoonPageComponent } from './pages/coming-soon-page.component';
 import { ProfilePageComponent } from './pages/profile-page.component';
 import { ProfitPageComponent } from './pages/profit-page.component';
+import { notWhilePresentingGuard, presentGuard } from './core/present.guard';
 
 export const routes: Routes = [
   {
@@ -21,15 +22,15 @@ export const routes: Routes = [
       { path: 'inventory', component: InventoryPageComponent },
       { path: 'sales-performance', component: SalesPageComponent },
       { path: 'monthly-comparison', component: MonthlyPageComponent },
-      { path: 'profile', component: ProfilePageComponent },
-      { path: 'profit', component: ProfitPageComponent },
+      { path: 'profile', component: ProfilePageComponent, canActivate: [notWhilePresentingGuard] },
+      { path: 'profit', component: ProfitPageComponent, canActivate: [notWhilePresentingGuard] },
       // Planned features: each shows a "Coming soon" page until it is built.
-      { path: 'reports', component: ComingSoonPageComponent, data: { title: 'Reports', description: 'Create a client-ready report for one brand: pick the months and sections, then download it as a PDF.' } },
-      { path: 'uploads', component: ComingSoonPageComponent, data: { title: 'Uploads', description: 'One place to upload every report, see what was uploaded for each brand, and undo an upload. Until then, upload from the Sales, Stock, Advertising and Trends pages.' } },
-      { path: 'present', component: ComingSoonPageComponent, data: { title: 'Present', description: 'A clean view for client meetings that hides every admin control and shows only the selected brand.' } },
-      { path: 'platforms/all', component: ComingSoonPageComponent, data: { title: 'All platforms', description: 'One combined view of a brand across Blinkit, Zepto and Flipkart Minutes.' } },
-      { path: 'platforms/zepto', component: ComingSoonPageComponent, data: { title: 'Zepto', description: "A brand's Zepto sales, stock and advertising, as soon as Zepto reports can be uploaded." } },
-      { path: 'platforms/flipkart-minutes', component: ComingSoonPageComponent, data: { title: 'Flipkart Minutes', description: "A brand's Flipkart Minutes sales, stock and advertising, as soon as its reports can be uploaded." } },
+      { path: 'reports', component: ComingSoonPageComponent, canActivate: [notWhilePresentingGuard], data: { title: 'Reports', description: 'Create a client-ready report for one brand: pick the months and sections, then download it as a PDF.' } },
+      { path: 'uploads', component: ComingSoonPageComponent, canActivate: [notWhilePresentingGuard], data: { title: 'Uploads', description: 'One place to upload every report, see what was uploaded for each brand, and undo an upload. Until then, upload from the Sales, Stock, Advertising and Trends pages.' } },
+      { path: 'present', canActivate: [presentGuard], children: [] },
+      { path: 'platforms/all', component: ComingSoonPageComponent, canActivate: [notWhilePresentingGuard], data: { title: 'All platforms', description: 'One combined view of a brand across Blinkit, Zepto and Flipkart Minutes.' } },
+      { path: 'platforms/zepto', component: ComingSoonPageComponent, canActivate: [notWhilePresentingGuard], data: { title: 'Zepto', description: "A brand's Zepto sales, stock and advertising, as soon as Zepto reports can be uploaded." } },
+      { path: 'platforms/flipkart-minutes', component: ComingSoonPageComponent, canActivate: [notWhilePresentingGuard], data: { title: 'Flipkart Minutes', description: "A brand's Flipkart Minutes sales, stock and advertising, as soon as its reports can be uploaded." } },
       { path: 'campaign-analysis', component: CampaignPageComponent },
     ],
   },
