@@ -752,7 +752,6 @@ tbody tr:not(.row-top):not(.row-low):hover {
   padding: 1px 7px;
   overflow: hidden;
   text-overflow: ellipsis;
-  vertical-align: middle;
   border: 1px solid rgba(var(--warning-rgb), 0.45);
   border-radius: 980px;
   color: var(--warning);
