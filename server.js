@@ -59,6 +59,7 @@ const {
 } = require('./parser/salesMonthly');
 const { pickMonth, filterToMonth } = require('./parser/salesMonth');
 const { combineCityRows, salesBrandSummaries } = require('./parser/citySales');
+const { computeStockHealth, decorateRows, stripHealth, productsNeedingAction } = require('./parser/stockStatus');
 const { monthSalesView, previousMonthKey } = require('./parser/salesMonthView');
 const { buildBrandOverview } = require('./parser/brandOverview');
 const { parseCostFile } = require('./parser/parseBrandCosts');
@@ -83,12 +84,7 @@ const LATEST_KEY = 'latest';
 const SALES_LATEST_KEY = 'salesLatest';
 const PRODUCT_SALES_KEY = 'salesByProduct';
 const ANGULAR_DIST_PATH = path.join(__dirname, 'client', 'dist', 'client', 'browser');
-// "Low stock" line; set LOW_STOCK_THRESHOLD in .env to change it (unset/invalid/negative -> 10)
-const envLowStock = process.env.LOW_STOCK_THRESHOLD;
-const LOW_STOCK_THRESHOLD =
-  envLowStock && envLowStock.trim() !== '' && Number.isFinite(Number(envLowStock)) && Number(envLowStock) >= 0
-    ? Number(envLowStock)
-    : 10;
+// Stock status rules (lead time, healthy days, surge) live in parser/stockStatus.js; LOW_STOCK_THRESHOLD in .env is no longer used.
 // "true" hides per-product profit on Sales > Month by month from non-admins (default: shown to everyone logged in).
 const PRODUCT_PROFIT_ADMIN_ONLY = String(process.env.PRODUCT_PROFIT_ADMIN_ONLY || '').trim().toLowerCase() === 'true';
 
@@ -221,8 +217,8 @@ function buildConsolidatedRows(parsedRows, date) {
       latestUnitsSold30: row.unitsSold30,
     }, history);
 
-    const stockStatus =
-      row.totalStockAvailable <= 0 ? 'out' : row.totalStockAvailable <= LOW_STOCK_THRESHOLD ? 'low' : 'ok';
+    // Kept for older code; the Stock page reads stockHealth, which loadLatest() computes fresh on every read.
+    const stockStatus = computeStockHealth(row).legacyStatus;
 
     return {
       productName: row.productName,
@@ -244,14 +240,18 @@ function buildConsolidatedRows(parsedRows, date) {
 //   { date, fileName, rows, brandUploads: { "<Brand>": { date, fileName } } }
 // `date`/`fileName` mirror the most recent upload for older callers.
 async function saveLatest(store) {
-  await kv.set(LATEST_KEY, store);
+  // stockHealth is computed on every read (loadLatest), so it is never stored.
+  await kv.set(LATEST_KEY, { ...store, rows: stripHealth(store.rows) });
 }
 
 // Returns a private copy (small document), or null if nothing is stored.
 function loadLatest() {
   const latest = kv.get(LATEST_KEY);
   if (!latest) return null;
-  if (latest.brandUploads) return latest;
+  if (latest.brandUploads) {
+    decorateRows(latest.rows);
+    return latest;
+  }
 
   // Pre-per-brand shape: attribute every row to its brand with the old date/file name.
   // Converted in memory on each read; the next save stores the new shape.
@@ -260,7 +260,7 @@ function loadLatest() {
     r.brandName = r.brandName || 'Unknown';
     brandUploads[r.brandName] = { date: latest.date, fileName: latest.fileName };
   });
-  return { ...latest, rows: latest.rows || [], brandUploads };
+  return { ...latest, rows: decorateRows(latest.rows || []), brandUploads };
 }
 
 // --- Upload (admin only) --------------------------------------------------
@@ -335,7 +335,7 @@ app.get('/api/summary', requireAuth, (req, res) => {
   const totalUnitsSold30 = latest.rows.reduce((sum, r) => sum + r.unitsSold30, 0);
   const totalStock = latest.rows.reduce((sum, r) => sum + r.totalStockAvailable, 0);
   const productCount = new Set(latest.rows.map((r) => r.productName)).size;
-  const lowOrOutCount = latest.rows.filter((r) => r.stockStatus !== 'ok').length;
+  const lowOrOutCount = productsNeedingAction(latest.rows); // products with at least one warehouse that needs action
 
   res.json({ date: latest.date, totalUnitsSold30, totalStock, productCount, lowOrOutCount });
 });

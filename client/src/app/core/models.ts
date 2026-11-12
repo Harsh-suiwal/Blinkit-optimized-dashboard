@@ -16,6 +16,21 @@ export interface ProductRow {
   unitsSold60: number | null;
   incomingInventory: number;
   stockStatus: 'ok' | 'low' | 'out';
+  stockHealth?: StockHealth;
+}
+
+/** What the stock is doing against demand, worked out by the server (parser/stockStatus.js). */
+export interface StockHealth {
+  key: 'healthy' | 'covered' | 'now' | 'urgent' | 'awaiting' | 'out' | 'nosales';
+  label: string;          // the pill, e.g. "Reorder Now"
+  needsAction: boolean;   // Reorder Now, Reorder Urgently, Awaiting Incoming or Out of Stock
+  daysOfStock: number | null;
+  pacePerDay: number;
+  surge: boolean;
+  line: string;           // the line under the pill
+  surgeLine: string | null;   // the full surge sentence (also in the hover text)
+  surgeBadge: string | null;  // the short version under the pill, e.g. "↑ Surge · 3.4 days left"
+  tip: string;            // the working, shown on hover
 }
 
 export interface BrandUpload {

@@ -9,6 +9,24 @@ import { UiStateService } from '../core/ui-state.service';
 import { BrandFilterComponent, mergeKnownBrands } from '../shared/brand-filter.component';
 import { ClearDataDialogComponent } from '../shared/clear-data-dialog.component';
 
+const HIDDEN_FEEDERS_KEY = 'blinkitHiddenFeeders';
+// Status chips, most urgent first. Keys and labels match parser/stockStatus.js.
+// 'zero' is a group: both of its statuses mean the stock is 0, so they share one parent chip.
+const STATUS_ORDER = ['urgent', 'now', 'zero', 'covered', 'healthy', 'nosales'];
+const STATUS_GROUPS: Record<string, string[]> = { zero: ['awaiting', 'out'] };
+const STATUS_LABELS: Record<string, string> = {
+  urgent: 'Reorder Urgently', now: 'Reorder Now', zero: 'Out of Stock', awaiting: 'Awaiting Incoming', out: 'Out of Stock',
+  covered: 'Covered by Incoming', healthy: 'Healthy', nosales: 'No Recent Sales',
+};
+interface StatusOption { key: string; label: string; count: number; children?: StatusOption[]; }
+
+function readHiddenFeeders(): string[] {
+  try {
+    const saved = JSON.parse(localStorage.getItem(HIDDEN_FEEDERS_KEY) || '[]');
+    return Array.isArray(saved) ? saved.filter((name) => typeof name === 'string') : [];
+  } catch { return []; }
+}
+
 @Component({
   selector: 'app-inventory-page',
   imports: [FormsModule, BrandFilterComponent, ClearDataDialogComponent],
@@ -32,18 +50,72 @@ import { ClearDataDialogComponent } from '../shared/clear-data-dialog.component'
       <div class="card"><div class="card-label">Units Sold (30 days)</div><div class="card-value">{{ summary().totalUnitsSold30 }}</div></div>
       <div class="card"><div class="card-label">Total Stock Available</div><div class="card-value">{{ summary().totalStock }}</div></div>
       <div class="card"><div class="card-label">Products</div><div class="card-value">{{ summary().productCount }}</div></div>
-      <div class="card"><div class="card-label">Low / Out of Stock</div><div class="card-value">{{ summary().lowOrOutCount }}</div></div>
+      <div class="card"><div class="card-label">Products Needing Action</div><div class="card-value">{{ summary().lowOrOutCount }}</div></div>
     </section>
 
-    <section class="controls"><input id="searchBox" type="search" aria-label="Search products and warehouses" [ngModel]="query()" (ngModelChange)="query.set($event)" placeholder="Search product or warehouse..."></section>
+    <section class="controls stock-controls">
+      <input id="searchBox" type="search" aria-label="Search products and warehouses" [ngModel]="query()" (ngModelChange)="query.set($event)" placeholder="Search product or warehouse...">
+      <div class="feeder-picker">
+        <button type="button" class="secondary-btn feeder-picker-btn" [attr.aria-expanded]="feederOpen()" (click)="feederOpen.set(!feederOpen())">Feeders: {{ shownFeederCount() }} of {{ feederNames().length }} <span aria-hidden="true">▾</span></button>
+        @if (feederOpen()) {
+          <div class="feeder-menu" role="group" aria-label="Feeders shown">
+            <div class="feeder-menu-actions">
+              <button type="button" (click)="showAllFeeders()">Select all</button>
+              <button type="button" (click)="hideAllFeeders()">Clear all</button>
+            </div>
+            @for (name of feederNames(); track name) {
+              <label class="feeder-option"><input type="checkbox" [checked]="!isFeederHidden(name)" (change)="toggleFeeder(name)"><span>{{ name }}</span></label>
+            }
+            @if (!feederNames().length) { <p class="muted">No feeders in this report.</p> }
+          </div>
+        }
+      </div>
+      @if (hiddenFeederCount()) { <span class="muted">{{ hiddenFeederCount() }} hidden</span> }
+    </section>
+    @if (statusOptions().length) {
+      <section class="controls status-filter" role="group" aria-label="Filter by status">
+        <button type="button" class="status-chip status-chip-all" [class.active]="!statusFilter()" [attr.aria-pressed]="!statusFilter()" (click)="statusFilter.set('')">All <span class="status-chip-count">{{ searchedRows().length }}</span></button>
+        @for (option of statusOptions(); track option.key) {
+          @if (option.children; as kids) {
+            <!-- A parent chip with its statuses under it as a small tree (hover, or click to keep it open) -->
+            <div class="status-group" [class.open]="groupOpen() === option.key">
+              <button type="button" class="status-chip status-out" [class.active]="isGroupActive(option.key)" [attr.aria-pressed]="isGroupActive(option.key)" [attr.aria-expanded]="groupOpen() === option.key" (click)="pickGroup(option.key)">{{ groupLabel(option) }} <span class="status-chip-count">{{ groupCount(option) }}</span> <span aria-hidden="true">▾</span></button>
+              <div class="status-tree" role="group" [attr.aria-label]="option.label + ' statuses'">
+                @for (kid of kids; track kid.key) {
+                  <button type="button" class="status-chip" [class]="'status-' + kid.key" [class.active]="statusFilter() === kid.key" [attr.aria-pressed]="statusFilter() === kid.key" (click)="pickChild(kid.key)">{{ kid.label }} <span class="status-chip-count">{{ kid.count }}</span></button>
+                }
+              </div>
+            </div>
+          } @else {
+            <button type="button" class="status-chip" [class]="'status-' + option.key" [class.active]="statusFilter() === option.key" [attr.aria-pressed]="statusFilter() === option.key" (click)="toggleStatus(option.key)">{{ option.label }} <span class="status-chip-count">{{ option.count }}</span></button>
+          }
+        }
+      </section>
+    }
     <section class="table-wrap table-wrap-page">
-      <table id="productTable"><thead><tr>
-        <th (click)="sortBy('productName')">Product {{ sortIndicator('productName') }}</th><th (click)="sortBy('warehouseName')">Warehouse {{ sortIndicator('warehouseName') }}</th><th (click)="sortBy('totalStockAvailable')">Stock {{ sortIndicator('totalStockAvailable') }}</th><th (click)="sortBy('unitsSold7')">Sold - 7d {{ sortIndicator('unitsSold7') }}</th><th (click)="sortBy('unitsSold15')">Sold - 15d {{ sortIndicator('unitsSold15') }}</th><th (click)="sortBy('unitsSold30')">Sold - 30d {{ sortIndicator('unitsSold30') }}</th><th (click)="sortBy('unitsSold45')">Sold - 45d {{ sortIndicator('unitsSold45') }}</th><th (click)="sortBy('unitsSold60')">Sold - 60d {{ sortIndicator('unitsSold60') }}</th><th (click)="sortBy('incomingInventory')">Incoming {{ sortIndicator('incomingInventory') }}</th><th>Status</th><th></th>
+      <table id="productTable" class="stock-table">
+        <colgroup>
+          <col class="col-product"><col class="col-warehouse"><col class="col-num"><col class="col-num"><col class="col-num"><col class="col-num"><col class="col-num"><col class="col-num"><col class="col-incoming"><col class="col-status"><col class="col-detail"><col class="col-action">
+        </colgroup>
+        <thead><tr>
+        <th (click)="sortBy('productName')">Product {{ sortIndicator('productName') }}</th><th (click)="sortBy('warehouseName')">Warehouse {{ sortIndicator('warehouseName') }}</th><th (click)="sortBy('totalStockAvailable')">Stock {{ sortIndicator('totalStockAvailable') }}</th><th (click)="sortBy('unitsSold7')">Sold 7d {{ sortIndicator('unitsSold7') }}</th><th (click)="sortBy('unitsSold15')">Sold 15d {{ sortIndicator('unitsSold15') }}</th><th (click)="sortBy('unitsSold30')">Sold 30d {{ sortIndicator('unitsSold30') }}</th><th (click)="sortBy('unitsSold45')">Sold 45d {{ sortIndicator('unitsSold45') }}</th><th (click)="sortBy('unitsSold60')">Sold 60d {{ sortIndicator('unitsSold60') }}</th><th (click)="sortBy('incomingInventory')">Incoming {{ sortIndicator('incomingInventory') }}</th><th>Status</th><th>What to do</th><th></th>
       </tr></thead><tbody>
         @for (row of displayedRows(); track rowKey(row)) { <tr>
-          <td>{{ row.productName }}</td><td>{{ row.warehouseName }}</td><td>{{ row.totalStockAvailable }}</td><td>{{ row.unitsSold7 }}</td><td>{{ row.unitsSold15 }}</td><td>{{ row.unitsSold30 }}</td><td><span [class.na]="row.unitsSold45 === null">{{ row.unitsSold45 ?? 'n/a' }}</span></td><td><span [class.na]="row.unitsSold60 === null">{{ row.unitsSold60 ?? 'n/a' }}</span></td><td>{{ row.incomingInventory }}</td>
-          <td><span class="status-pill" [class.status-ok]="row.stockStatus === 'ok'" [class.status-low]="row.stockStatus === 'low'" [class.status-out]="row.stockStatus === 'out'">{{ row.stockStatus === 'ok' ? 'OK' : row.stockStatus === 'low' ? 'Low' : 'Out' }}</span></td>
-          <td>@if (isAdmin()) { <button class="delete-btn" [class.confirming]="pendingDelete() === rowKey(row)" (click)="deleteRow(row)">{{ pendingDelete() === rowKey(row) ? 'Confirm?' : '🗑️' }}</button> }</td>
+          <td [title]="row.productName"><div class="cell-clamp">{{ row.productName }}</div></td><td [title]="row.warehouseName"><div class="cell-clamp">{{ row.warehouseName }}</div></td><td>{{ row.totalStockAvailable }}</td><td>{{ row.unitsSold7 }}</td><td>{{ row.unitsSold15 }}</td><td>{{ row.unitsSold30 }}</td><td><span [class.na]="row.unitsSold45 === null">{{ row.unitsSold45 ?? 'n/a' }}</span></td><td><span [class.na]="row.unitsSold60 === null">{{ row.unitsSold60 ?? 'n/a' }}</span></td><td>{{ row.incomingInventory }}</td>
+          <td class="status-cell">
+            @if (row.stockHealth; as h) {
+              <span class="status-pill" [class]="'status-' + h.key" [title]="h.tip">{{ h.label }}</span>
+              @if (h.surgeBadge) { <span class="surge-badge" [title]="h.surgeLine ?? ''">{{ h.surgeBadge }}</span> }
+            } @else {
+              <span class="status-pill" [class.status-ok]="row.stockStatus === 'ok'" [class.status-low]="row.stockStatus === 'low'" [class.status-out]="row.stockStatus === 'out'">{{ row.stockStatus === 'ok' ? 'OK' : row.stockStatus === 'low' ? 'Low' : 'Out' }}</span>
+            }
+          </td>
+          <td class="detail-cell" [title]="row.stockHealth?.tip ?? ''">
+            @if (row.stockHealth; as h) {
+              <div class="cell-clamp cell-detail">{{ h.line }}</div>
+            }
+          </td>
+          <td>@if (isAdmin()) { <button class="delete-btn" [class.confirming]="pendingDelete() === rowKey(row)" (click)="deleteRow(row)">{{ pendingDelete() === rowKey(row) ? 'Sure?' : '🗑️' }}</button> }</td>
         </tr> }
       </tbody>
       @if (displayedRows().length) {
@@ -51,7 +123,7 @@ import { ClearDataDialogComponent } from '../shared/clear-data-dialog.component'
           <td><strong>Total</strong></td><td><strong>{{ totals().rows }} rows</strong></td>
           <td><strong>{{ totals().stock }}</strong></td><td><strong>{{ totals().sold7 }}</strong></td><td><strong>{{ totals().sold15 }}</strong></td><td><strong>{{ totals().sold30 }}</strong></td>
           <td><strong>{{ totals().sold45 ?? 'n/a' }}</strong></td><td><strong>{{ totals().sold60 ?? 'n/a' }}</strong></td><td><strong>{{ totals().incoming }}</strong></td>
-          <td><strong>{{ totals().lowOrOut }} low / out</strong></td><td></td>
+          <td colspan="2"><strong>{{ totals().lowOrOut }} rows need action</strong></td><td></td>
         </tr></tfoot>
       }
       </table>
@@ -82,14 +154,62 @@ export class InventoryPageComponent implements OnInit {
   readonly lastUpdated = computed(() => this.describeUpdate());
   // Derived from the loaded rows so the cards follow the brand, product and search filters instantly,
   // even if a reload fails (e.g. a 401 after a server restart).
-  readonly summary = computed<InventorySummary>(() => this.summarize(this.searchedRows()));
+  readonly summary = computed<InventorySummary>(() => this.summarize(this.statusRows()));
   readonly status = signal('');
   readonly statusType = signal<'success' | 'error' | ''>('');
   readonly pendingDelete = signal('');
   readonly searchedRows = computed(() => this.searchRows());
+  // Status filter: '' = every status, else one status key (e.g. 'urgent'). Not saved: a reload shows everything again.
+  readonly statusFilter = signal('');
+  /** The searched rows narrowed to the picked status; the cards, the table and the totals all follow it. */
+  readonly statusRows = computed(() => {
+    const key = this.statusFilter();
+    if (!key) return this.searchedRows();
+    const keys = STATUS_GROUPS[key] ?? [key]; // a group (e.g. 'zero') covers several statuses
+    return this.searchedRows().filter((row) => !!row.stockHealth && keys.includes(row.stockHealth.key));
+  });
+  /** Which group's tree is pinned open by a click ('' = none); hovering shows it too. */
+  readonly groupOpen = signal('');
+  /**
+   * The chips, most urgent first, each with its row count in the rows in view. Statuses that belong to a group
+   * (Awaiting Incoming and Out of Stock are both zero stock) sit under one parent chip as `children`.
+   * The picked status stays listed even at 0 rows, so it can be un-picked.
+   */
+  readonly statusOptions = computed<StatusOption[]>(() => {
+    const counts = new Map<string, StatusOption>();
+    for (const row of this.searchedRows()) {
+      const h = row.stockHealth;
+      if (!h) continue;
+      const entry = counts.get(h.key) ?? { key: h.key, label: h.label, count: 0 };
+      entry.count += 1;
+      counts.set(h.key, entry);
+    }
+    const picked = this.statusFilter();
+    if (picked && !STATUS_GROUPS[picked] && !counts.has(picked)) counts.set(picked, { key: picked, label: STATUS_LABELS[picked] ?? picked, count: 0 });
+    const options: StatusOption[] = [];
+    for (const key of STATUS_ORDER) {
+      const members = STATUS_GROUPS[key];
+      if (!members) {
+        if (counts.has(key)) options.push(counts.get(key)!);
+        continue;
+      }
+      const children = members.filter((member) => counts.has(member)).map((member) => counts.get(member)!);
+      if (children.length || picked === key) {
+        options.push({ key, label: STATUS_LABELS[key] ?? key, count: children.reduce((sum, child) => sum + child.count, 0), children });
+      }
+    }
+    return options;
+  });
   readonly displayedRows = computed(() => this.filterRows());
   readonly totals = computed(() => stockTotals(this.displayedRows()));
   readonly query = signal('');
+  // Feeders (the report's warehouses) the user has switched off. Saved in this browser, so a new feeder shows by default.
+  readonly hiddenFeeders = signal<string[]>(readHiddenFeeders());
+  readonly feederOpen = signal(false);
+  /** Every feeder in the rows for the brand and product in view, A to Z. */
+  readonly feederNames = computed(() => Array.from(new Set(this.brandRows().map((row) => row.warehouseName))).sort((a, b) => a.localeCompare(b)));
+  readonly hiddenFeederCount = computed(() => this.feederNames().filter((name) => this.hiddenFeeders().includes(name)).length);
+  readonly shownFeederCount = computed(() => this.feederNames().length - this.hiddenFeederCount());
   readonly sortKey = signal<keyof ProductRow | null>(null);
   readonly sortAsc = signal(true);
   private undoStack: { row: ProductRow; index: number }[] = [];
@@ -112,6 +232,45 @@ export class InventoryPageComponent implements OnInit {
 
   isAdmin() { return this.auth.isAdmin(); }
   rowKey(row: ProductRow) { return `${row.productName}::${row.warehouseName}`; }
+  /** Clicking the picked status again goes back to all statuses. */
+  toggleStatus(key: string) { this.statusFilter.set(this.statusFilter() === key ? '' : key); this.groupOpen.set(''); }
+  /** Parent chip: shows every status in the group and pins its tree open; a second click un-picks it and closes the tree. */
+  pickGroup(key: string) {
+    const wasPicked = this.statusFilter() === key;
+    this.statusFilter.set(wasPicked ? '' : key);
+    this.groupOpen.set(wasPicked ? '' : key);
+  }
+  /** A status inside a group's tree: shows only that status and closes the tree. */
+  pickChild(key: string) { this.statusFilter.set(this.statusFilter() === key ? '' : key); this.groupOpen.set(''); }
+  /** The parent is lit when it, or one of its statuses, is the filter. */
+  isGroupActive(key: string) { return this.statusFilter() === key || (STATUS_GROUPS[key] ?? []).includes(this.statusFilter()); }
+  /** "Out of Stock", or "Out of Stock › Awaiting Incoming" when one of its statuses is picked. */
+  groupLabel(option: StatusOption) {
+    const child = (option.children ?? []).find((kid) => kid.key === this.statusFilter());
+    return child ? `${option.label} › ${child.label}` : option.label;
+  }
+  groupCount(option: StatusOption) {
+    const child = (option.children ?? []).find((kid) => kid.key === this.statusFilter());
+    return child ? child.count : option.count;
+  }
+  isFeederHidden(name: string) { return this.hiddenFeeders().includes(name); }
+  toggleFeeder(name: string) { this.saveHiddenFeeders(this.isFeederHidden(name) ? this.hiddenFeeders().filter((n) => n !== name) : [...this.hiddenFeeders(), name]); }
+  /** Shows every feeder in view (feeders hidden under another brand stay hidden). */
+  showAllFeeders() { const inView = new Set(this.feederNames()); this.saveHiddenFeeders(this.hiddenFeeders().filter((n) => !inView.has(n))); }
+  hideAllFeeders() { this.saveHiddenFeeders(Array.from(new Set([...this.hiddenFeeders(), ...this.feederNames()]))); }
+  private saveHiddenFeeders(names: string[]) {
+    this.hiddenFeeders.set(names);
+    try { localStorage.setItem(HIDDEN_FEEDERS_KEY, JSON.stringify(names)); } catch { /* private mode: the choice lasts until reload */ }
+  }
+  /** A click outside the feeder menu, or Escape, closes it. */
+  @HostListener('document:click', ['$event'])
+  closeFeederMenu(event: Event) {
+    const target = event.target as HTMLElement | null;
+    if (this.feederOpen() && !target?.closest('.feeder-picker')) this.feederOpen.set(false);
+    if (this.groupOpen() && !target?.closest('.status-group')) this.groupOpen.set('');
+  }
+  @HostListener('document:keydown.escape')
+  closeFeederMenuOnEscape() { this.feederOpen.set(false); this.groupOpen.set(''); }
   sortBy(key: keyof ProductRow) { this.sortAsc.set(this.sortKey() === key ? !this.sortAsc() : true); this.sortKey.set(key); }
   sortIndicator(key: keyof ProductRow) { return this.sortKey() === key ? (this.sortAsc() ? '↑' : '↓') : ''; }
   /** Downloads through the app so a failure shows a message instead of raw JSON. The Stock sheet is limited to the brand picked in the sidebar. */
@@ -185,6 +344,8 @@ export class InventoryPageComponent implements OnInit {
   }
 
   emptyMessage() {
+    if (this.feederNames().length && !this.shownFeederCount()) return 'No feeders are selected. Tick at least one in the Feeders menu.';
+    if (this.statusFilter() && this.searchedRows().length) return `No rows are "${STATUS_LABELS[this.statusFilter()] ?? this.statusFilter()}" right now. Pick another status, or All.`;
     if (this.ui.focusedProduct()) return `No warehouse rows found for product "${this.ui.focusedProduct()}".`;
     if (this.ui.focusedBrand()) return `No warehouse rows found for brand "${this.ui.focusedBrand()}".`;
     return 'No data yet. Upload a report to get started.';
@@ -218,7 +379,7 @@ export class InventoryPageComponent implements OnInit {
 
   /** The rows shown: the search applied, then sorted. While searching with no column sort, a product's warehouse rows stay together. */
   private filterRows() {
-    let values = this.searchedRows();
+    let values = this.statusRows();
     const sortKey = this.sortKey();
     if (sortKey) values = [...values].sort((a, b) => (this.sortAsc() ? 1 : -1) * compareValues(a, b, sortKey));
     else if (this.query().trim()) values = [...values].sort(byProductThenWarehouse);
@@ -231,8 +392,14 @@ export class InventoryPageComponent implements OnInit {
     return this.scopedRows().filter((row) => row.productName.toLowerCase().includes(query) || row.warehouseName.toLowerCase().includes(query));
   }
 
-  /** Rows narrowed by the focused brand and product (not the search box). */
+  /** Rows narrowed by the focused brand and product, with the switched-off feeders removed (not the search box). */
   private scopedRows() {
+    const hidden = new Set(this.hiddenFeeders());
+    return hidden.size ? this.brandRows().filter((row) => !hidden.has(row.warehouseName)) : this.brandRows();
+  }
+
+  /** Rows narrowed by the focused brand and product only: the feeder menu lists the feeders found here. */
+  private brandRows() {
     const brand = this.ui.focusedBrand().toLowerCase();
     const product = this.ui.focusedProduct();
     let values = this.rows();
@@ -242,7 +409,7 @@ export class InventoryPageComponent implements OnInit {
   }
 
   private summarize(rows: ProductRow[]): InventorySummary {
-    return { totalUnitsSold30: rows.reduce((sum, row) => sum + row.unitsSold30, 0), totalStock: rows.reduce((sum, row) => sum + row.totalStockAvailable, 0), productCount: new Set(rows.map((row) => row.productName)).size, lowOrOutCount: rows.filter((row) => row.stockStatus !== 'ok').length };
+    return { totalUnitsSold30: rows.reduce((sum, row) => sum + row.unitsSold30, 0), totalStock: rows.reduce((sum, row) => sum + row.totalStockAvailable, 0), productCount: new Set(rows.map((row) => row.productName)).size, lowOrOutCount: new Set(rows.filter((row) => row.stockHealth?.needsAction).map((row) => row.productName)).size }; // products with a warehouse that needs action
   }
 
   private setStatus(value: string, type: 'success' | 'error' | '') { this.status.set(value); this.statusType.set(type); }
