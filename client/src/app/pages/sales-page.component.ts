@@ -12,6 +12,7 @@ import { ProductMonthsComponent } from './product-months.component';
 type ProductSortKey = 'productName' | 'revenue' | 'units' | 'orderCount' | 'avgOrderValue' | 'topCity';
 type ProductCitySortKey = 'city' | 'revenue' | 'sharePct' | 'units' | 'orderCount' | 'avgOrderValue';
 type ProductCityRow = CityRow & { sharePct: number };
+const TOP_CITY_LIMIT = 7; // how many cities the Top City hover list shows
 
 @Component({
   selector: 'app-sales-page',
@@ -78,7 +79,22 @@ type ProductCityRow = CityRow & { sharePct: number };
       <div class="card"><div class="card-label">{{ ui.focusedFeeder() ? 'Feeder Revenue' : 'Total Revenue' }}</div><div class="card-value">{{ money(ui.focusedFeeder() ? feederSummary().revenue : summary().totalRevenue) }}</div></div>
       <div class="card"><div class="card-label">Total Units Sold</div><div class="card-value">{{ ui.focusedFeeder() ? feederSummary().units : summary().totalUnits }}</div></div>
       <div class="card"><div class="card-label">{{ ui.focusedFeeder() ? 'Product Orders*' : 'Total Unique Orders' }}</div><div class="card-value">{{ ui.focusedFeeder() ? (feederOrderMetricsReady() ? feederSummary().orders : 'N/A') : ordersLabel() }}</div></div>
-      <div class="card"><div class="card-label">{{ ui.focusedFeeder() ? 'Cities in Feeder' : 'Top City' }}</div><div class="card-value">{{ ui.focusedFeeder() ? feederSummary().cities : (summary().topCity || '-') }}</div></div>
+      <div class="card card-hover-list" [attr.tabindex]="topCities().length ? 0 : null">
+        <div class="card-label">{{ ui.focusedFeeder() ? 'Cities in Feeder' : 'Top City' }} @if (topCities().length) { <span class="card-info" aria-hidden="true">ⓘ</span> }</div><div class="card-value">{{ ui.focusedFeeder() ? feederSummary().cities : (summary().topCity || '-') }}</div>
+        @if (topCities().length) {
+          <div class="card-popover" role="tooltip">
+            <div class="card-popover-body">
+              <div class="card-popover-title">Top {{ topCities().length }} {{ topCities().length === 1 ? 'city' : 'cities' }} by revenue{{ ui.focusedFeeder() ? ' in the ' + ui.focusedFeeder() + ' feeder' : '' }}, with each city's share of the revenue shown</div>
+              @for (city of topCities(); track city.city; let i = $index) {
+                <div class="card-popover-row">
+                  <span class="card-popover-name">{{ i + 1 }}. {{ city.city }}</span>
+                  <span class="card-popover-meta">{{ money(city.revenue) }} · {{ city.sharePct }}%</span>
+                </div>
+              }
+            </div>
+          </div>
+        }
+      </div>
     </section>
     <section class="legend">
       <span class="legend-item"><span class="dot dot-top"></span> Top 25%</span>
@@ -124,7 +140,22 @@ type ProductCityRow = CityRow & { sharePct: number };
         <div class="card"><div class="card-label">Units Sold</div><div class="card-value">{{ product.units }}</div></div>
         <div class="card"><div class="card-label">Orders</div><div class="card-value">{{ product.orderCount }}</div></div>
         <div class="card"><div class="card-label">Avg Order Value</div><div class="card-value">{{ money(productAov()) }}</div></div>
-        <div class="card"><div class="card-label">Top City</div><div class="card-value">{{ productTopCity()?.city || '-' }}</div>@if (productTopCity(); as top) { <span class="muted">{{ money(top.revenue) }} ({{ top.sharePct }}%)</span> }</div>
+        <div class="card card-hover-list" [attr.tabindex]="productTopCities().length ? 0 : null">
+          <div class="card-label">Top City @if (productTopCities().length) { <span class="card-info" aria-hidden="true">ⓘ</span> }</div><div class="card-value">{{ productTopCity()?.city || '-' }}</div>@if (productTopCity(); as top) { <span class="muted">{{ money(top.revenue) }} ({{ top.sharePct }}%)</span> }
+          @if (productTopCities().length) {
+            <div class="card-popover" role="tooltip">
+              <div class="card-popover-body">
+                <div class="card-popover-title">Top {{ productTopCities().length }} {{ productTopCities().length === 1 ? 'city' : 'cities' }} for this product by revenue, with each city's share of the product's revenue</div>
+                @for (city of productTopCities(); track city.city; let i = $index) {
+                  <div class="card-popover-row">
+                    <span class="card-popover-name">{{ i + 1 }}. {{ city.city }}</span>
+                    <span class="card-popover-meta">{{ money(city.revenue) }} · {{ city.sharePct }}%</span>
+                  </div>
+                }
+              </div>
+            </div>
+          }
+        </div>
         <div class="card"><div class="card-label">Cities Sold In</div><div class="card-value">{{ product.cities.length }}</div></div>
       </section>
       <section class="legend">
@@ -200,6 +231,8 @@ export class SalesPageComponent implements OnInit {
   });
   // Typed as possibly null: a product can have no city rows, and then [0] is undefined at runtime.
   readonly productTopCity = computed<ProductCityRow | null>(() => [...this.productCityRows()].sort((a, b) => b.revenue - a.revenue)[0] ?? null);
+  /** The picked product's biggest cities by revenue (up to TOP_CITY_LIMIT), for the list under its Top City card. */
+  readonly productTopCities = computed(() => [...this.productCityRows()].sort((a, b) => b.revenue - a.revenue).slice(0, TOP_CITY_LIMIT));
   readonly displayedProductCities = computed(() => {
     const key = this.productCitySortKey();
     const direction = this.productCitySortAsc() ? 1 : -1;
@@ -254,6 +287,13 @@ export class SalesPageComponent implements OnInit {
   readonly status = signal('');
   readonly statusType = signal<'success' | 'error' | ''>('');
   readonly pendingDelete = signal('');
+  /** The biggest cities by revenue in the rows in view (up to TOP_CITY_LIMIT), each with its share of that revenue: the list under the Top City card. */
+  readonly topCities = computed(() => {
+    const rows = this.filteredRows();
+    const total = rows.reduce((sum, row) => sum + row.revenue, 0);
+    return [...rows].sort((a, b) => b.revenue - a.revenue).slice(0, TOP_CITY_LIMIT)
+      .map((row) => ({ city: row.city, revenue: row.revenue, sharePct: total > 0 ? Math.round((row.revenue / total) * 1000) / 10 : 0 }));
+  });
   readonly filteredRows = computed(() => {
     const feeder = this.ui.focusedFeeder();
     if (!feeder) return this.rows();

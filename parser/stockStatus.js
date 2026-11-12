@@ -26,14 +26,17 @@ const SALES_WINDOW_DAYS = 30; // the report's "Last 30 days" column
 const RECENT_DAYS = 7;        // the report's "Last 7 days" column
 
 // key doubles as the CSS class suffix on the Stock page (status-<key>).
+// needsAction = an order is due (any reorder status or zero stock).
+// urgentAction = the narrower set the "Products Needing Urgent Action" card counts: zero stock, or stock
+// that runs out before a reorder can arrive. Reorder Now is NOT urgent (its stock lasts until delivery).
 const STATUSES = {
-  healthy: { label: 'Healthy', needsAction: false, legacy: 'ok' },
-  covered: { label: 'Covered by Incoming', needsAction: false, legacy: 'ok' },
-  now: { label: 'Reorder Now', needsAction: true, legacy: 'low' },       // below the healthy line: place an order
-  urgent: { label: 'Reorder Urgently', needsAction: true, legacy: 'low' }, // below the lead time: runs out before delivery
-  awaiting: { label: 'Awaiting Incoming', needsAction: true, legacy: 'out' },
-  out: { label: 'Out of Stock', needsAction: true, legacy: 'out' },
-  nosales: { label: 'No Recent Sales', needsAction: false, legacy: 'ok' },
+  healthy: { label: 'Healthy', needsAction: false, urgentAction: false, legacy: 'ok' },
+  covered: { label: 'Covered by Incoming', needsAction: false, urgentAction: false, legacy: 'ok' },
+  now: { label: 'Reorder Now', needsAction: true, urgentAction: false, legacy: 'low' },       // below the healthy line: place an order
+  urgent: { label: 'Reorder Urgently', needsAction: true, urgentAction: true, legacy: 'low' }, // below the lead time: runs out before delivery
+  awaiting: { label: 'Awaiting Incoming', needsAction: true, urgentAction: true, legacy: 'out' },
+  out: { label: 'Out of Stock', needsAction: true, urgentAction: true, legacy: 'out' },
+  nosales: { label: 'No Recent Sales', needsAction: false, urgentAction: false, legacy: 'ok' },
 };
 
 const num = (v) => (Number.isFinite(Number(v)) ? Number(v) : 0);
@@ -136,6 +139,7 @@ function computeStockHealth(row, settings = STOCK_SETTINGS) {
     key,
     label: STATUSES[key].label,
     needsAction: STATUSES[key].needsAction,
+    urgentAction: STATUSES[key].urgentAction,
     legacyStatus: STATUSES[key].legacy,
     daysOfStock: Number.isFinite(days) ? Math.round(days * 10) / 10 : null,
     pacePerDay: Math.round(pace * 100) / 100,
@@ -162,9 +166,12 @@ function stripHealth(rows) {
   return (rows || []).map(({ stockHealth, ...rest }) => rest); // eslint-disable-line no-unused-vars
 }
 
-/** How many different products have at least one warehouse that needs action. Rows must be decorated. */
+/**
+ * How many different products have at least one warehouse that needs URGENT action (Reorder Urgently,
+ * Awaiting Incoming or Out of Stock). A product is counted once however many warehouses it has. Rows must be decorated.
+ */
 function productsNeedingAction(rows) {
-  return new Set((rows || []).filter((r) => r.stockHealth && r.stockHealth.needsAction).map((r) => r.productName)).size;
+  return new Set((rows || []).filter((r) => r.stockHealth && r.stockHealth.urgentAction).map((r) => r.productName)).size;
 }
 
 module.exports = { STOCK_SETTINGS, STATUSES, computeStockHealth, detectSurge, decorateRows, stripHealth, productsNeedingAction };

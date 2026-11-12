@@ -24,6 +24,7 @@ export interface StockHealth {
   key: 'healthy' | 'covered' | 'now' | 'urgent' | 'awaiting' | 'out' | 'nosales';
   label: string;          // the pill, e.g. "Reorder Now"
   needsAction: boolean;   // Reorder Now, Reorder Urgently, Awaiting Incoming or Out of Stock
+  urgentAction: boolean;  // Reorder Urgently, Awaiting Incoming or Out of Stock (what the card counts)
   daysOfStock: number | null;
   pacePerDay: number;
   surge: boolean;

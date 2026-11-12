@@ -19,6 +19,12 @@ const STATUS_LABELS: Record<string, string> = {
   covered: 'Covered by Incoming', healthy: 'Healthy', nosales: 'No Recent Sales',
 };
 interface StatusOption { key: string; label: string; count: number; children?: StatusOption[]; }
+// The urgent statuses, in plain words, for the list under the "Products Needing Urgent Action" card.
+const URGENT_TAGS = [
+  { key: 'urgent', label: 'Low stock' },
+  { key: 'awaiting', label: 'Out, awaiting incoming' },
+  { key: 'out', label: 'Out of stock' },
+];
 
 function readHiddenFeeders(): string[] {
   try {
@@ -49,8 +55,38 @@ function readHiddenFeeders(): string[] {
     <section class="cards">
       <div class="card"><div class="card-label">Units Sold (30 days)</div><div class="card-value">{{ summary().totalUnitsSold30 }}</div></div>
       <div class="card"><div class="card-label">Total Stock Available</div><div class="card-value">{{ summary().totalStock }}</div></div>
-      <div class="card"><div class="card-label">Products</div><div class="card-value">{{ summary().productCount }}</div></div>
-      <div class="card"><div class="card-label">Products Needing Action</div><div class="card-value">{{ summary().lowOrOutCount }}</div></div>
+      <div class="card card-hover-list" [attr.tabindex]="productList().length ? 0 : null">
+        <div class="card-label">Products @if (productList().length) { <span class="card-info" aria-hidden="true">ⓘ</span> }</div><div class="card-value">{{ summary().productCount }}</div>
+        @if (productList().length) {
+          <div class="card-popover" role="tooltip">
+            <div class="card-popover-body">
+              <div class="card-popover-title">Each product is counted once, however many feeders stock it.</div>
+              @for (product of productList(); track product.productName) {
+                <div class="card-popover-row">
+                  <span class="card-popover-name">{{ product.productName }}</span>
+                  <span class="card-popover-meta">{{ product.feeders }} {{ product.feeders === 1 ? 'feeder' : 'feeders' }}</span>
+                </div>
+              }
+            </div>
+          </div>
+        }
+      </div>
+      <div class="card card-hover-list" [attr.tabindex]="urgentProducts().length ? 0 : null">
+        <div class="card-label">Products Needing Urgent Action @if (urgentProducts().length) { <span class="card-info" aria-hidden="true">ⓘ</span> }</div><div class="card-value">{{ summary().lowOrOutCount }}</div>
+        @if (urgentProducts().length) {
+          <div class="card-popover" role="tooltip">
+            <div class="card-popover-body">
+              <div class="card-popover-title">Low or out of stock in at least one feeder. Low stock runs out before a reorder can arrive.</div>
+              @for (product of urgentProducts(); track product.productName) {
+                <div class="card-popover-row">
+                  <span class="card-popover-name">{{ product.productName }}</span>
+                  <span class="card-popover-tags">@for (tag of product.tags; track tag.key) { <span class="status-pill" [class]="'status-' + tag.key">{{ tag.label }}: {{ tag.count }} {{ tag.count === 1 ? 'feeder' : 'feeders' }}</span> }</span>
+                </div>
+              }
+            </div>
+          </div>
+        }
+      </div>
     </section>
 
     <section class="controls stock-controls">
@@ -167,6 +203,31 @@ export class InventoryPageComponent implements OnInit {
     if (!key) return this.searchedRows();
     const keys = STATUS_GROUPS[key] ?? [key]; // a group (e.g. 'zero') covers several statuses
     return this.searchedRows().filter((row) => !!row.stockHealth && keys.includes(row.stockHealth.key));
+  });
+  /** The unique products behind the "Products" card, A to Z, each with how many feeders stock it. Shown on hover or focus. */
+  readonly productList = computed(() => {
+    const feeders = new Map<string, number>();
+    for (const row of this.statusRows()) feeders.set(row.productName, (feeders.get(row.productName) ?? 0) + 1);
+    return Array.from(feeders, ([productName, count]) => ({ productName, feeders: count })).sort((a, b) => a.productName.localeCompare(b.productName));
+  });
+  /**
+   * The products behind the "Products Needing Urgent Action" card, worst first, each with how many of its
+   * feeders are low (Reorder Urgently) or out of stock. Shown when the card is hovered or focused.
+   */
+  readonly urgentProducts = computed(() => {
+    const byProduct = new Map<string, Map<string, number>>();
+    for (const row of this.statusRows()) {
+      const h = row.stockHealth;
+      if (!h?.urgentAction) continue;
+      const counts = byProduct.get(row.productName) ?? new Map<string, number>();
+      counts.set(h.key, (counts.get(h.key) ?? 0) + 1);
+      byProduct.set(row.productName, counts);
+    }
+    return Array.from(byProduct, ([productName, counts]) => ({
+      productName,
+      total: Array.from(counts.values()).reduce((sum, n) => sum + n, 0),
+      tags: URGENT_TAGS.filter((tag) => counts.has(tag.key)).map((tag) => ({ ...tag, count: counts.get(tag.key)! })),
+    })).sort((a, b) => b.total - a.total || a.productName.localeCompare(b.productName));
   });
   /** Which group's tree is pinned open by a click ('' = none); hovering shows it too. */
   readonly groupOpen = signal('');
@@ -409,7 +470,7 @@ export class InventoryPageComponent implements OnInit {
   }
 
   private summarize(rows: ProductRow[]): InventorySummary {
-    return { totalUnitsSold30: rows.reduce((sum, row) => sum + row.unitsSold30, 0), totalStock: rows.reduce((sum, row) => sum + row.totalStockAvailable, 0), productCount: new Set(rows.map((row) => row.productName)).size, lowOrOutCount: new Set(rows.filter((row) => row.stockHealth?.needsAction).map((row) => row.productName)).size }; // products with a warehouse that needs action
+    return { totalUnitsSold30: rows.reduce((sum, row) => sum + row.unitsSold30, 0), totalStock: rows.reduce((sum, row) => sum + row.totalStockAvailable, 0), productCount: new Set(rows.map((row) => row.productName)).size, lowOrOutCount: new Set(rows.filter((row) => row.stockHealth?.urgentAction).map((row) => row.productName)).size }; // products with a warehouse that is Reorder Urgently, Awaiting Incoming or Out of Stock
   }
 
   private setStatus(value: string, type: 'success' | 'error' | '') { this.status.set(value); this.statusType.set(type); }

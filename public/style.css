@@ -770,6 +770,97 @@ tbody tr:not(.row-top):not(.row-low):hover {
   text-align: center;
 }
 
+/* ---- Stock page: the list that drops down from the "Products Needing Urgent Action" card on hover or focus ---- */
+.card.card-hover-list {
+  overflow: visible;
+}
+
+.card-hover-list:hover,
+.card-hover-list:focus-within,
+.card-hover-list:focus {
+  z-index: 35;
+}
+
+.card-info {
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+/* The transparent top padding bridges the gap to the card, so the list stays open while the mouse moves down */
+.card-popover {
+  position: absolute;
+  top: 100%;
+  right: 0;
+  z-index: 35;
+  display: none;
+  width: max-content;
+  min-width: 100%;
+  max-width: min(600px, 92vw);
+  padding-top: 6px;
+}
+
+.card-hover-list:hover .card-popover,
+.card-hover-list:focus .card-popover,
+.card-hover-list:focus-within .card-popover {
+  display: block;
+}
+
+.card-popover-body {
+  max-height: min(480px, 70vh);
+  overflow: auto;
+  padding: 12px 14px 6px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.16);
+}
+
+.card-popover-title {
+  max-width: 520px;
+  margin-bottom: 8px;
+  color: var(--text-muted);
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.card-popover-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 7px 0;
+  border-top: 1px solid var(--border);
+  color: var(--text);
+  font-size: 13px;
+}
+
+.card-popover-name {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.card-popover-tags {
+  display: flex;
+  flex: none;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 6px;
+  max-width: 62%;
+}
+
+.card-popover .status-pill {
+  padding: 2px 9px;
+  font-size: 11.5px;
+  white-space: nowrap;
+}
+
+.card-popover-meta {
+  flex: none;
+  color: var(--text-muted);
+  font-size: 12px;
+  white-space: nowrap;
+}
+
 /* ---- Stock page: search box and the feeder checklist side by side ---- */
 .stock-controls {
   display: flex;
