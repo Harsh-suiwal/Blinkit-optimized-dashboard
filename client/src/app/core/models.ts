@@ -21,6 +21,20 @@ export interface ProductRow {
 export interface BrandUpload {
   date: string;
   fileName: string;
+  from?: string | null;  // first / last order date this upload covers
+  to?: string | null;
+}
+
+/** What the Sales tab is showing: the latest upload, or one chosen month (GET /api/city-performance). */
+export interface SalesView {
+  mode: 'latest' | 'month';
+  monthKey: string;      // YYYY-MM, '' when the latest upload spans several months
+  label: string;         // e.g. "October 2026"
+  from: string | null;   // first / last order date in the numbers shown
+  to: string | null;
+  partial: boolean;      // the orders don't cover every day of that month
+  fileNames: string[];
+  comparesPrevious: boolean;
 }
 
 export interface InventorySummary {

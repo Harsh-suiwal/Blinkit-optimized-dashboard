@@ -20,8 +20,8 @@ interface CompareRow {
 const SHORT_MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 const METRICS: { key: Metric; label: string }[] = [
   { key: 'revenue', label: 'Revenue' },
-  { key: 'orderCount', label: 'Orders' },
-  { key: 'units', label: 'Units sold' },
+  { key: 'orderCount', label: 'Unique orders' },
+  { key: 'units', label: 'Total units sold' },
   { key: 'avgOrderValue', label: 'Avg order value' },
 ];
 
@@ -72,8 +72,8 @@ const METRICS: { key: Metric; label: string }[] = [
             }
             <dl class="month-card-stats">
               <div><dt>Revenue</dt><dd>{{ money(m.revenue, 0) }}</dd></div>
-              <div><dt>Orders</dt><dd>{{ number(m.orderCount) }}</dd></div>
-              <div><dt>Units</dt><dd>{{ number(m.units) }}</dd></div>
+              <div><dt>Unique orders</dt><dd>{{ number(m.orderCount) }}</dd></div>
+              <div><dt>Total units sold</dt><dd>{{ number(m.units) }}</dd></div>
               <div><dt>Avg order</dt><dd>{{ money(m.avgOrderValue, 0) }}</dd></div>
             </dl>
             <p class="muted month-card-range">{{ rangeText(m) }}</p>
@@ -145,7 +145,7 @@ const METRICS: { key: Metric; label: string }[] = [
           @if (brand()) {
             <ul>
               @for (m of months(); track m.monthKey) {
-                <li><span>{{ m.label }}<span class="muted"> {{ rangeText(m) }}, {{ number(m.orderCount) }} orders</span></span><button type="button" class="secondary-btn danger-btn" (click)="deleteMonth(m)">Delete</button></li>
+                <li><span>{{ m.label }}<span class="muted"> {{ rangeText(m) }}, {{ number(m.orderCount) }} unique orders</span></span><button type="button" class="secondary-btn danger-btn" (click)="deleteMonth(m)">Delete</button></li>
               }
             </ul>
           } @else {
@@ -268,7 +268,7 @@ export class MonthlyPageComponent {
         this.setStatus('This file was already uploaded today, so nothing changed.', '');
         return;
       }
-      const saved = (result.months ?? []).map((m) => `${m.label} for ${m.brandName} (${number(m.orderCount)} orders)`).join(', ');
+      const saved = (result.months ?? []).map((m) => `${m.label} for ${m.brandName} (${number(m.orderCount)} unique orders)`).join(', ');
       const skipped = result.skippedRows ? ` ${result.skippedRows} rows had no readable order date and were left out.` : '';
       this.setStatus(`Saved ${saved}.${skipped}`, 'success');
       this.ui.refreshLookups();

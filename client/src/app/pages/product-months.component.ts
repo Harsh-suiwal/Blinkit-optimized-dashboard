@@ -53,8 +53,8 @@ const CITY_MISSING = "City split not available for this month. Re-upload that mo
                 <div class="card-value">{{ money(m.revenue, 0) }}</div>
                 <span class="delta" [class.up]="changeUp(i)">{{ changeLabel(i) }}</span>
                 <dl class="month-card-stats">
-                  <div><dt>Units</dt><dd>{{ number(m.units) }}</dd></div>
-                  <div><dt>Orders</dt><dd>{{ number(m.orderCount) }}</dd></div>
+                  <div><dt>Total units sold</dt><dd>{{ number(m.units) }}</dd></div>
+                  <div><dt>Unique orders</dt><dd>{{ number(m.orderCount) }}</dd></div>
                   <div><dt>Avg order</dt><dd>{{ money(m.avgOrderValue, 0) }}</dd></div>
                   <div><dt>Top city</dt><dd>@if (m.topCity; as top) { {{ top.city }} ({{ top.sharePct }}%) } @else { - }</dd></div>
                   @if (profitVisible()) { <div class="month-card-wide"><dt>Profit before ads</dt><dd>{{ profitText(m) }}</dd></div> }
@@ -78,7 +78,7 @@ const CITY_MISSING = "City split not available for this month. Re-upload that mo
           <section class="table-wrap compare-table">
             <h3>{{ d.product }} by month</h3>
             <table id="productMonthsTable">
-              <thead><tr><th>Month</th><th>Revenue</th><th>Change</th><th>Units</th><th>Orders</th><th>Avg order value</th><th>Top city</th>@if (profitVisible()) { <th>Profit before ads</th><th>Margin</th><th>Profit per unit</th> }</tr></thead>
+              <thead><tr><th>Month</th><th>Revenue</th><th>Change</th><th>Total units sold</th><th>Unique orders</th><th>Avg order value</th><th>Top city</th>@if (profitVisible()) { <th>Profit before ads</th><th>Margin</th><th>Profit per unit</th> }</tr></thead>
               <tbody>
                 @for (m of columns(); track m.monthKey; let i = $index) {
                   <tr>
@@ -116,7 +116,7 @@ const CITY_MISSING = "City split not available for this month. Re-upload that mo
                 <p class="muted">No city-level sales recorded for this product in {{ cm.label }}.</p>
               } @else {
                 <p class="muted">Showing all {{ cityRows().length }} cities. Click a month card above to see another month.</p>
-                <table id="productMonthCityTable"><thead><tr><th>Rank</th><th>City</th><th>Revenue</th><th>Share</th><th>Units sold</th><th>Orders</th><th>Avg order value</th></tr></thead><tbody>
+                <table id="productMonthCityTable"><thead><tr><th>Rank</th><th>City</th><th>Revenue</th><th>Share</th><th>Total units sold</th><th>Unique orders</th><th>Avg order value</th></tr></thead><tbody>
                   @for (row of cityRows(); track row.city; let index = $index) {
                     <tr [class.row-top]="row.tier === 'top'" [class.row-low]="row.tier === 'low'"><td>{{ index + 1 }}</td><td>{{ row.city }}</td><td>{{ money(row.revenue) }}</td><td>{{ row.sharePct }}%</td><td>{{ number(row.units) }}</td><td>{{ number(row.orderCount) }}</td><td>{{ money(row.avgOrderValue) }}</td></tr>
                   }

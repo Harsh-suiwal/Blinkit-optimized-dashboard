@@ -71,9 +71,9 @@ interface KpiNote { text: string; tone: '' | 'up' | 'down'; }
             <span class="kpi-note" [class.up]="revenueNote().tone === 'up'" [class.down]="revenueNote().tone === 'down'">{{ revenueNote().text }}</span>
           </a>
           <a class="card overview-card-link" routerLink="/sales-performance" title="Open sales">
-            <div class="card-label">Orders</div>
-            <div class="card-value">{{ d.sales ? number(d.sales.totalOrders) : '-' }}</div>
-            <span class="kpi-note" [class.up]="ordersNote().tone === 'up'" [class.down]="ordersNote().tone === 'down'">{{ ordersNote().text }}</span>
+            <div class="card-label">Units sold</div>
+            <div class="card-value">{{ d.sales ? number(d.sales.totalUnits) : '-' }}</div>
+            <span class="kpi-note" [class.up]="unitsNote().tone === 'up'" [class.down]="unitsNote().tone === 'down'">{{ unitsNote().text }}</span>
           </a>
           <a class="card overview-card-link" routerLink="/inventory" title="Open stock">
             <div class="card-label">Units in stock <span class="stock-tag">Current stock</span></div>
@@ -206,7 +206,7 @@ export class BrandOverviewPageComponent implements OnInit {
   /** Months for the dropdown, newest first. */
   readonly monthOptions = computed<SalesMonth[]>(() => [...(this.data()?.months ?? [])].reverse());
   readonly revenueNote = computed(() => this.kpiNote('revenue'));
-  readonly ordersNote = computed(() => this.kpiNote('orderCount'));
+  readonly unitsNote = computed(() => this.kpiNote('units'));
   readonly money = money;
   readonly number = number;
   private requestId = 0;
@@ -265,7 +265,7 @@ export class BrandOverviewPageComponent implements OnInit {
    * "+12% vs Sep" when the latest sales upload is the latest full month on record and the month
    * before it exists; otherwise the period the numbers cover. Never compares a partial month.
    */
-  private kpiNote(metric: 'revenue' | 'orderCount'): KpiNote {
+  private kpiNote(metric: 'revenue' | 'units'): KpiNote {
     const month = this.loadedMonth();
     if (month) return this.monthNote(metric, month);
     const d = this.data();
@@ -282,7 +282,7 @@ export class BrandOverviewPageComponent implements OnInit {
         return { text: `${change > 0 ? '+' : ''}${change}% vs ${prevName}`, tone: change > 0 ? 'up' : change < 0 ? 'down' : '' };
       }
     }
-    return { text: period ? `Orders from ${period}` : 'Latest sales report', tone: '' };
+    return { text: period ? `Sales from ${period}` : 'Latest sales report', tone: '' };
   }
 
   selectMonth(event: Event) {
@@ -310,7 +310,7 @@ export class BrandOverviewPageComponent implements OnInit {
    * A selected month's second line: "+12% vs Sep" against the calendar month before it when that month
    * is on record, "Partial month" when either month is partial (never compared), else the dates covered.
    */
-  private monthNote(metric: 'revenue' | 'orderCount', month: string): KpiNote {
+  private monthNote(metric: 'revenue' | 'units', month: string): KpiNote {
     const d = this.data();
     if (!d?.sales) return { text: `No sales for ${this.monthLabel(month)}`, tone: '' };
     const current = d.months.find((m) => m.monthKey === month);
@@ -322,7 +322,7 @@ export class BrandOverviewPageComponent implements OnInit {
       return { text: `${change > 0 ? '+' : ''}${change}% vs ${prevName}`, tone: change > 0 ? 'up' : change < 0 ? 'down' : '' };
     }
     const period = this.periodText(d.sales.from, d.sales.to);
-    return { text: period ? `Orders from ${period}` : this.monthLabel(month), tone: '' };
+    return { text: period ? `Sales from ${period}` : this.monthLabel(month), tone: '' };
   }
 
   /** Latest upload: the newest bar stands out, as before. A chosen month: that month's bar stands out. */

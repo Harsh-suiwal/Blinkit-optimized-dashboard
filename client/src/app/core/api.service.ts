@@ -22,6 +22,7 @@ import {
   User,
   BrandOverview,
   SalesMonth,
+  SalesView,
   SalesMonthComparison,
   SalesMonthUploadResult,
   BrandCostsUploadResult,
@@ -80,8 +81,9 @@ export class ApiService {
     return this.get<{ brands: string[] }>('/api/brand-names');
   }
 
-  cityPerformance(brand?: string) {
-    return this.get<{ date: string | null; brandUploads: Record<string, BrandUpload>; cityRows: CityRow[]; brandSummaries: SalesBrandRow[] }>(`/api/city-performance${this.brandQuery(brand)}`);
+  /** month = YYYY-MM shows that month's report; without it, the latest upload. */
+  cityPerformance(brand?: string, month?: string) {
+    return this.get<{ date: string | null; brandUploads: Record<string, BrandUpload>; cityRows: CityRow[]; brandSummaries: SalesBrandRow[]; view?: SalesView | null }>(`/api/city-performance${this.salesQuery(brand, month)}`);
   }
 
   salesSummary(brand?: string) {
@@ -92,8 +94,8 @@ export class ApiService {
     return this.get<{ date: string | null; row: ProductSalesRow | null }>(`/api/product-sales?product=${encodeURIComponent(product)}`);
   }
 
-  productCitySales(brand?: string) {
-    return this.get<{ date: string | null; productRows: (ProductSalesRow & { cities: ProductCitySalesRow[] })[] }>(`/api/product-city-sales${this.brandQuery(brand)}`);
+  productCitySales(brand?: string, month?: string) {
+    return this.get<{ date: string | null; productRows: (ProductSalesRow & { cities: ProductCitySalesRow[] })[] }>(`/api/product-city-sales${this.salesQuery(brand, month)}`);
   }
 
   brandSales(brand: string) {
@@ -274,6 +276,14 @@ export class ApiService {
     if (months.length) query.set('months', months.join(','));
     if (includeProfit) query.set('profit', '1');
     return this.get<BrandReport>(`/api/brand-report?${query}`);
+  }
+
+  private salesQuery(brand?: string, month?: string) {
+    const query = new URLSearchParams();
+    if (brand) query.set('brand', brand);
+    if (month) query.set('month', month);
+    const text = query.toString();
+    return text ? `?${text}` : '';
   }
 
   private brandQuery(brand?: string) {

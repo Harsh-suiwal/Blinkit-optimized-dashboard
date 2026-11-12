@@ -46,6 +46,7 @@ const { hashFile, isDuplicateUpload, recordUpload, clearUploadHashes } = require
 const {
   monthLabel,
   orderDateRange,
+  isPartial,
   buildMonthSlots,
   upsertMonthSlots,
   listMonthlyBrands,
@@ -56,6 +57,9 @@ const {
   restoreMonth,
   MONTH_KEY_RE,
 } = require('./parser/salesMonthly');
+const { pickMonth, filterToMonth } = require('./parser/salesMonth');
+const { combineCityRows, salesBrandSummaries } = require('./parser/citySales');
+const { monthSalesView, previousMonthKey } = require('./parser/salesMonthView');
 const { buildBrandOverview } = require('./parser/brandOverview');
 const { parseCostFile } = require('./parser/parseBrandCosts');
 const { getBrandCosts, saveBrandProducts, setOtherCost, listBrandCosts } = require('./parser/brandCosts');
@@ -567,68 +571,6 @@ function loadProductSalesLatest() {
 
 const sameBrand = (a, b) => String(a || 'Unknown').toLowerCase() === String(b || 'Unknown').toLowerCase();
 
-/**
- * Merges per-brand city rows into one row per city. Ratios are recomputed from sums;
- * the trend compares only the brand rows that have a previous upload, so a brand
- * uploaded for the first time doesn't distort it. Orders are summed per brand (an
- * order containing two brands' products counts once in each).
- */
-function combineCityRows(rows) {
-  const byCity = new Map();
-  for (const r of rows) {
-    if (!byCity.has(r.city)) {
-      byCity.set(r.city, {
-        city: r.city, revenue: 0, units: 0, orderCount: 0, topProduct: null, topProductRevenue: 0,
-        brands: [], currentWithPrev: 0, previous: 0, hasPrev: false,
-      });
-    }
-    const g = byCity.get(r.city);
-    g.revenue += r.revenue;
-    g.units += r.units;
-    g.orderCount += r.orderCount || 0;
-    if ((r.topProductRevenue || 0) > g.topProductRevenue) {
-      g.topProduct = r.topProduct;
-      g.topProductRevenue = r.topProductRevenue;
-    }
-    if (r.brandName && !g.brands.includes(r.brandName)) g.brands.push(r.brandName);
-    if (r.previousRevenue !== null && r.previousRevenue !== undefined) {
-      g.currentWithPrev += r.revenue;
-      g.previous += r.previousRevenue;
-      g.hasPrev = true;
-    }
-  }
-
-  const round2 = (n) => Math.round(n * 100) / 100;
-  const combined = Array.from(byCity.values()).map((g) => ({
-    city: g.city,
-    revenue: round2(g.revenue),
-    units: g.units,
-    orderCount: g.orderCount,
-    avgOrderValue: g.orderCount > 0 ? round2(g.revenue / g.orderCount) : 0,
-    topProduct: g.topProduct,
-    topProductRevenue: round2(g.topProductRevenue),
-    brands: g.brands,
-    revenueChangePct: g.hasPrev && g.previous > 0 ? Math.round(((g.currentWithPrev - g.previous) / g.previous) * 1000) / 10 : null,
-    previousRevenue: g.hasPrev ? round2(g.previous) : null,
-  }));
-  return assignPerformanceTiers(combined).sort((a, b) => b.revenue - a.revenue);
-}
-
-/** One entry per brand with its total revenue/units, biggest first (for the brand chips). */
-function salesBrandSummaries(cityRows) {
-  const byBrand = new Map();
-  for (const r of cityRows) {
-    const name = r.brandName || 'Unknown';
-    if (!byBrand.has(name)) byBrand.set(name, { brandName: name, revenue: 0, units: 0 });
-    const b = byBrand.get(name);
-    b.revenue += r.revenue;
-    b.units += r.units;
-  }
-  return Array.from(byBrand.values())
-    .map((b) => ({ ...b, revenue: Math.round(b.revenue * 100) / 100 }))
-    .sort((a, b) => b.revenue - a.revenue);
-}
-
 function salesRowsForBrand(store, brand) {
   return brand ? store.cityRows.filter((r) => sameBrand(r.brandName, brand)) : store.cityRows;
 }
@@ -644,14 +586,27 @@ app.post('/api/sales-upload', requireAdmin, uploadReport, mutating(async (req, r
       return res.json({ ok: true, duplicate: true, skipped: true });
     }
 
-    const salesRows = parseSalesRows(req.file.path);
+    const allRows = parseSalesRows(req.file.path);
     const date = todayDateString();
 
     // Orders with an empty Brand Name fall back to the file name, then "Unknown".
     const fileBrand = resolveBrand(path.parse(req.file.originalname).name).brand;
-    salesRows.forEach((row) => {
+    allRows.forEach((row) => {
       if (!row.brandName) row.brandName = fileBrand;
     });
+
+    // The Sales tab shows ONE month, like Blinkit's dashboard. Blinkit's export can carry rows from
+    // the next month (e.g. Nov 1 inside the October file), so only rows dated inside the month are
+    // added up. ?month=YYYY-MM picks the month; otherwise it is the month with the most rows.
+    const requestedMonth = typeof req.query.month === 'string' && MONTH_KEY_RE.test(req.query.month) ? req.query.month : '';
+    const salesMonth = pickMonth(allRows, requestedMonth);
+    if (!salesMonth) {
+      return res.status(400).json({ error: 'No month was saved: the Order Date column has no readable dates.' });
+    }
+    const { rows: salesRows, dropped: otherMonths } = filterToMonth(allRows, salesMonth);
+    if (!salesRows.length) {
+      return res.status(400).json({ error: `The file has no orders dated in ${salesMonth}.` });
+    }
 
     const brands = Array.from(new Set(salesRows.map((r) => r.brandName)));
     const cityAgg = brands.flatMap((brandName) =>
@@ -681,7 +636,8 @@ app.post('/api/sales-upload', requireAdmin, uploadReport, mutating(async (req, r
     const keptProducts = oldProducts ? oldProducts.productRows.filter((p) => !brands.some((b) => sameBrand(p.brandName, b))) : [];
     await saveProductSalesLatest(keptProducts.concat(productAgg), date, req.file.originalname);
     // Also file this report's orders under their order-date months (Monthly Comparison page).
-    const monthly = buildMonthSlots(salesRows, req.file.originalname, date);
+    // Uses allRows: every month in the file is filed under its own month, nothing is lost.
+    const monthly = buildMonthSlots(allRows, req.file.originalname, date);
     if (monthly.slots.length) await upsertMonthSlots(monthly.slots);
     await recordUpload('sales', fileHash);
 
@@ -691,7 +647,9 @@ app.post('/api/sales-upload', requireAdmin, uploadReport, mutating(async (req, r
       brands,
       cityCount: new Set(withTrend.map((r) => r.city)).size,
       totalCityCount: new Set(cityRows.map((r) => r.city)).size,
+      month: salesMonth,
       orderRowCount: salesRows.length,
+      ignoredRows: otherMonths.map((m) => ({ monthKey: m.monthKey, rows: m.rows, units: m.units, revenue: m.revenue })),
     });
   } catch (err) {
     if (err.kvError) throw err; // save failed -> 500 from mutating()
@@ -964,15 +922,73 @@ app.get('/api/brand-report', requireAuth, (req, res) => {
 });
 
 // ?brand= narrows the city table to one brand; brandSummaries always lists every brand.
+/**
+ * The Sales tab for ONE month (?month=YYYY-MM), rebuilt from the monthly slots so it is the same
+ * data the Monthly page holds. Returns null when that month has no sales.
+ */
+function salesViewForMonth(month, brand) {
+  const all = slotsFor('', 'blinkit');
+  const slots = all.filter((s) => s.monthKey === month);
+  if (!slots.length) return null;
+  const prevKey = previousMonthKey(month);
+  const months = listMonths('', 'blinkit');
+  const cur = months.find((m) => m.monthKey === month);
+  const prev = months.find((m) => m.monthKey === prevKey);
+  // The trend compares with the month before, and only when both months are complete.
+  const comparePrev = Boolean(cur && prev && !cur.partial && !prev.partial);
+  const v = monthSalesView(slots, all.filter((s) => s.monthKey === prevKey), comparePrev);
+  const inBrand = (r) => !brand || sameBrand(r.brandName, brand);
+  return {
+    date: v.date,
+    brandUploads: v.brandUploads,
+    cityRows: combineCityRows(v.cityRows.filter(inBrand)),
+    brandSummaries: salesBrandSummaries(v.cityRows),
+    productRows: v.productRows.filter(inBrand),
+    view: {
+      mode: 'month', monthKey: month, label: monthLabel(month), from: v.from, to: v.to,
+      partial: Boolean(cur && cur.partial), fileNames: v.fileNames, comparesPrevious: comparePrev,
+    },
+  };
+}
+
+/** What the "latest upload" view covers (the order dates and files of the selected brand, or all brands). */
+function latestSalesPeriod(latest, brand) {
+  const uploads = Object.entries(latest.brandUploads || {}).filter(([b]) => !brand || sameBrand(b, brand)).map(([, u]) => u);
+  const froms = uploads.map((u) => u.from).filter(Boolean).sort();
+  const tos = uploads.map((u) => u.to).filter(Boolean).sort();
+  const from = froms[0] || null;
+  const to = tos.length ? tos[tos.length - 1] : null;
+  const monthKey = from && to && from.slice(0, 7) === to.slice(0, 7) ? from.slice(0, 7) : '';
+  return {
+    mode: 'latest', monthKey, label: monthKey ? monthLabel(monthKey) : '', from, to,
+    partial: monthKey ? isPartial(monthKey, from, to) : false,
+    fileNames: Array.from(new Set(uploads.map((u) => u.fileName).filter(Boolean))), comparesPrevious: false,
+  };
+}
+
+// ?month=YYYY-MM shows that month from the monthly slots; without it, the latest upload as before.
 app.get('/api/city-performance', requireAuth, (req, res) => {
-  const latest = loadSalesLatest();
-  if (!latest) return res.json({ date: null, brandUploads: {}, cityRows: [], brandSummaries: [] });
   const brand = typeof req.query.brand === 'string' ? req.query.brand.trim() : '';
+  const month = typeof req.query.month === 'string' ? req.query.month.trim() : '';
+  if (month) {
+    if (!MONTH_KEY_RE.test(month)) return res.status(400).json({ error: 'month must look like 2026-10.' });
+    const v = salesViewForMonth(month, brand);
+    if (!v) {
+      return res.json({
+        date: null, brandUploads: {}, cityRows: [], brandSummaries: [],
+        view: { mode: 'month', monthKey: month, label: monthLabel(month), from: null, to: null, partial: false, fileNames: [], comparesPrevious: false },
+      });
+    }
+    return res.json({ date: v.date, brandUploads: v.brandUploads, cityRows: v.cityRows, brandSummaries: v.brandSummaries, view: v.view });
+  }
+  const latest = loadSalesLatest();
+  if (!latest) return res.json({ date: null, brandUploads: {}, cityRows: [], brandSummaries: [], view: null });
   res.json({
     date: latest.date,
     brandUploads: latest.brandUploads,
     cityRows: combineCityRows(salesRowsForBrand(latest, brand)),
     brandSummaries: salesBrandSummaries(latest.cityRows),
+    view: latestSalesPeriod(latest, brand),
   });
 });
 
@@ -1062,9 +1078,15 @@ app.get('/api/product-sales', requireAuth, (req, res) => {
 
 // Product-by-city breakdown used by feeder-scoped Sales Performance (?brand= narrows it).
 app.get('/api/product-city-sales', requireAuth, (req, res) => {
+  const brand = typeof req.query.brand === 'string' ? req.query.brand.trim() : '';
+  const month = typeof req.query.month === 'string' ? req.query.month.trim() : '';
+  if (month) {
+    if (!MONTH_KEY_RE.test(month)) return res.status(400).json({ error: 'month must look like 2026-10.' });
+    const v = salesViewForMonth(month, brand);
+    return res.json({ date: v ? v.date : null, productRows: v ? v.productRows : [] });
+  }
   const latest = loadProductSalesLatest();
   if (!latest) return res.json({ date: null, productRows: [] });
-  const brand = typeof req.query.brand === 'string' ? req.query.brand.trim() : '';
   const productRows = (latest.productRows || []).filter((p) => !brand || sameBrand(p.brandName, brand));
   res.json({ date: latest.date, productRows });
 });
@@ -1123,15 +1145,25 @@ app.get('/api/sales-summary', requireAuth, (req, res) => {
 });
 
 /** Builds the Sales by City worksheet, or null if nothing has been uploaded. */
-function buildSalesWorksheet(brand = '') {
-  const latest = loadSalesLatest();
-  if (!latest) return null;
-  const cityRows = combineCityRows(salesRowsForBrand(latest, brand));
+function buildSalesWorksheet(brand = '', month = '') {
+  let cityRows;
+  let date;
+  if (month) {
+    const v = salesViewForMonth(month, brand);
+    if (!v) return null;
+    cityRows = v.cityRows;
+    date = month;
+  } else {
+    const latest = loadSalesLatest();
+    if (!latest) return null;
+    cityRows = combineCityRows(salesRowsForBrand(latest, brand));
+    date = latest.date;
+  }
 
   const headers = [
     'City', 'Revenue', 'Units Sold', 'Order Count', 'Avg Order Value',
     'Best-Selling Product', 'Best-Selling Product Revenue',
-    'Performance Tier', 'Revenue Change % (vs last upload)', 'Previous Revenue',
+    'Performance Tier', month ? 'Revenue Change % (vs previous month)' : 'Revenue Change % (vs last upload)', 'Previous Revenue',
   ];
 
   const dataRows = cityRows.map((c) => [
@@ -1149,11 +1181,13 @@ function buildSalesWorksheet(brand = '') {
 
   const ws = XLSX.utils.aoa_to_sheet([headers, ...dataRows]);
   ws['!cols'] = [{ wch: 22 }, { wch: 14 }, { wch: 12 }, { wch: 12 }, { wch: 16 }, { wch: 40 }, { wch: 22 }, { wch: 14 }, { wch: 22 }, { wch: 16 }];
-  return { ws, date: latest.date };
+  return { ws, date };
 }
 
 app.get('/api/export-sales', requireAuth, (req, res) => {
-  const built = buildSalesWorksheet(typeof req.query.brand === 'string' ? req.query.brand.trim() : '');
+  const month = typeof req.query.month === 'string' ? req.query.month.trim() : '';
+  if (month && !MONTH_KEY_RE.test(month)) return res.status(400).json({ error: 'month must look like 2026-10.' });
+  const built = buildSalesWorksheet(typeof req.query.brand === 'string' ? req.query.brand.trim() : '', month);
   if (!built) return res.status(400).json({ error: 'No sales report uploaded yet.' });
 
   const wb = XLSX.utils.book_new();

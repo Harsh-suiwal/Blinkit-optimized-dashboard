@@ -1,8 +1,8 @@
 ﻿import { Component, HostListener, OnInit, computed, effect, inject, signal } from '@angular/core';
 import { ApiService } from '../core/api.service';
 import { AuthService } from '../core/auth.service';
-import { compareValues, money } from '../core/formatters';
-import { BrandUpload, CityRow, ProductCitySalesRow, ProductSalesRow, SalesBrandRow, SalesSummary } from '../core/models';
+import { compareValues, money, periodText } from '../core/formatters';
+import { BrandUpload, CityRow, ProductCitySalesRow, ProductSalesRow, SalesBrandRow, SalesMonth, SalesSummary, SalesView } from '../core/models';
 import { UiStateService } from '../core/ui-state.service';
 import { BrandFilterComponent, mergeKnownBrands } from '../shared/brand-filter.component';
 import { ClearDataDialogComponent } from '../shared/clear-data-dialog.component';
@@ -36,6 +36,16 @@ type ProductCityRow = CityRow & { sharePct: number };
         <button type="button" role="tab" class="sheet-tab" [class.active]="view() === 'months'" (click)="setView('months')">Month by month</button>
       </div>
     </section>
+    @if (view() !== 'months') {
+    <section class="controls month-controls">
+      <label class="filter-label" for="salesMonth">Report month</label>
+      <select id="salesMonth" class="styled-select" aria-label="Report month shown" [value]="selectedMonth()" (change)="selectMonth($event)">
+        <option value="" [selected]="selectedMonth() === ''">{{ latestOptionLabel() }}</option>
+        @for (m of monthOptions(); track m.monthKey) { <option [value]="m.monthKey" [selected]="m.monthKey === selectedMonth()">{{ m.label }}{{ m.partial ? ' (partial)' : '' }}</option> }
+      </select>
+      @if (bannerTitle()) { <span class="month-banner" [title]="bannerTooltip()"><strong>{{ bannerTitle() }}</strong>@if (bannerDetail()) { <span class="muted"> · {{ bannerDetail() }}</span> }</span> }
+    </section>
+    }
     @if (view() === 'city') {
     <section class="controls">
       <label class="filter-label" for="feederSelect">Feeder city</label>
@@ -67,7 +77,7 @@ type ProductCityRow = CityRow & { sharePct: number };
     <section class="cards">
       <div class="card"><div class="card-label">{{ ui.focusedFeeder() ? 'Feeder Revenue' : 'Total Revenue' }}</div><div class="card-value">{{ money(ui.focusedFeeder() ? feederSummary().revenue : summary().totalRevenue) }}</div></div>
       <div class="card"><div class="card-label">Total Units Sold</div><div class="card-value">{{ ui.focusedFeeder() ? feederSummary().units : summary().totalUnits }}</div></div>
-      <div class="card"><div class="card-label">{{ ui.focusedFeeder() ? 'Product Orders*' : 'Total Orders' }}</div><div class="card-value">{{ ui.focusedFeeder() ? (feederOrderMetricsReady() ? feederSummary().orders : 'N/A') : ordersLabel() }}</div></div>
+      <div class="card"><div class="card-label">{{ ui.focusedFeeder() ? 'Product Orders*' : 'Total Unique Orders' }}</div><div class="card-value">{{ ui.focusedFeeder() ? (feederOrderMetricsReady() ? feederSummary().orders : 'N/A') : ordersLabel() }}</div></div>
       <div class="card"><div class="card-label">{{ ui.focusedFeeder() ? 'Cities in Feeder' : 'Top City' }}</div><div class="card-value">{{ ui.focusedFeeder() ? feederSummary().cities : (summary().topCity || '-') }}</div></div>
     </section>
     <section class="legend">
@@ -83,7 +93,7 @@ type ProductCityRow = CityRow & { sharePct: number };
     </section>
     } @else {
     <section class="table-wrap">
-      <table id="cityTable"><thead><tr><th>Rank</th><th (click)="sortBy('city')">City {{ sortIndicator('city') }}</th><th (click)="sortBy('revenue')">Revenue {{ sortIndicator('revenue') }}</th><th (click)="sortBy('units')">Units Sold {{ sortIndicator('units') }}</th><th (click)="sortBy('orderCount')">Orders {{ sortIndicator('orderCount') }}</th><th (click)="sortBy('avgOrderValue')">Avg Order Value {{ sortIndicator('avgOrderValue') }}</th><th (click)="sortBy('topProduct')">Best-Selling Product {{ sortIndicator('topProduct') }}</th><th>Trend vs Last Upload</th><th></th></tr></thead><tbody>
+      <table id="cityTable"><thead><tr><th>Rank</th><th (click)="sortBy('city')">City {{ sortIndicator('city') }}</th><th (click)="sortBy('revenue')">Revenue {{ sortIndicator('revenue') }}</th><th (click)="sortBy('units')">Units Sold {{ sortIndicator('units') }}</th><th (click)="sortBy('orderCount')">Orders {{ sortIndicator('orderCount') }}</th><th (click)="sortBy('avgOrderValue')">Avg Order Value {{ sortIndicator('avgOrderValue') }}</th><th (click)="sortBy('topProduct')">Best-Selling Product {{ sortIndicator('topProduct') }}</th><th>Trend vs {{ selectedMonth() ? 'Previous Month' : 'Last Upload' }}</th><th></th></tr></thead><tbody>
         @for (row of displayedRows(); track row.city; let index = $index) {
           <tr [class.row-top]="row.tier === 'top'" [class.row-low]="row.tier === 'low'">
             <td>{{ index + 1 }}</td><td>{{ row.city }}</td><td>{{ money(row.revenue) }}</td><td>{{ row.units }}</td>
@@ -91,7 +101,7 @@ type ProductCityRow = CityRow & { sharePct: number };
             <td>@if (row.avgOrderValue === undefined) { <span class="na">n/a</span> } @else { {{ money(row.avgOrderValue) }} }</td>
             <td>{{ row.topProduct || 'No data' }}</td>
             <td><span [class.na]="row.revenueChangePct === null || row.revenueChangePct === undefined" [class.trend-up]="(row.revenueChangePct ?? 0) > 0" [class.trend-down]="(row.revenueChangePct ?? 0) < 0">{{ trend(row) }}</span></td>
-            <td>@if (isAdmin() && !isFocused()) { <button class="delete-btn" [class.confirming]="pendingDelete() === row.city" (click)="deleteCity(row)">{{ pendingDelete() === row.city ? 'Confirm?' : '🗑️' }}</button> }</td>
+            <td>@if (isAdmin() && !isFocused() && !selectedMonth()) { <button class="delete-btn" [class.confirming]="pendingDelete() === row.city" (click)="deleteCity(row)">{{ pendingDelete() === row.city ? 'Confirm?' : '🗑️' }}</button> }</td>
           </tr>
         }
       </tbody></table>
@@ -102,6 +112,10 @@ type ProductCityRow = CityRow & { sharePct: number };
     <section class="controls">
       <label class="filter-label" for="productSearch">Product</label>
       <input id="productSearch" class="styled-select" type="search" aria-label="Search products" placeholder="Search a product, e.g. Stainless Spoon" [value]="productQuery()" (input)="onProductSearch($event)">
+      <select id="productPick" class="styled-select" aria-label="Product" [value]="selectedProduct() ? selectedProductKey() : ''" (change)="onProductPick($event)">
+        <option value="" [selected]="!selectedProduct()">All products</option>
+        @for (p of dropdownProducts(); track productKey(p)) { <option [value]="productKey(p)" [selected]="productKey(p) === selectedProductKey()">{{ productOptionLabel(p) }}</option> }
+      </select>
       <span class="muted">{{ listedProducts().length }} of {{ feederProductRows().length }} products{{ ui.focusedBrand() ? ' of ' + ui.focusedBrand() : '' }}</span>
     </section>
     @if (selectedProduct(); as product) {
@@ -128,7 +142,7 @@ type ProductCityRow = CityRow & { sharePct: number };
         @if (!displayedProductCities().length) { <p class="muted">No city-level sales recorded for this product.</p> }
       </section>
     } @else {
-      <p class="muted brand-note">Pick a product from the list below (or search for it above) to see its revenue in every city.</p>
+      <p class="muted brand-note">Pick a product from the dropdown above (or click one in the list below) to see its revenue in every city.</p>
     }
     <section class="table-wrap">
       <h3>All products</h3>
@@ -160,6 +174,12 @@ export class SalesPageComponent implements OnInit {
 
   // --- Product wise tab: pick one product, see its total and every city it sold in ---
   readonly view = signal<'city' | 'product' | 'months'>('city');
+  // Which report the numbers come from: '' = the latest upload, else a month key like '2026-10'.
+  readonly selectedMonth = signal('');
+  readonly monthOptions = signal<SalesMonth[]>([]);
+  readonly salesView = signal<SalesView | null>(null);
+  private readonly latestPeriod = signal('');
+  readonly latestOptionLabel = computed(() => (this.latestPeriod() ? `Latest upload (${this.latestPeriod()})` : 'Latest upload'));
   readonly productQuery = signal('');
   readonly selectedProductKey = signal('');
   readonly productCitySortKey = signal<ProductCitySortKey>('revenue');
@@ -196,6 +216,12 @@ export class SalesPageComponent implements OnInit {
     const query = this.productQuery().trim().toLowerCase();
     return this.displayedProducts().filter((p) =>
       !query || p.productName.toLowerCase().includes(query) || (p.brandName ?? '').toLowerCase().includes(query));
+  });
+  /** Dropdown options: the products matching the search, A to Z, plus the picked one even if the search no longer matches it. */
+  readonly dropdownProducts = computed(() => {
+    const listed = [...this.listedProducts()].sort((a, b) => a.productName.localeCompare(b.productName));
+    const picked = this.selectedProduct();
+    return picked && !listed.some((p) => this.productKey(p) === this.selectedProductKey()) ? [picked, ...listed] : listed;
   });
   readonly displayedProducts = computed(() => {
     const key = this.productSortKey();
@@ -316,10 +342,37 @@ export class SalesPageComponent implements OnInit {
   }
   productSortIndicator(key: ProductSortKey) { return this.productSortKey() === key ? (this.productSortAsc() ? '↑' : '↓') : ''; }
   setView(view: 'city' | 'product' | 'months') { this.view.set(view); }
+  selectMonth(event: Event) { this.selectedMonth.set((event.target as HTMLSelectElement).value); void this.load(); }
+  /** The month on screen, e.g. "October 2026". */
+  bannerTitle() {
+    const v = this.salesView();
+    return v ? v.label || periodText(v.from, v.to) : '';
+  }
+  /** Only said when there is something to flag: a partial month, e.g. "1-11 Nov · Partial month". */
+  bannerDetail() {
+    const v = this.salesView();
+    if (!v || !v.partial) return '';
+    const days = periodText(v.from, v.to).replace(/ \d{4}$/, '');
+    return days ? `${days} · Partial month` : 'Partial month';
+  }
+  /** Hover text: the exact order dates and the source file(s). */
+  bannerTooltip() {
+    const v = this.salesView();
+    if (!v) return '';
+    const parts: string[] = [];
+    const period = periodText(v.from, v.to);
+    if (period) parts.push(`Orders dated ${period}`);
+    if (v.fileNames.length) parts.push(`Source: ${v.fileNames.join(', ')}`);
+    return parts.join(' | ');
+  }
   // Name + brand, so the same product name under two brands stays two products.
   productKey(product: ProductSalesRow) { return `${product.productName}::${product.brandName ?? ''}`; }
   isSelectedProduct(product: ProductSalesRow) { return this.productKey(product) === this.selectedProductKey(); }
   selectProduct(product: ProductSalesRow) { this.selectedProductKey.set(this.productKey(product)); }
+  /** Dropdown pick; the empty option ("All products") clears the selection. */
+  onProductPick(event: Event) { this.selectedProductKey.set((event.target as HTMLSelectElement).value); }
+  /** Product name; with no brand picked in the sidebar the brand is added so two brands' same-named products stay apart. */
+  productOptionLabel(product: ProductSalesRow) { return !this.ui.focusedBrand() && product.brandName ? `${product.productName} (${product.brandName})` : product.productName; }
   onProductSearch(event: Event) {
     this.productQuery.set((event.target as HTMLInputElement).value);
     const matches = this.listedProducts();
@@ -332,7 +385,7 @@ export class SalesPageComponent implements OnInit {
   productCityIndicator(key: ProductCitySortKey) { return this.productCitySortKey() === key ? (this.productCitySortAsc() ? '↑' : '↓') : ''; }
 
   trend(row: CityRow) {
-    if (row.revenueChangePct === null || row.revenueChangePct === undefined) return 'First upload';
+    if (row.revenueChangePct === null || row.revenueChangePct === undefined) return this.selectedMonth() ? 'No prior month' : 'First upload';
     const arrow = row.revenueChangePct > 0 ? '↑' : row.revenueChangePct < 0 ? '↓' : '→';
     return `${arrow} ${Math.abs(row.revenueChangePct)}%`;
   }
@@ -344,6 +397,7 @@ export class SalesPageComponent implements OnInit {
     this.setStatus('Uploading...', '');
     try {
       const result = await this.api.uploadSales(file);
+      this.selectedMonth.set(''); // show what was just uploaded
       this.setStatus(`Uploaded successfully - ${result.orderRowCount} order rows for ${(result.brands ?? []).join(', ') || 'your brands'}.`, 'success');
       this.ui.refreshLookups();
       await this.load();
@@ -374,7 +428,10 @@ export class SalesPageComponent implements OnInit {
   async getSheet() {
     const brand = this.ui.focusedBrand();
     try {
-      await this.api.download(`/api/export-sales${brand ? `?brand=${encodeURIComponent(brand)}` : ''}`, 'Sales_by_City.xlsx');
+      const query = new URLSearchParams();
+      if (brand) query.set('brand', brand);
+      if (this.selectedMonth()) query.set('month', this.selectedMonth());
+      await this.api.download(`/api/export-sales${query.toString() ? `?${query}` : ''}`, 'Sales_by_City.xlsx');
     } catch (error) { this.setStatus(this.message(error), 'error'); }
   }
 
@@ -415,7 +472,13 @@ export class SalesPageComponent implements OnInit {
   private async load() {
     const brand = this.ui.focusedBrand();
     try {
-      const data = await this.api.cityPerformance(brand || undefined);
+      // The month list first: a month this brand doesn't have falls back to the latest upload.
+      this.monthOptions.set(await this.api.salesMonths(brand || undefined).then((r) => [...r.months].reverse(), () => this.monthOptions()));
+      if (this.selectedMonth() && !this.monthOptions().some((m) => m.monthKey === this.selectedMonth())) this.selectedMonth.set('');
+      const month = this.selectedMonth();
+      const data = await this.api.cityPerformance(brand || undefined, month || undefined);
+      this.salesView.set(data.view ?? null);
+      if (!month && data.view) this.latestPeriod.set(periodText(data.view.from, data.view.to));
       this.rows.set(data.cityRows || []);
       this.brandSummaries.set(data.brandSummaries || []);
       this.brandUploads.set(data.brandUploads || {});
@@ -424,7 +487,7 @@ export class SalesPageComponent implements OnInit {
       this.knownBrands.set(await this.api.brandNames().then((r) => r.brands, () => this.knownBrands()));
       // Product rows feed the product-wise table and the feeder breakdown, so they are always loaded.
       // A failure here must not stop the summary below.
-      const products = await this.api.productCitySales(brand || undefined).catch(() => null);
+      const products = await this.api.productCitySales(brand || undefined, month || undefined).catch(() => null);
       if (products) {
         this.feederProductRows.set(products.productRows || []);
         if (this.selectedFeederProduct() && !this.feederProductNames().includes(this.selectedFeederProduct())) this.selectedFeederProduct.set('');

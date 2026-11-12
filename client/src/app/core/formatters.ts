@@ -23,3 +23,16 @@ export function compareValues<T extends object>(a: T, b: T, key: keyof T): numbe
     ? left.localeCompare(right)
     : Number(left) - Number(right);
 }
+
+const SHORT_MONTH_NAMES = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+/** "1-31 Oct 2026", "28 Sep - 20 Oct 2026" or "28 Dec 2025 - 3 Jan 2026"; '' when a date is missing. */
+export function periodText(from: string | null | undefined, to: string | null | undefined): string {
+  if (!from || !to) return '';
+  const [fy, fm, fd] = from.split('-').map(Number);
+  const [ty, tm, td] = to.split('-').map(Number);
+  if (!fy || !fm || !fd || !ty || !tm || !td) return '';
+  if (fy === ty && fm === tm) return fd === td ? `${fd} ${SHORT_MONTH_NAMES[fm - 1]} ${fy}` : `${fd}-${td} ${SHORT_MONTH_NAMES[fm - 1]} ${fy}`;
+  if (fy === ty) return `${fd} ${SHORT_MONTH_NAMES[fm - 1]} - ${td} ${SHORT_MONTH_NAMES[tm - 1]} ${fy}`;
+  return `${fd} ${SHORT_MONTH_NAMES[fm - 1]} ${fy} - ${td} ${SHORT_MONTH_NAMES[tm - 1]} ${ty}`;
+}
