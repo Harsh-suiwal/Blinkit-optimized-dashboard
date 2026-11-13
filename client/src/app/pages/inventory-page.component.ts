@@ -2,7 +2,7 @@
 import { FormsModule } from '@angular/forms';
 import { ApiService } from '../core/api.service';
 import { AuthService } from '../core/auth.service';
-import { brandFor, compareValues } from '../core/formatters';
+import { brandFor, compareValues, number } from '../core/formatters';
 import { byProductThenWarehouse, stockTotals } from '../core/inventory-totals';
 import { BrandUpload, InventorySummary, ProductRow } from '../core/models';
 import { UiStateService } from '../core/ui-state.service';
@@ -10,6 +10,10 @@ import { BrandFilterComponent, mergeKnownBrands } from '../shared/brand-filter.c
 import { ClearDataDialogComponent } from '../shared/clear-data-dialog.component';
 
 const HIDDEN_FEEDERS_KEY = 'blinkitHiddenFeeders';
+// Column widths the user dragged to, saved in this browser (12 numbers in px, one per column). Absent = automatic sizing.
+const COLUMNS_KEY = 'blinkitStockColumns';
+const COLUMN_COUNT = 12;
+const COLUMN_MIN = 32;
 // Status chips, most urgent first. Keys and labels match parser/stockStatus.js.
 // 'zero' is a group: both of its statuses mean the stock is 0, so they share one parent chip.
 const STATUS_ORDER = ['urgent', 'now', 'zero', 'covered', 'healthy', 'nosales'];
@@ -25,6 +29,23 @@ const URGENT_TAGS = [
   { key: 'awaiting', label: 'Out, awaiting incoming' },
   { key: 'out', label: 'Out of stock' },
 ];
+
+/** Default table order: STATUS_ORDER position (the 'zero' group's statuses share its place). Rows without a stock health fall back to OK/Low/Out. */
+function urgencyRank(row: ProductRow): number {
+  const key = row.stockHealth?.key ?? (row.stockStatus === 'out' ? 'out' : row.stockStatus === 'low' ? 'now' : 'healthy');
+  const group = Object.keys(STATUS_GROUPS).find((name) => STATUS_GROUPS[name].includes(key)) ?? key;
+  const index = STATUS_ORDER.indexOf(group);
+  return index === -1 ? STATUS_ORDER.length : index;
+}
+
+
+function readColumns(): number[] | null {
+  try {
+    const saved = JSON.parse(localStorage.getItem(COLUMNS_KEY) || 'null');
+    if (Array.isArray(saved) && saved.length === COLUMN_COUNT && saved.every((w) => Number.isFinite(w) && w >= COLUMN_MIN)) return saved as number[];
+  } catch { /* fall through to automatic sizing */ }
+  return null;
+}
 
 function readHiddenFeeders(): string[] {
   try {
@@ -129,15 +150,18 @@ function readHiddenFeeders(): string[] {
       </section>
     }
     <section class="table-wrap table-wrap-page">
-      <table id="productTable" class="stock-table">
+      <table id="productTable" class="stock-table" [class.manual]="colPx() !== null" [style.width.px]="tableWidth()">
         <colgroup>
-          <col class="col-product"><col class="col-warehouse"><col class="col-num"><col class="col-num"><col class="col-num"><col class="col-num"><col class="col-num"><col class="col-num"><col class="col-incoming"><col class="col-status"><col class="col-detail"><col class="col-action">
+          <col class="col-product" [style.width.px]="colWidth(0)"><col class="col-warehouse" [style.width.px]="colWidth(1)"><col class="col-stock" [style.width.px]="colWidth(2)"><col class="col-num" [style.width.px]="colWidth(3)"><col class="col-num" [style.width.px]="colWidth(4)"><col class="col-num" [style.width.px]="colWidth(5)"><col class="col-num" [style.width.px]="colWidth(6)"><col class="col-num" [style.width.px]="colWidth(7)"><col class="col-incoming" [style.width.px]="colWidth(8)"><col class="col-status" [style.width.px]="colWidth(9)"><col class="col-detail" [style.width.px]="colWidth(10)"><col class="col-action" [style.width.px]="colWidth(11)">
         </colgroup>
-        <thead><tr>
-        <th (click)="sortBy('productName')">Product {{ sortIndicator('productName') }}</th><th (click)="sortBy('warehouseName')">Warehouse {{ sortIndicator('warehouseName') }}</th><th (click)="sortBy('totalStockAvailable')">Stock {{ sortIndicator('totalStockAvailable') }}</th><th (click)="sortBy('unitsSold7')">Sold 7d {{ sortIndicator('unitsSold7') }}</th><th (click)="sortBy('unitsSold15')">Sold 15d {{ sortIndicator('unitsSold15') }}</th><th (click)="sortBy('unitsSold30')">Sold 30d {{ sortIndicator('unitsSold30') }}</th><th (click)="sortBy('unitsSold45')">Sold 45d {{ sortIndicator('unitsSold45') }}</th><th (click)="sortBy('unitsSold60')">Sold 60d {{ sortIndicator('unitsSold60') }}</th><th (click)="sortBy('incomingInventory')">Incoming {{ sortIndicator('incomingInventory') }}</th><th>Status</th><th>What to do</th><th></th>
+        <!-- Two header rows: "Units sold" spans its five period columns, the other headers span both rows -->
+        <thead><tr class="head-top">
+        <th rowspan="2" class="th-text" data-col="0" (click)="sortBy('productName')">Product {{ sortIndicator('productName') }}<span class="col-resizer" title="Drag to resize. Double-click to fit all columns again." (click)="$event.stopPropagation()" (dblclick)="resetColumns()" (pointerdown)="startResize($event, 0)" (pointermove)="moveResize($event)" (pointerup)="endResize($event)" (pointercancel)="endResize($event)"></span></th><th data-col="1" rowspan="2" class="th-text" (click)="sortBy('warehouseName')">Warehouse {{ sortIndicator('warehouseName') }}<span class="col-resizer" title="Drag to resize. Double-click to fit all columns again." (click)="$event.stopPropagation()" (dblclick)="resetColumns()" (pointerdown)="startResize($event, 1)" (pointermove)="moveResize($event)" (pointerup)="endResize($event)" (pointercancel)="endResize($event)"></span></th><th data-col="2" rowspan="2" class="th-num" (click)="sortBy('totalStockAvailable')">Stock {{ sortIndicator('totalStockAvailable') }}<span class="col-resizer" title="Drag to resize. Double-click to fit all columns again." (click)="$event.stopPropagation()" (dblclick)="resetColumns()" (pointerdown)="startResize($event, 2)" (pointermove)="moveResize($event)" (pointerup)="endResize($event)" (pointercancel)="endResize($event)"></span></th><th colspan="5" class="th-group g-start g-end">Units sold</th><th data-col="8" rowspan="2" class="th-num" (click)="sortBy('incomingInventory')">Incoming {{ sortIndicator('incomingInventory') }}<span class="col-resizer" title="Drag to resize. Double-click to fit all columns again." (click)="$event.stopPropagation()" (dblclick)="resetColumns()" (pointerdown)="startResize($event, 8)" (pointermove)="moveResize($event)" (pointerup)="endResize($event)" (pointercancel)="endResize($event)"></span></th><th data-col="9" rowspan="2" class="th-text th-static">Status<span class="col-resizer" title="Drag to resize. Double-click to fit all columns again." (click)="$event.stopPropagation()" (dblclick)="resetColumns()" (pointerdown)="startResize($event, 9)" (pointermove)="moveResize($event)" (pointerup)="endResize($event)" (pointercancel)="endResize($event)"></span></th><th data-col="10" rowspan="2" class="th-text th-static">What to do<span class="col-resizer" title="Drag to resize. Double-click to fit all columns again." (click)="$event.stopPropagation()" (dblclick)="resetColumns()" (pointerdown)="startResize($event, 10)" (pointermove)="moveResize($event)" (pointerup)="endResize($event)" (pointercancel)="endResize($event)"></span></th><th rowspan="2" class="th-static" data-col="11"></th>
+        </tr><tr class="head-sub">
+        <th data-col="3" class="th-num g-start" (click)="sortBy('unitsSold7')">7d {{ sortIndicator('unitsSold7') }}<span class="col-resizer" title="Drag to resize. Double-click to fit all columns again." (click)="$event.stopPropagation()" (dblclick)="resetColumns()" (pointerdown)="startResize($event, 3)" (pointermove)="moveResize($event)" (pointerup)="endResize($event)" (pointercancel)="endResize($event)"></span></th><th data-col="4" class="th-num" (click)="sortBy('unitsSold15')">15d {{ sortIndicator('unitsSold15') }}<span class="col-resizer" title="Drag to resize. Double-click to fit all columns again." (click)="$event.stopPropagation()" (dblclick)="resetColumns()" (pointerdown)="startResize($event, 4)" (pointermove)="moveResize($event)" (pointerup)="endResize($event)" (pointercancel)="endResize($event)"></span></th><th data-col="5" class="th-num" (click)="sortBy('unitsSold30')">30d {{ sortIndicator('unitsSold30') }}<span class="col-resizer" title="Drag to resize. Double-click to fit all columns again." (click)="$event.stopPropagation()" (dblclick)="resetColumns()" (pointerdown)="startResize($event, 5)" (pointermove)="moveResize($event)" (pointerup)="endResize($event)" (pointercancel)="endResize($event)"></span></th><th data-col="6" class="th-num" (click)="sortBy('unitsSold45')">45d {{ sortIndicator('unitsSold45') }}<span class="col-resizer" title="Drag to resize. Double-click to fit all columns again." (click)="$event.stopPropagation()" (dblclick)="resetColumns()" (pointerdown)="startResize($event, 6)" (pointermove)="moveResize($event)" (pointerup)="endResize($event)" (pointercancel)="endResize($event)"></span></th><th data-col="7" class="th-num g-end" (click)="sortBy('unitsSold60')">60d {{ sortIndicator('unitsSold60') }}<span class="col-resizer" title="Drag to resize. Double-click to fit all columns again." (click)="$event.stopPropagation()" (dblclick)="resetColumns()" (pointerdown)="startResize($event, 7)" (pointermove)="moveResize($event)" (pointerup)="endResize($event)" (pointercancel)="endResize($event)"></span></th>
       </tr></thead><tbody>
         @for (row of displayedRows(); track rowKey(row)) { <tr>
-          <td [title]="row.productName"><div class="cell-clamp">{{ row.productName }}</div></td><td [title]="row.warehouseName"><div class="cell-clamp">{{ row.warehouseName }}</div></td><td>{{ row.totalStockAvailable }}</td><td>{{ row.unitsSold7 }}</td><td>{{ row.unitsSold15 }}</td><td>{{ row.unitsSold30 }}</td><td><span [class.na]="row.unitsSold45 === null">{{ row.unitsSold45 ?? 'n/a' }}</span></td><td><span [class.na]="row.unitsSold60 === null">{{ row.unitsSold60 ?? 'n/a' }}</span></td><td>{{ row.incomingInventory }}</td>
+          <td [title]="row.productName"><div class="cell-clamp">@if (brandPrefix(row); as prefix) {<span class="brand-name">{{ prefix }}</span>}{{ row.productName.slice(brandPrefix(row).length) }}</div></td><td [title]="row.warehouseName"><div class="cell-one-line">{{ warehouseLabel(row.warehouseName) }}</div></td><td><span [class.qty-out]="row.totalStockAvailable === 0">{{ qty(row.totalStockAvailable) }}</span></td><td class="g-start"><span [class.qty-zero]="row.unitsSold7 === 0">{{ qty(row.unitsSold7) }}</span></td><td><span [class.qty-zero]="row.unitsSold15 === 0">{{ qty(row.unitsSold15) }}</span></td><td><span [class.qty-zero]="row.unitsSold30 === 0">{{ qty(row.unitsSold30) }}</span></td><td><span [class.na]="row.unitsSold45 === null" [class.qty-zero]="row.unitsSold45 === 0">{{ qty(row.unitsSold45) }}</span></td><td class="g-end"><span [class.na]="row.unitsSold60 === null" [class.qty-zero]="row.unitsSold60 === 0">{{ qty(row.unitsSold60) }}</span></td><td><span [class.qty-zero]="row.incomingInventory === 0">{{ qty(row.incomingInventory) }}</span></td>
           <td class="status-cell">
             @if (row.stockHealth; as h) {
               <span class="status-pill" [class]="'status-' + h.key" [title]="h.tip">{{ h.label }}</span>
@@ -148,7 +172,7 @@ function readHiddenFeeders(): string[] {
           </td>
           <td class="detail-cell" [title]="row.stockHealth?.tip ?? ''">
             @if (row.stockHealth; as h) {
-              <div class="cell-clamp cell-detail">{{ h.line }}</div>
+              <div class="cell-one-line cell-detail">{{ h.line }}</div>
             }
           </td>
           <td>@if (isAdmin()) { <button class="delete-btn" [class.confirming]="pendingDelete() === rowKey(row)" (click)="deleteRow(row)">{{ pendingDelete() === rowKey(row) ? 'Sure?' : '🗑️' }}</button> }</td>
@@ -157,8 +181,8 @@ function readHiddenFeeders(): string[] {
       @if (displayedRows().length) {
         <tfoot><tr>
           <td><strong>Total</strong></td><td><strong>{{ totals().rows }} rows</strong></td>
-          <td><strong>{{ totals().stock }}</strong></td><td><strong>{{ totals().sold7 }}</strong></td><td><strong>{{ totals().sold15 }}</strong></td><td><strong>{{ totals().sold30 }}</strong></td>
-          <td><strong>{{ totals().sold45 ?? 'n/a' }}</strong></td><td><strong>{{ totals().sold60 ?? 'n/a' }}</strong></td><td><strong>{{ totals().incoming }}</strong></td>
+          <td><strong>{{ qty(totals().stock) }}</strong></td><td class="g-start"><strong>{{ qty(totals().sold7) }}</strong></td><td><strong>{{ qty(totals().sold15) }}</strong></td><td><strong>{{ qty(totals().sold30) }}</strong></td>
+          <td><strong>{{ qty(totals().sold45) }}</strong></td><td class="g-end"><strong>{{ qty(totals().sold60) }}</strong></td><td><strong>{{ qty(totals().incoming) }}</strong></td>
           <td colspan="2"><strong>{{ totals().lowOrOut }} rows need action</strong></td><td></td>
         </tr></tfoot>
       }
@@ -269,6 +293,14 @@ export class InventoryPageComponent implements OnInit {
   readonly feederOpen = signal(false);
   /** Every feeder in the rows for the brand and product in view, A to Z. */
   readonly feederNames = computed(() => Array.from(new Set(this.brandRows().map((row) => row.warehouseName))).sort((a, b) => a.localeCompare(b)));
+  /**
+   * Column sizing. By default (colPx null) the browser sizes every column to its content on one line and Product takes
+   * the room left over, wrapping; the table only runs past the screen when the content cannot fit. Dragging any header
+   * edge switches to hand-set widths for all columns (taken from what is on screen at that moment), saved in this browser.
+   */
+  readonly colPx = signal<number[] | null>(readColumns());
+  readonly tableWidth = computed(() => { const widths = this.colPx(); return widths ? widths.reduce((sum, w) => sum + w, 0) + 4 : null; }); // + the 2px outer frame on each side
+  private resize: { pointerId: number; index: number; startX: number; startWidth: number } | null = null;
   readonly hiddenFeederCount = computed(() => this.feederNames().filter((name) => this.hiddenFeeders().includes(name)).length);
   readonly shownFeederCount = computed(() => this.feederNames().length - this.hiddenFeederCount());
   readonly sortKey = signal<keyof ProductRow | null>(null);
@@ -438,12 +470,73 @@ export class InventoryPageComponent implements OnInit {
     return this.lastDate() ? `Last updated: ${this.lastDate()}` : 'No report uploaded yet';
   }
 
-  /** The rows shown: the search applied, then sorted. While searching with no column sort, a product's warehouse rows stay together. */
+
+  colWidth(index: number): number | null { return this.colPx()?.[index] ?? null; }
+
+  /** Start dragging the right edge of column `index`. The first drag freezes every column at its exact on-screen width (unrounded, so nothing shifts or gets cut). */
+  startResize(event: PointerEvent, index: number) {
+    event.preventDefault();
+    event.stopPropagation();
+    const handle = event.target as HTMLElement;
+    let widths = this.colPx();
+    if (!widths) {
+      const table = handle.closest('table');
+      const measured = new Array<number>(COLUMN_COUNT).fill(COLUMN_MIN);
+      table?.querySelectorAll<HTMLElement>('thead th[data-col]').forEach((cell) => { measured[Number(cell.dataset['col'])] = Math.max(COLUMN_MIN, cell.getBoundingClientRect().width); });
+      widths = measured;
+      this.colPx.set(widths);
+    }
+    this.resize = { pointerId: event.pointerId, index, startX: event.clientX, startWidth: widths[index] };
+    handle.setPointerCapture(event.pointerId);
+  }
+
+  moveResize(event: PointerEvent) {
+    const resize = this.resize;
+    const widths = this.colPx();
+    if (!resize || !widths || event.pointerId !== resize.pointerId) return;
+    const next = [...widths];
+    next[resize.index] = Math.max(COLUMN_MIN, resize.startWidth + event.clientX - resize.startX);
+    this.colPx.set(next);
+  }
+
+  endResize(event: PointerEvent) {
+    if (!this.resize || event.pointerId !== this.resize.pointerId) return;
+    this.resize = null;
+    try { localStorage.setItem(COLUMNS_KEY, JSON.stringify(this.colPx())); } catch { /* storage blocked: widths just are not remembered */ }
+  }
+
+  /** Double-click any header edge: back to automatic sizing. */
+  resetColumns() {
+    this.colPx.set(null);
+    try { localStorage.removeItem(COLUMNS_KEY); } catch { /* ignore */ }
+  }
+
+  /** Feeder name without the word "Feeder" (every row has it); the full name stays in the hover tooltip. */
+  warehouseLabel(name: string): string {
+    const short = name.replace(/\bfeeder\b/gi, ' ').replace(/\s{2,}/g, ' ').replace(/^[\s,–-]+|[\s,–-]+$/g, '').trim();
+    return short || name;
+  }
+
+  /** Quantities in Indian grouping (1,23,456); a missing 45/60-day figure stays "n/a". */
+  qty(value: number | null | undefined) { return number(value); }
+
+  /** The brand at the start of the product name (as written in the name), coloured in the table; '' when the name does not start with it. */
+  brandPrefix(row: ProductRow): string {
+    const brand = brandFor(row);
+    if (brand === 'Unknown') return '';
+    return row.productName.toLowerCase().startsWith(brand.toLowerCase()) ? row.productName.slice(0, brand.length) : '';
+  }
+
+  /**
+   * The rows shown: the search applied, then sorted. A clicked column wins. While searching with no column sort,
+   * a product's warehouse rows stay together. Otherwise the most urgent rows come first (status order, then product, then warehouse).
+   */
   private filterRows() {
     let values = this.statusRows();
     const sortKey = this.sortKey();
     if (sortKey) values = [...values].sort((a, b) => (this.sortAsc() ? 1 : -1) * compareValues(a, b, sortKey));
     else if (this.query().trim()) values = [...values].sort(byProductThenWarehouse);
+    else values = [...values].sort((a, b) => urgencyRank(a) - urgencyRank(b) || byProductThenWarehouse(a, b));
     return values;
   }
 

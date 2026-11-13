@@ -675,8 +675,12 @@ tbody tr:not(.row-top):not(.row-low):hover {
 /* ---- Stock table: fixed column widths and one row height, so long text never stretches a column or a
    row (like a spreadsheet). Text that does not fit is cut with "..." and shown in full on hover. ---- */
 #productTable.stock-table {
-  table-layout: fixed;
-  min-width: 1000px;
+  table-layout: auto;  /* columns follow their content (see "Column sizing" below); fixed only after a hand resize */
+  min-width: 0;
+}
+
+#productTable.stock-table.manual {
+  table-layout: fixed; /* hand-set widths: the <col> widths and the table width come from inventory-page colPx */
 }
 
 #productTable.stock-table :is(th, td) {
@@ -708,9 +712,10 @@ tbody tr:not(.row-top):not(.row-low):hover {
   text-overflow: ellipsis;
 }
 
-.stock-table .col-product { width: 15%; }
+.stock-table .col-product { width: auto; } /* takes the room left after the measured columns */
 .stock-table .col-warehouse { width: 96px; }
-.stock-table .col-num { width: 50px; }
+.stock-table .col-num { width: 60px; } /* fits totals like 12,345 in bold */
+.stock-table .col-stock { width: 64px; } /* room for 5-digit stock with commas, e.g. 12,450 */
 .stock-table .col-incoming { width: 74px; }
 .stock-table .col-status { width: 160px; }
 .stock-table .col-action { width: 60px; }
@@ -768,6 +773,350 @@ tbody tr:not(.row-top):not(.row-low):hover {
 
 .stock-table td:last-child {
   text-align: center;
+}
+
+/* ---- Stock table polish: strong lines only where they carry meaning (under the header, around the
+   "Units sold" group, above the totals); thin lines everywhere else. Header in two rows: "Units sold"
+   spans 7d-60d. Product column stays pinned when the table scrolls sideways. No zebra stripes here:
+   the rows already carry hover and status colours. ---- */
+#productTable.stock-table {
+  --line-strong: color-mix(in srgb, var(--text) 45%, transparent);
+  --head-top-h: 30px; /* height of the first header row; the second row sticks right under it */
+  --pin-left: -24px;   /* minus .table-wrap's side padding, so the pinned column sits flush with the scroll edge */
+  --line-inner: color-mix(in srgb, var(--text) 24%, transparent); /* thin row/column lines, darker than --border */
+  border: 2px solid var(--line-strong); /* outer frame matches the strong inner lines */
+  font-family: Calibri, Carlito, "Segoe UI", Arial, sans-serif; /* Carlito = free Calibri look-alike (same letter widths) */
+}
+
+/* Calibri runs small, so the table text is a touch larger than the rest of the app */
+#productTable.stock-table tbody td,
+#productTable.stock-table tfoot td {
+  font-size: 13.5px;
+}
+
+#productTable.stock-table thead th {
+  font-size: 13.5px;
+}
+
+/* Thin inner lines, a step darker than elsewhere so rows and columns separate clearly */
+#productTable.stock-table :is(th, td) {
+  border-right-color: var(--line-inner);
+  border-bottom-color: var(--line-inner);
+}
+
+/* The second header row is never the table's corner: no rounded edge on its last cell */
+#productTable.stock-table thead tr.head-sub th:last-child {
+  border-radius: 0;
+}
+
+#productTable.stock-table thead th {
+  z-index: 2;
+  font-weight: 700;
+  vertical-align: middle;
+  border-bottom: 2px solid var(--line-strong);
+}
+
+#productTable.stock-table thead tr.head-top th.th-group {
+  height: var(--head-top-h);
+  box-sizing: border-box;
+  padding-top: 0;
+  padding-bottom: 0;
+  border-bottom: 1px solid var(--line-inner);
+  cursor: default;
+}
+
+#productTable.stock-table thead tr.head-sub th {
+  top: var(--head-top-h);
+}
+
+/* Every header is centred in its cell (the cells below keep text left, numbers right) */
+#productTable.stock-table thead th:is(.th-text, .th-num, .th-group, .th-static) { text-align: center; }
+#productTable.stock-table thead th:is(.th-static, .th-group) { cursor: default; }
+#productTable.stock-table thead th:is(.th-static, .th-group):hover { background: var(--surface-alt); }
+
+/* Strong lines: Product | Warehouse (the draggable line), and each side of the "Units sold" group (Stock's right edge and 60d's right edge) */
+#productTable.stock-table thead tr.head-top th:first-child,
+#productTable.stock-table :is(tbody, tfoot) td:first-child,
+#productTable.stock-table thead tr.head-top th:nth-child(3),
+#productTable.stock-table :is(tbody, tfoot) td:nth-child(3),
+#productTable.stock-table :is(th, td).g-end {
+  border-right: 2px solid var(--line-strong);
+}
+
+/* Centred data columns. Rule: a column that touches a strong separator line is centred top to bottom
+   (Stock and 7d on either side of the line before "Units sold", 60d and Incoming on either side of the
+   line after it), and so are Warehouse, the whole "Units sold" group, Status and What to do. Only Product stays left. */
+#productTable.stock-table :is(tbody, tfoot) td:is(:nth-child(n+2):nth-child(-n+11)) {
+  text-align: center;
+}
+
+#productTable.stock-table .status-cell .surge-badge {
+  margin-inline: auto;
+}
+
+/* Product column pinned on sideways scroll; it needs its own background so rows slide under it */
+#productTable.stock-table thead tr.head-top th:first-child {
+  left: var(--pin-left);
+  z-index: 3;
+}
+
+#productTable.stock-table :is(tbody, tfoot) td:first-child {
+  position: sticky;
+  left: var(--pin-left);
+  z-index: 1;
+  background: var(--surface);
+}
+
+#productTable.stock-table tbody tr:nth-child(even):not(:hover) {
+  background: none;
+}
+
+#productTable.stock-table tbody tr:hover td:first-child {
+  background: var(--surface-alt);
+}
+
+/* Totals row: strong line above, tinted like the header */
+#productTable.stock-table tfoot td,
+#productTable.stock-table tfoot td:first-child {
+  border-top: 2px solid var(--line-strong);
+  background: var(--surface-alt);
+}
+
+/* ---- Column sizing (automatic mode, no hand resize yet): every column shrinks to its content on one line
+   (width: 1% + nowrap) and Product alone takes the room left over, wrapping up to 3 lines. If even that
+   cannot fit, the table runs past the screen and scrolls sideways (Product stays pinned). ---- */
+#productTable.stock-table:not(.manual) col {
+  width: auto;
+}
+
+#productTable.stock-table:not(.manual) :is(th, td) {
+  width: 1%;
+  white-space: nowrap;
+}
+
+#productTable.stock-table:not(.manual) :is(thead tr.head-top th:first-child, tbody td:first-child, tfoot td:first-child) {
+  width: auto;
+  white-space: normal;
+}
+
+#productTable.stock-table:not(.manual) tbody td:first-child .cell-clamp {
+  min-width: 170px; /* Product never squeezed below this; past it the table scrolls instead */
+}
+
+/* Drag handle on every header's right edge (inventory-page startResize). Sits on the inside edge of each header (the cell clips overflow); shows an accent line on hover or drag. */
+#productTable.stock-table .col-resizer {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 4;
+  width: 8px;
+  cursor: col-resize;
+  touch-action: none;
+}
+
+#productTable.stock-table .col-resizer::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  right: 0;
+  width: 2px;
+  background: transparent;
+  transition: background-color 0.15s ease;
+}
+
+#productTable.stock-table .col-resizer:hover::after,
+#productTable.stock-table .col-resizer:active::after {
+  background: var(--accent);
+}
+
+/* One line, never wrapped: Warehouse, Status and What to do. Their columns are sized to the longest text in view (inventory-page colWidths) */
+.stock-table .cell-one-line {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Brand part of the product name, e.g. "Oicia" in "Oicia Spoon Set" */
+.stock-table .brand-name {
+  color: var(--accent);
+  font-weight: 600;
+}
+
+/* Quantities: zero is greyed so real numbers stand out; zero stock stays loud */
+.stock-table .qty-zero {
+  color: var(--text-muted);
+}
+
+.stock-table .qty-out {
+  color: var(--danger);
+  font-weight: 700;
+}
+
+/* ---- Sales tab tables: the same look as the Stock table (no drag-resize). Targeted by id, so the templates are
+   unchanged. Strong lines: outer frame, under the header, above totals, and right of the name column; thin darker
+   lines elsewhere. Every column is centred and fits its content on one line, except the name column (City, Product
+   or Month), which is left-aligned, wraps, and takes the spare width. The table scrolls sideways only if it cannot fit.
+   "[id]" and ":nth-child(n)" only raise specificity above the older per-table alignment rules. ---- */
+table:is(#feederCityTotals, #feederProductTable, #cityTable, #productCityTable, #productListTable, #productMonthsTable, #productMonthCityTable, #productMonthsBrandTable) {
+  --line-strong: color-mix(in srgb, var(--text) 45%, transparent);
+  --line-inner: color-mix(in srgb, var(--text) 24%, transparent);
+  table-layout: auto;
+  min-width: 0;
+  border: 2px solid var(--line-strong);
+  font-family: Calibri, Carlito, "Segoe UI", Arial, sans-serif;
+}
+
+table:is(#feederCityTotals, #feederProductTable, #cityTable, #productCityTable, #productListTable, #productMonthsTable, #productMonthCityTable, #productMonthsBrandTable)[id] :is(th, td):nth-child(n) {
+  width: 1%;
+  white-space: nowrap;
+  text-align: center;
+  vertical-align: middle;
+  font-size: 13.5px;
+  border-right: 1px solid var(--line-inner);
+  border-bottom-color: var(--line-inner);
+}
+
+table:is(#feederCityTotals, #feederProductTable, #cityTable, #productCityTable, #productListTable, #productMonthsTable, #productMonthCityTable, #productMonthsBrandTable) :is(th, td):last-child {
+  border-right: none;
+}
+
+table:is(#feederCityTotals, #feederProductTable, #cityTable, #productCityTable, #productListTable, #productMonthsTable, #productMonthCityTable, #productMonthsBrandTable) thead th {
+  font-weight: 700;
+  border-bottom: 2px solid var(--line-strong);
+}
+
+table:is(#feederCityTotals, #feederProductTable, #cityTable, #productCityTable, #productListTable, #productMonthsTable, #productMonthCityTable, #productMonthsBrandTable) tfoot td {
+  border-top: 2px solid var(--line-strong);
+  background: var(--surface-alt);
+}
+
+/* Name column: left, wraps, takes the spare width, strong line on its right (the header stays centred) */
+table#feederCityTotals[id][id] :is(th, td):nth-child(1):not([colspan]),
+table#feederProductTable[id][id] :is(th, td):nth-child(2):not([colspan]),
+table#cityTable[id][id] :is(th, td):nth-child(2):not([colspan]),
+table#productCityTable[id][id] :is(th, td):nth-child(2):not([colspan]),
+table#productListTable[id][id] :is(th, td):nth-child(2):not([colspan]),
+table#productMonthsTable[id][id] :is(th, td):nth-child(1):not([colspan]),
+table#productMonthCityTable[id][id] :is(th, td):nth-child(2):not([colspan]),
+table#productMonthsBrandTable[id][id] :is(th, td):nth-child(1):not([colspan]) {
+  width: auto;
+  white-space: normal;
+  border-right: 2px solid var(--line-strong);
+}
+
+table#feederCityTotals[id][id] :is(tbody, tfoot) td:nth-child(1),
+table#feederProductTable[id][id] :is(tbody, tfoot) td:nth-child(2),
+table#cityTable[id][id] :is(tbody, tfoot) td:nth-child(2),
+table#productCityTable[id][id] :is(tbody, tfoot) td:nth-child(2),
+table#productListTable[id][id] :is(tbody, tfoot) td:nth-child(2),
+table#productMonthsTable[id][id] :is(tbody, tfoot) td:nth-child(1),
+table#productMonthCityTable[id][id] :is(tbody, tfoot) td:nth-child(2),
+table#productMonthsBrandTable[id][id] :is(tbody, tfoot) td:nth-child(1) {
+  text-align: left;
+}
+
+/* City performance: city names are short, so City fits its content and the best-selling product column takes the
+   spare width instead (wrapping only if the screen is too narrow) */
+table#cityTable[id][id] :is(th, td):nth-child(2):not([colspan]) {
+  width: 1%;
+  white-space: nowrap;
+}
+
+table#cityTable[id][id] :is(th, td):nth-child(7) {
+  width: auto;
+  white-space: normal;
+}
+
+/* No zebra stripes (as on Stock); the City performance top/low tints stay */
+table:is(#feederCityTotals, #feederProductTable, #cityTable, #productCityTable, #productListTable, #productMonthsTable, #productMonthCityTable, #productMonthsBrandTable) tbody tr:nth-child(even):not(.row-top):not(.row-low):not(:hover) {
+  background: none;
+}
+
+/* Product list: brand in the accent colour, like the brand part of names on Stock */
+table#productListTable[id] tbody td:nth-child(3) {
+  color: var(--accent);
+  font-weight: 600;
+}
+
+/* ---- Profit and Advertising tables: the same look as Stock and Sales. Scoped to the two pages (the Profit tables
+   have no ids). Child combinators (">") keep it to each table's own rows, so the keyword breakdown table inside an
+   opened campaign row (.detail-table) and the opened row itself (colspan) are left as they were. ---- */
+:is(app-profit-page, app-campaign-page) table:not(.detail-table) {
+  --line-strong: color-mix(in srgb, var(--text) 45%, transparent);
+  --line-inner: color-mix(in srgb, var(--text) 24%, transparent);
+  table-layout: auto;
+  min-width: 0;
+  border: 2px solid var(--line-strong);
+  font-family: Calibri, Carlito, "Segoe UI", Arial, sans-serif;
+}
+
+:is(app-profit-page, app-campaign-page) table:not(.detail-table) > :is(thead, tbody, tfoot) > tr > :is(th, td):not([colspan]):nth-child(n),
+table:is(#brandTable, #campaignListTable)[id] > :is(thead, tbody, tfoot) > tr > :is(th, td).num:nth-child(n) {
+  width: 1%;
+  white-space: nowrap;
+  text-align: center;
+  vertical-align: middle;
+  font-size: 13.5px;
+  border-right: 1px solid var(--line-inner);
+  border-bottom-color: var(--line-inner);
+}
+
+:is(app-profit-page, app-campaign-page) table:not(.detail-table) > :is(thead, tbody, tfoot) > tr > :is(th, td):last-child {
+  border-right: none;
+}
+
+:is(app-profit-page, app-campaign-page) table:not(.detail-table) > thead > tr > th {
+  font-weight: 700;
+  border-bottom: 2px solid var(--line-strong);
+}
+
+:is(app-profit-page, app-campaign-page) table:not(.detail-table) > tfoot > tr > td {
+  border-top: 2px solid var(--line-strong);
+  background: var(--surface-alt);
+}
+
+/* Name column: left, wraps, takes the spare width, strong line on its right (header stays centred).
+   Profit: the first column (not the "Your numbers" table, whose first cell is an input). Advertising: Brand in the
+   brand table, Metric in the compare card, Campaign in the campaign list. */
+app-profit-page table:not(:has(> tbody > tr > td:first-child input)) > :is(thead, tbody, tfoot) > tr > :is(th, td):first-child:not([colspan]):nth-child(n),
+app-campaign-page .compare-card table > :is(thead, tbody, tfoot) > tr > :is(th, td):first-child:not([colspan]):nth-child(n),
+table#brandTable[id] > :is(thead, tbody, tfoot) > tr > :is(th, td):nth-child(2):not([colspan]):nth-child(n),
+table#campaignListTable[id] > :is(thead, tbody, tfoot) > tr > :is(th, td):nth-child(3):not([colspan]):nth-child(n) {
+  width: auto;
+  white-space: normal;
+  border-right: 2px solid var(--line-strong);
+}
+
+app-profit-page table:not(:has(> tbody > tr > td:first-child input)) > :is(tbody, tfoot) > tr > td:first-child:not([colspan]):nth-child(n),
+app-campaign-page .compare-card table > :is(tbody, tfoot) > tr > td:first-child:not([colspan]):nth-child(n),
+table#brandTable[id] > :is(tbody, tfoot) > tr > td:nth-child(2):not([colspan]):nth-child(n),
+table#campaignListTable[id] > :is(tbody, tfoot) > tr > td:nth-child(3):not([colspan]):nth-child(n) {
+  text-align: left;
+}
+
+/* A table with a totals row: its last body row is not the bottom edge, so no rounded corners there */
+/* (the repeated :nth-child(n) only outranks the Pro look's corner rule) */
+html table:has(> tfoot) > tbody > tr:last-child > td:nth-child(n):nth-child(n):nth-child(n) {
+  border-radius: 0;
+}
+
+/* No zebra stripes (top/low tints and the selected row tint stay) */
+:is(app-profit-page, app-campaign-page) table:not(.detail-table) > tbody > tr:nth-child(even):not(.row-top):not(.row-low):not(:hover) {
+  background: none;
+}
+
+/* The keyword breakdown inside an opened campaign row: drop the global 900px table minimum so it fits its box now
+   that the campaign list itself fits the screen */
+app-campaign-page .detail-table {
+  min-width: 0;
+}
+
+/* Campaign list: brand in the accent colour, like on Stock and Sales */
+table#campaignListTable[id] > tbody > tr:not(.detail-row) > td:nth-child(4) {
+  color: var(--accent);
+  font-weight: 600;
 }
 
 /* ---- Stock page: the list that drops down from the "Products Needing Urgent Action" card on hover or focus ---- */
@@ -2037,6 +2386,19 @@ tr.detail-row > td {
 
 @media (min-width: 1100px) {
   .table-wrap.table-wrap-page {
+    max-height: none;
+    overflow: visible;
+  }
+}
+
+/* Sales, Profit and Advertising: same as Stock. The top bar scrolls away with the page and each table shows all
+   its rows with the page scrolling, instead of scrolling inside its own short box; table headers stay pinned. */
+:is(app-sales-page, app-profit-page, app-campaign-page) > .topbar {
+  position: static;
+}
+
+@media (min-width: 1100px) {
+  :is(app-sales-page, app-profit-page, app-campaign-page) .table-wrap {
     max-height: none;
     overflow: visible;
   }
@@ -3739,4 +4101,28 @@ html[data-look="pro"] .win-item {
   border-color: var(--border);
   border-left: 3px solid var(--success);
   background: var(--surface);
+}
+/* Stock table header in the Pro look: dark, bold text on the tinted header (other tables keep the muted header) */
+html[data-look="pro"] #productTable.stock-table thead th {
+  color: var(--text);
+  background: var(--surface-alt);
+}
+
+/* Sales, Profit and Advertising table headers in the Pro look: dark, bold text on the tinted header (same as Stock) */
+html[data-look="pro"] :is(app-profit-page, app-campaign-page) table:not(.detail-table) > thead > tr > th,
+html[data-look="pro"] table:is(#feederCityTotals, #feederProductTable, #cityTable, #productCityTable, #productListTable, #productMonthsTable, #productMonthCityTable, #productMonthsBrandTable) thead th {
+  color: var(--text);
+  background: var(--surface-alt);
+}
+
+/* Overview: 2px borders on the four number cards and the four panels, dark enough to see; hover still turns them blue */
+html[data-look="pro"] .kpi-row .card,
+html[data-look="pro"] .overview-panels .overview-list {
+  border-width: 2px;
+  border-style: solid;
+  border-color: color-mix(in srgb, var(--text) 30%, transparent);
+}
+
+html[data-look="pro"] .kpi-row .overview-card-link:hover {
+  border-color: rgba(var(--accent-rgb), 0.6);
 }
