@@ -160,7 +160,6 @@ function campaignSection(store, brand, month) {
     adSpend: totals.adSpend,
     sales: totals.sales,
     roas: totals.roas,
-    roiPct: totals.roiPct,
     campaignCount: campaigns.length,
     bestCampaign: best ? { name: best.campaignName, roas: best.roas } : null,
   };

@@ -4,6 +4,7 @@ import { firstValueFrom, Observable } from 'rxjs';
 import {
   BrandUpload,
   CampaignBrandRow,
+  CampaignDailyPoint,
   CampaignDailyRow,
   CampaignPeriod,
   CampaignRow,
@@ -124,7 +125,7 @@ export class ApiService {
   }
 
   campaignData(periodKey?: string, brand?: string, sheetType?: CampaignSheetFilter) {
-    return this.get<{ date: string | null; periods: CampaignPeriod[]; periodKey: string | null; latestPeriodKey: string | null; campaigns: CampaignRow[]; brandSummaries: CampaignBrandRow[]; allBrands: string[] }>(`/api/campaign-analysis${this.campaignQuery(periodKey, brand, sheetType)}`);
+    return this.get<{ date: string | null; periods: CampaignPeriod[]; periodKey: string | null; latestPeriodKey: string | null; campaigns: CampaignRow[]; daily: CampaignDailyPoint[]; brandSummaries: CampaignBrandRow[]; allBrands: string[] }>(`/api/campaign-analysis${this.campaignQuery(periodKey, brand, sheetType)}`);
   }
 
   campaignSummary(periodKey: string, brand?: string, sheetType?: CampaignSheetFilter) {

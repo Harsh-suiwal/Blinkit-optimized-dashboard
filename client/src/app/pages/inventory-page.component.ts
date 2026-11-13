@@ -156,7 +156,7 @@ function readHiddenFeeders(): string[] {
         </colgroup>
         <!-- Two header rows: "Units sold" spans its five period columns, the other headers span both rows -->
         <thead><tr class="head-top">
-        <th rowspan="2" class="th-text" data-col="0" (click)="sortBy('productName')">Product {{ sortIndicator('productName') }}<span class="col-resizer" title="Drag to resize. Double-click to fit all columns again." (click)="$event.stopPropagation()" (dblclick)="resetColumns()" (pointerdown)="startResize($event, 0)" (pointermove)="moveResize($event)" (pointerup)="endResize($event)" (pointercancel)="endResize($event)"></span></th><th data-col="1" rowspan="2" class="th-text" (click)="sortBy('warehouseName')">Warehouse {{ sortIndicator('warehouseName') }}<span class="col-resizer" title="Drag to resize. Double-click to fit all columns again." (click)="$event.stopPropagation()" (dblclick)="resetColumns()" (pointerdown)="startResize($event, 1)" (pointermove)="moveResize($event)" (pointerup)="endResize($event)" (pointercancel)="endResize($event)"></span></th><th data-col="2" rowspan="2" class="th-num" (click)="sortBy('totalStockAvailable')">Stock {{ sortIndicator('totalStockAvailable') }}<span class="col-resizer" title="Drag to resize. Double-click to fit all columns again." (click)="$event.stopPropagation()" (dblclick)="resetColumns()" (pointerdown)="startResize($event, 2)" (pointermove)="moveResize($event)" (pointerup)="endResize($event)" (pointercancel)="endResize($event)"></span></th><th colspan="5" class="th-group g-start g-end">Units sold</th><th data-col="8" rowspan="2" class="th-num" (click)="sortBy('incomingInventory')">Incoming {{ sortIndicator('incomingInventory') }}<span class="col-resizer" title="Drag to resize. Double-click to fit all columns again." (click)="$event.stopPropagation()" (dblclick)="resetColumns()" (pointerdown)="startResize($event, 8)" (pointermove)="moveResize($event)" (pointerup)="endResize($event)" (pointercancel)="endResize($event)"></span></th><th data-col="9" rowspan="2" class="th-text th-static">Status<span class="col-resizer" title="Drag to resize. Double-click to fit all columns again." (click)="$event.stopPropagation()" (dblclick)="resetColumns()" (pointerdown)="startResize($event, 9)" (pointermove)="moveResize($event)" (pointerup)="endResize($event)" (pointercancel)="endResize($event)"></span></th><th data-col="10" rowspan="2" class="th-text th-static">What to do<span class="col-resizer" title="Drag to resize. Double-click to fit all columns again." (click)="$event.stopPropagation()" (dblclick)="resetColumns()" (pointerdown)="startResize($event, 10)" (pointermove)="moveResize($event)" (pointerup)="endResize($event)" (pointercancel)="endResize($event)"></span></th><th rowspan="2" class="th-static" data-col="11"></th>
+        <th rowspan="2" class="th-text" data-col="0" (click)="sortBy('productName')">Product {{ sortIndicator('productName') }}<span class="col-resizer" title="Drag to resize. Double-click to fit all columns again." (click)="$event.stopPropagation()" (dblclick)="resetColumns()" (pointerdown)="startResize($event, 0)" (pointermove)="moveResize($event)" (pointerup)="endResize($event)" (pointercancel)="endResize($event)"></span></th><th data-col="1" rowspan="2" class="th-text" (click)="sortBy('warehouseName')">Warehouse {{ sortIndicator('warehouseName') }}<span class="col-resizer" title="Drag to resize. Double-click to fit all columns again." (click)="$event.stopPropagation()" (dblclick)="resetColumns()" (pointerdown)="startResize($event, 1)" (pointermove)="moveResize($event)" (pointerup)="endResize($event)" (pointercancel)="endResize($event)"></span></th><th data-col="2" rowspan="2" class="th-num" (click)="sortBy('totalStockAvailable')">Stock {{ sortIndicator('totalStockAvailable') }}<span class="col-resizer" title="Drag to resize. Double-click to fit all columns again." (click)="$event.stopPropagation()" (dblclick)="resetColumns()" (pointerdown)="startResize($event, 2)" (pointermove)="moveResize($event)" (pointerup)="endResize($event)" (pointercancel)="endResize($event)"></span></th><th colspan="5" class="th-group g-start g-end">Units sold</th><th data-col="8" rowspan="2" class="th-num" (click)="sortBy('incomingInventory')">Incoming {{ sortIndicator('incomingInventory') }}<span class="col-resizer" title="Drag to resize. Double-click to fit all columns again." (click)="$event.stopPropagation()" (dblclick)="resetColumns()" (pointerdown)="startResize($event, 8)" (pointermove)="moveResize($event)" (pointerup)="endResize($event)" (pointercancel)="endResize($event)"></span></th><th data-col="9" rowspan="2" class="th-text th-static th-menu" (contextmenu)="openSurgeMenu($event)" (mouseenter)="showSurgeTip($event)" (mouseleave)="surgeTip.set(null)">Status<span class="col-resizer" title="Drag to resize. Double-click to fit all columns again." (click)="$event.stopPropagation()" (dblclick)="resetColumns()" (pointerdown)="startResize($event, 9)" (pointermove)="moveResize($event)" (pointerup)="endResize($event)" (pointercancel)="endResize($event)"></span></th><th data-col="10" rowspan="2" class="th-text th-static">What to do<span class="col-resizer" title="Drag to resize. Double-click to fit all columns again." (click)="$event.stopPropagation()" (dblclick)="resetColumns()" (pointerdown)="startResize($event, 10)" (pointermove)="moveResize($event)" (pointerup)="endResize($event)" (pointercancel)="endResize($event)"></span></th><th rowspan="2" class="th-static" data-col="11"></th>
         </tr><tr class="head-sub">
         <th data-col="3" class="th-num g-start" (click)="sortBy('unitsSold7')">7d {{ sortIndicator('unitsSold7') }}<span class="col-resizer" title="Drag to resize. Double-click to fit all columns again." (click)="$event.stopPropagation()" (dblclick)="resetColumns()" (pointerdown)="startResize($event, 3)" (pointermove)="moveResize($event)" (pointerup)="endResize($event)" (pointercancel)="endResize($event)"></span></th><th data-col="4" class="th-num" (click)="sortBy('unitsSold15')">15d {{ sortIndicator('unitsSold15') }}<span class="col-resizer" title="Drag to resize. Double-click to fit all columns again." (click)="$event.stopPropagation()" (dblclick)="resetColumns()" (pointerdown)="startResize($event, 4)" (pointermove)="moveResize($event)" (pointerup)="endResize($event)" (pointercancel)="endResize($event)"></span></th><th data-col="5" class="th-num" (click)="sortBy('unitsSold30')">30d {{ sortIndicator('unitsSold30') }}<span class="col-resizer" title="Drag to resize. Double-click to fit all columns again." (click)="$event.stopPropagation()" (dblclick)="resetColumns()" (pointerdown)="startResize($event, 5)" (pointermove)="moveResize($event)" (pointerup)="endResize($event)" (pointercancel)="endResize($event)"></span></th><th data-col="6" class="th-num" (click)="sortBy('unitsSold45')">45d {{ sortIndicator('unitsSold45') }}<span class="col-resizer" title="Drag to resize. Double-click to fit all columns again." (click)="$event.stopPropagation()" (dblclick)="resetColumns()" (pointerdown)="startResize($event, 6)" (pointermove)="moveResize($event)" (pointerup)="endResize($event)" (pointercancel)="endResize($event)"></span></th><th data-col="7" class="th-num g-end" (click)="sortBy('unitsSold60')">60d {{ sortIndicator('unitsSold60') }}<span class="col-resizer" title="Drag to resize. Double-click to fit all columns again." (click)="$event.stopPropagation()" (dblclick)="resetColumns()" (pointerdown)="startResize($event, 7)" (pointermove)="moveResize($event)" (pointerup)="endResize($event)" (pointercancel)="endResize($event)"></span></th>
       </tr></thead><tbody>
@@ -165,7 +165,7 @@ function readHiddenFeeders(): string[] {
           <td class="status-cell">
             @if (row.stockHealth; as h) {
               <span class="status-pill" [class]="'status-' + h.key" [title]="h.tip">{{ h.label }}</span>
-              @if (h.surgeBadge) { <span class="surge-badge" [title]="h.surgeLine ?? ''">{{ h.surgeBadge }}</span> }
+              @if (showSurge() && h.surgeBadge) { <span class="surge-badge" [title]="h.surgeLine ?? ''">{{ h.surgeBadge }}</span> }
             } @else {
               <span class="status-pill" [class.status-ok]="row.stockStatus === 'ok'" [class.status-low]="row.stockStatus === 'low'" [class.status-out]="row.stockStatus === 'out'">{{ row.stockStatus === 'ok' ? 'OK' : row.stockStatus === 'low' ? 'Low' : 'Out' }}</span>
             }
@@ -189,6 +189,13 @@ function readHiddenFeeders(): string[] {
       </table>
       @if (!displayedRows().length) { <p class="muted">{{ emptyMessage() }}</p> }
     </section>
+    @if (surgeMenu(); as m) {
+      <div class="ad-menu" role="menu" [style.left.px]="m.x" [style.top.px]="m.y" (click)="$event.stopPropagation()" (dblclick)="$event.stopPropagation()" (contextmenu)="$event.preventDefault()">
+        <div class="ad-menu-title">Surge</div>
+        <label><input type="checkbox" [checked]="showSurge()" (change)="setShowSurge($any($event.target).checked)"> Show surge</label>
+      </div>
+    }
+    @if (surgeTip(); as hint) { <div class="ad-tip" role="tooltip" [style.left.px]="hint.x" [style.top.px]="hint.y">Surge</div> }
     @if (clearOpen()) {
       <app-clear-data-dialog scope="inventory" note="Upload history (used for 45/60-day sold) is kept." [brands]="brandNames()" [initialBrand]="ui.focusedBrand()" (confirm)="clearData($event)" (cancel)="clearOpen.set(false)" />
     }
@@ -255,6 +262,11 @@ export class InventoryPageComponent implements OnInit {
   });
   /** Which group's tree is pinned open by a click ('' = none); hovering shows it too. */
   readonly groupOpen = signal('');
+  /** The surge badge under the status pill is hidden until ticked in the Status header's right-click menu. Not saved: a reload hides it again. */
+  readonly showSurge = signal(false);
+  /** That menu, where it opened. Once its tick is changed (dirty) it closes only on a double click or Esc. */
+  readonly surgeMenu = signal<{ x: number; y: number; dirty: boolean } | null>(null);
+  readonly surgeTip = signal<{ x: number; y: number } | null>(null);
   /**
    * The chips, most urgent first, each with its row count in the rows in view. Statuses that belong to a group
    * (Awaiting Incoming and Out of Stock are both zero stock) sit under one parent chip as `children`.
@@ -361,9 +373,40 @@ export class InventoryPageComponent implements OnInit {
     const target = event.target as HTMLElement | null;
     if (this.feederOpen() && !target?.closest('.feeder-picker')) this.feederOpen.set(false);
     if (this.groupOpen() && !target?.closest('.status-group')) this.groupOpen.set('');
+    if (this.surgeMenu() && !this.surgeMenu()?.dirty) this.surgeMenu.set(null);
   }
   @HostListener('document:keydown.escape')
-  closeFeederMenuOnEscape() { this.feederOpen.set(false); this.groupOpen.set(''); }
+  closeFeederMenuOnEscape() { this.feederOpen.set(false); this.groupOpen.set(''); this.surgeMenu.set(null); }
+  @HostListener('document:dblclick')
+  closeSurgeMenu() { if (this.surgeMenu()) this.surgeMenu.set(null); }
+
+  // --- Status header: "Surge" tooltip and the right-click menu with the "Show surge" tick ---
+  openSurgeMenu(event: MouseEvent) {
+    event.preventDefault();
+    event.stopPropagation();
+    this.surgeTip.set(null);
+    const zoom = this.cssZoom(event.currentTarget);
+    const x = Math.max(8, Math.min(event.clientX, window.innerWidth - 240)) / zoom;
+    const y = Math.max(8, Math.min(event.clientY, window.innerHeight - 110)) / zoom;
+    this.surgeMenu.set({ x, y, dirty: false });
+  }
+
+  setShowSurge(on: boolean) {
+    this.showSurge.set(on);
+    this.surgeMenu.update((current) => (current ? { ...current, dirty: true } : current));
+  }
+
+  showSurgeTip(event: MouseEvent) {
+    const box = (event.currentTarget as HTMLElement).getBoundingClientRect();
+    const zoom = this.cssZoom(event.currentTarget);
+    this.surgeTip.set({ x: Math.round((box.left + box.width / 2) / zoom), y: Math.round((box.top - 6) / zoom) });
+  }
+
+  /** Presentation mode zooms the page; screen positions must be divided by that zoom before they are used as CSS px. */
+  private cssZoom(target: EventTarget | null) {
+    const zoom = (target as (Element & { currentCSSZoom?: number }) | null)?.currentCSSZoom;
+    return typeof zoom === 'number' && zoom > 0 ? zoom : 1;
+  }
   sortBy(key: keyof ProductRow) { this.sortAsc.set(this.sortKey() === key ? !this.sortAsc() : true); this.sortKey.set(key); }
   sortIndicator(key: keyof ProductRow) { return this.sortKey() === key ? (this.sortAsc() ? '↑' : '↓') : ''; }
   /** Downloads through the app so a failure shows a message instead of raw JSON. The Stock sheet is limited to the brand picked in the sidebar. */

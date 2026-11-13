@@ -4126,3 +4126,512 @@ html[data-look="pro"] .overview-panels .overview-list {
 html[data-look="pro"] .kpi-row .overview-card-link:hover {
   border-color: rgba(var(--accent-rgb), 0.6);
 }
+
+
+/* ==========================================================================================================
+   Advertising page (Nov 2026): cards in Blinkit's order, daily trend chart with a Best / Needs Attention legend,
+   campaign table with hidden edge columns, right-click menus, adjustable column widths and a pinned name column.
+   Kept at the end of the file so it outranks the Pro-look rules above.
+   ========================================================================================================== */
+
+/* Cards: always one row of seven. Sizes follow the width of the card row itself (cqw = 1% of it), so the numbers
+   shrink with the screen and with the sidebar open, and never break onto a second line. */
+html app-campaign-page .cards.ad-kpis {
+  container-type: inline-size;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: clamp(6px, 0.8vw, 16px);
+}
+
+html app-campaign-page .ad-kpis .card {
+  min-width: 0;
+  padding-left: clamp(6px, 0.9cqw, 16px);
+  padding-right: clamp(6px, 0.9cqw, 16px);
+}
+
+html app-campaign-page .ad-kpis .card-label,
+html app-campaign-page .ad-kpis .card-value {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  overflow-wrap: normal;
+}
+
+html app-campaign-page .ad-kpis .card-label {
+  font-size: clamp(10px, 0.95cqw, 13px);
+}
+
+html app-campaign-page .ad-kpis .card-value {
+  font-size: clamp(12px, 1.7cqw, 26px);
+}
+
+/* Phones: seven across is unreadable, so the cards wrap there */
+@media (max-width: 640px) {
+  html app-campaign-page .cards.ad-kpis {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  html app-campaign-page .ad-kpis .card-value {
+    font-size: 20px;
+  }
+}
+
+/* "Showing 3 of 15 ads": the cards and chart are following the ticked ads */
+.ad-scope-note {
+  margin: 14px 24px -8px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--accent);
+}
+
+/* ---- Trend chart ---- */
+.ad-trend {
+  margin: 16px 24px 0;
+  padding: 14px 16px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface);
+  color: var(--text);
+}
+
+.ad-trend-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 12px;
+  margin-bottom: 6px;
+}
+
+.ad-trend-head .section-title {
+  margin: 0;
+}
+
+.ad-trend-pills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.ad-pill {
+  padding: 4px 12px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--text-muted);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.ad-pill:hover {
+  color: var(--text);
+}
+
+.ad-pill.active {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: #fff;
+}
+
+.ad-trend-body {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(200px, 280px);
+  gap: 18px;
+  align-items: stretch;
+}
+
+.ad-trend-chart {
+  min-width: 0;
+}
+
+/* The plot box. The line and grid are an SVG stretched to fill it; the axis labels and the day dots are ordinary
+   elements placed by percentage, so their size never changes with the width of the page. */
+.ad-plot {
+  position: relative;
+  height: clamp(130px, 13vw, 190px);
+  margin: 10px 24px 26px 54px;
+}
+
+.ad-plot svg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+}
+
+.ad-grid {
+  stroke: color-mix(in srgb, var(--text) 12%, transparent);
+  stroke-width: 1;
+  vector-effect: non-scaling-stroke;
+}
+
+.ad-line {
+  fill: none;
+  stroke: var(--accent);
+  stroke-width: 2.5;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+  vector-effect: non-scaling-stroke;
+}
+
+.ad-axis {
+  position: absolute;
+  font-size: 11px;
+  line-height: 1;
+  white-space: nowrap;
+  color: var(--text-muted);
+}
+
+.ad-axis-y {
+  right: 100%;
+  margin-right: 8px;
+  transform: translateY(-50%);
+}
+
+.ad-axis-x {
+  top: 100%;
+  margin-top: 9px;
+  transform: translateX(-50%);
+}
+
+.ad-dot {
+  position: absolute;
+  width: 9px;
+  height: 9px;
+  margin: -4.5px 0 0 -4.5px;
+  border: 2px solid var(--accent);
+  border-radius: 50%;
+  background: var(--surface);
+}
+
+.ad-dot:hover {
+  background: var(--accent);
+}
+
+/* Best campaign / Needs attention: a small legend beside the chart (full name on hover) */
+.ad-trend-side {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 20px;
+  min-width: 0;
+  padding-left: 18px;
+  border-left: 1px solid var(--border);
+}
+
+.ad-side-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.ad-side-item .dot {
+  flex: none;
+}
+
+.ad-side-text {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.ad-side-label {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-muted);
+}
+
+.ad-side-name {
+  overflow: hidden;
+  font-size: 14px;
+  font-weight: 600;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.ad-side-value {
+  font-size: 18px;
+  font-variant-numeric: tabular-nums;
+}
+
+.ad-good {
+  color: var(--success);
+}
+
+.ad-bad {
+  color: var(--danger);
+}
+
+@media (max-width: 900px) {
+  .ad-trend-body {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .ad-trend-side {
+    flex-direction: row;
+    flex-wrap: wrap;
+    padding: 12px 0 0;
+    border-top: 1px solid var(--border);
+    border-left: none;
+  }
+
+  .ad-side-item {
+    flex: 1 1 220px;
+  }
+}
+
+/* Selection bar: count, the Apply tick, Clear */
+.ad-apply {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13.5px;
+  cursor: pointer;
+}
+
+/* ---- Campaign table ---- */
+
+/* The tick-box column stays in the page while hidden, so the column rules above (Campaign = 3rd, Brand = 4th) hold */
+table#campaignListTable .col-hidden {
+  display: none;
+}
+
+/* Edge cells: the arrow that opens the tick-box column (left) and the optional columns (right) */
+table#campaignListTable[id] > thead > tr > th.ad-edge:nth-child(n) {
+  min-width: 40px;
+  padding-left: 4px;
+  padding-right: 4px;
+  font-size: 15px;
+  font-weight: 700;
+  line-height: 1;
+  text-align: center;
+  user-select: none;
+}
+
+table#campaignListTable > thead > tr > th.ad-edge:hover {
+  color: var(--accent);
+}
+
+table#campaignListTable th.ad-edge-left,
+table#campaignListTable th.ad-edge-right.open {
+  cursor: w-resize;
+}
+
+table#campaignListTable th.ad-edge-right,
+table#campaignListTable th.ad-edge-left.open {
+  cursor: e-resize;
+}
+
+/* Fixed widths for the two narrow columns, so the pinned offsets below are exact */
+table#campaignListTable[id] > :is(thead, tbody) > tr > :is(th, td).select-col:nth-child(n) {
+  width: 34px;
+  min-width: 34px;
+  max-width: 34px;
+  padding-left: 0;
+  padding-right: 0;
+  text-align: center;
+}
+
+table#campaignListTable[id] > :is(thead, tbody) > tr > :is(th, td):nth-child(2):not([colspan]):nth-child(n) {
+  width: 40px;
+  min-width: 40px;
+  max-width: 40px;
+  padding-left: 4px;
+  padding-right: 4px;
+}
+
+/* Pinned on sideways scroll: tick box, row number and campaign name (the header row is already pinned on the way down).
+   Below 1100px the table scrolls inside .table-wrap, so --ad-pin is minus that box's side padding (flush with its
+   edge, as on Stock). From 1100px the whole page scrolls instead, so the cells pin just right of the sidebar, or at
+   the screen edge when the sidebar is collapsed or in presentation mode. */
+app-campaign-page .table-wrap {
+  --ad-pin: -24px;
+}
+
+@media (min-width: 1100px) {
+  app-campaign-page .table-wrap {
+    --ad-pin: var(--sidebar-width);
+  }
+
+  .main-content.sidebar-collapsed app-campaign-page .table-wrap,
+  .main-content.presenting app-campaign-page .table-wrap {
+    --ad-pin: 0px;
+  }
+}
+
+table#campaignListTable > tbody > tr:not(.detail-row) > td:nth-child(-n + 3) {
+  position: sticky;
+  z-index: 2;
+  background: var(--surface);
+}
+
+table#campaignListTable > thead > tr > th:nth-child(-n + 3) {
+  z-index: 4;
+}
+
+table#campaignListTable > :is(thead, tbody) > tr > :is(th, td):nth-child(1):not([colspan]),
+table#campaignListTable > :is(thead, tbody) > tr > :is(th, td):nth-child(2):not([colspan]) {
+  left: var(--ad-pin);
+}
+
+table#campaignListTable > :is(thead, tbody) > tr > :is(th, td):nth-child(3):not([colspan]) {
+  left: calc(var(--ad-pin) + 40px);
+}
+
+table#campaignListTable.has-select > :is(thead, tbody) > tr > :is(th, td):nth-child(2):not([colspan]) {
+  left: calc(var(--ad-pin) + 34px);
+}
+
+table#campaignListTable.has-select > :is(thead, tbody) > tr > :is(th, td):nth-child(3):not([colspan]) {
+  left: calc(var(--ad-pin) + 74px);
+}
+
+/* Pinned cells need a solid background so the rows sliding under them never show through. The tints are layered on
+   top, twice, because elsewhere in the row both the row and its cells carry the tint. */
+table#campaignListTable > tbody > tr:not(.detail-row):hover > td:nth-child(-n + 3) {
+  background: var(--surface-alt);
+}
+
+table#campaignListTable > tbody > tr.row-top > td:nth-child(-n + 3) {
+  background: linear-gradient(rgba(var(--success-rgb), 0.09), rgba(var(--success-rgb), 0.09)),
+    linear-gradient(rgba(var(--success-rgb), 0.09), rgba(var(--success-rgb), 0.09)), var(--surface);
+}
+
+table#campaignListTable > tbody > tr.row-top:hover > td:nth-child(-n + 3) {
+  background: linear-gradient(rgba(var(--success-rgb), 0.16), rgba(var(--success-rgb), 0.16)),
+    linear-gradient(rgba(var(--success-rgb), 0.16), rgba(var(--success-rgb), 0.16)), var(--surface);
+}
+
+table#campaignListTable > tbody > tr.row-low > td:nth-child(-n + 3) {
+  background: linear-gradient(rgba(var(--danger-rgb), 0.09), rgba(var(--danger-rgb), 0.09)),
+    linear-gradient(rgba(var(--danger-rgb), 0.09), rgba(var(--danger-rgb), 0.09)), var(--surface);
+}
+
+table#campaignListTable > tbody > tr.row-low:hover > td:nth-child(-n + 3) {
+  background: linear-gradient(rgba(var(--danger-rgb), 0.16), rgba(var(--danger-rgb), 0.16)),
+    linear-gradient(rgba(var(--danger-rgb), 0.16), rgba(var(--danger-rgb), 0.16)), var(--surface);
+}
+
+table#campaignListTable > tbody > tr.row-selected:not(.row-top):not(.row-low) > td:nth-child(-n + 3) {
+  background: linear-gradient(rgba(var(--accent-rgb), 0.1), rgba(var(--accent-rgb), 0.1)), var(--surface);
+}
+
+/* A ticked ad is marked on every cell, whatever its tier tint */
+table#campaignListTable > tbody > tr.row-selected > td {
+  box-shadow: inset 0 0 0 9999px rgba(var(--accent-rgb), 0.14);
+}
+
+/* Brand Performance: tick box and brand name pinned the same way */
+table#brandTable[id] > :is(thead, tbody) > tr > :is(th, td):first-child:nth-child(n) {
+  width: 34px;
+  min-width: 34px;
+  max-width: 34px;
+  padding-left: 0;
+  padding-right: 0;
+  text-align: center;
+}
+
+table#brandTable > tbody > tr > td:nth-child(-n + 2) {
+  position: sticky;
+  z-index: 2;
+  background: var(--surface);
+}
+
+table#brandTable > thead > tr > th:nth-child(-n + 2) {
+  z-index: 4;
+}
+
+table#brandTable > :is(thead, tbody) > tr > :is(th, td):nth-child(1) {
+  left: var(--ad-pin);
+}
+
+table#brandTable > :is(thead, tbody) > tr > :is(th, td):nth-child(2) {
+  left: calc(var(--ad-pin) + 34px);
+}
+
+table#brandTable > tbody > tr:hover > td:nth-child(-n + 2),
+table#brandTable > tbody > tr.row-selected > td:nth-child(-n + 2) {
+  background: var(--surface-alt);
+}
+
+/* Drag the line at the right of a header to resize its column (double-click the line to reset) */
+table#campaignListTable .col-resize {
+  position: absolute;
+  top: 0;
+  right: 0;
+  z-index: 1;
+  width: 7px;
+  height: 100%;
+  cursor: col-resize;
+}
+
+table#campaignListTable .col-resize:hover,
+table#campaignListTable .col-resize:active {
+  background: rgba(var(--accent-rgb), 0.35);
+}
+
+/* A column with a dragged width cuts its text with "..." so it can be made narrower than its content.
+   !important: the name-column rule above sets white-space with a longer selector. */
+table#campaignListTable :is(th, td).ad-clip {
+  overflow: hidden;
+  white-space: nowrap !important;
+  text-overflow: ellipsis;
+}
+
+/* ---- Right-click menus and the small header tooltip (fixed, so the table's scroll box never cuts them) ---- */
+.ad-menu {
+  position: fixed;
+  z-index: 300;
+  min-width: 210px;
+  padding: 8px 0;
+  border: 1px solid color-mix(in srgb, var(--text) 24%, transparent);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--text);
+  box-shadow: 0 12px 28px -8px rgba(31, 20, 60, 0.35);
+  font-size: 13px;
+}
+
+.ad-menu label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 14px;
+  cursor: pointer;
+}
+
+.ad-menu label:hover {
+  background: var(--surface-alt);
+}
+
+.ad-menu-title {
+  padding: 2px 14px 4px;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-muted);
+}
+
+.ad-tip {
+  position: fixed;
+  z-index: 310;
+  padding: 3px 8px;
+  border-radius: 5px;
+  background: var(--text);
+  color: var(--bg);
+  font-size: 11px;
+  font-weight: 500;
+  white-space: nowrap;
+  pointer-events: none;
+  transform: translate(-50%, -100%);
+}
+
+/* Stock: the Status header has a right-click menu ("Show surge"), so it shows a pointer like the sortable headers.
+   The menu and its tooltip reuse .ad-menu and .ad-tip above. */
+#productTable.stock-table thead th.th-static.th-menu {
+  cursor: pointer;
+}

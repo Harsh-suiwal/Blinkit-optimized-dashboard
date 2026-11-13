@@ -120,7 +120,6 @@ export interface CampaignMetrics {
   indirectSales: number;
   roas: number | null;
   directRoas: number | null;
-  roiPct: number | null;
   rosPerUnit: number | null;
   cpm: number | null;
   impressions: number;
@@ -157,12 +156,22 @@ export interface CampaignDailyRow extends CampaignMetrics {
   date: string;
 }
 
+/** One campaign on one day, for the Advertising trend chart. `key` is sheetType|campaignId (the campaign list's row key). */
+export interface CampaignDailyPoint {
+  key: string;
+  date: string;
+  adSpend: number;
+  sales: number;
+  impressions: number;
+  atc: number;
+  qtySold: number;
+}
+
 export interface CampaignSummary {
   totalAdSpend: number;
   totalSales: number;
   overallRoas: number | null;
   directRoas: number | null;
-  roiPct: number | null;
   totalUnits: number;
   totalCampaigns: number;
   bestCampaign: { name: string; roas: number } | null;
@@ -288,7 +297,6 @@ export interface BrandOverview {
     adSpend: number;
     sales: number;
     roas: number | null;
-    roiPct: number | null;
     campaignCount: number;
     bestCampaign: { name: string; roas: number } | null;
   } | null;

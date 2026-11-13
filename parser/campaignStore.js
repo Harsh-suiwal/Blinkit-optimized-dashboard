@@ -213,7 +213,7 @@ function addRow(t, row) {
 }
 
 /**
- * Turns summed raw totals into display metrics. Ratios (ROAS, ROI, CPM) are
+ * Turns summed raw totals into display metrics. Ratios (ROAS, CPM) are
  * always recomputed from the sums - never averaged from per-row ratios.
  */
 function finalizeTotals(t) {
@@ -226,7 +226,6 @@ function finalizeTotals(t) {
     indirectSales: r2(t.indirectSales),
     roas: t.adSpend > 0 ? r2(sales / t.adSpend) : null,
     directRoas: t.adSpend > 0 ? r2(t.directSales / t.adSpend) : null,
-    roiPct: t.adSpend > 0 ? Math.round(((sales - t.adSpend) / t.adSpend) * 1000) / 10 : null,
     rosPerUnit: qtySold > 0 ? r2(sales / qtySold) : null,
     cpm: t.impressions > 0 ? r2((t.adSpend / t.impressions) * 1000) : null,
     impressions: t.impressions,
@@ -335,6 +334,26 @@ function getCampaignDetail(store, { periodKey, sheetType, campaignId }) {
 }
 
 /**
+ * One entry per campaign per day, for the Advertising trend chart. `key` matches the campaign list's row key
+ * (sheetType|campaignId), so the page can add up only the campaigns it is showing or has ticked.
+ */
+function aggregateDailyByCampaign(rows) {
+  const groups = new Map();
+  for (const row of rows) {
+    const key = `${row.sheetType}|${row.campaignId}`;
+    const id = `${key}|${row.date}`;
+    if (!groups.has(id)) groups.set(id, { key, date: row.date, totals: emptyTotals() });
+    addRow(groups.get(id).totals, row);
+  }
+  return Array.from(groups.values())
+    .map((g) => {
+      const t = finalizeTotals(g.totals);
+      return { key: g.key, date: g.date, adSpend: t.adSpend, sales: t.sales, impressions: t.impressions, atc: t.atc, qtySold: t.qtySold };
+    })
+    .sort((a, b) => a.date.localeCompare(b.date));
+}
+
+/**
  * Tags campaigns 'top' (top 25% by ROAS), 'low' (bottom 25%) or 'mid'.
  * Campaigns with no spend have no real ROAS and are left out of the ranking.
  */
@@ -373,6 +392,7 @@ module.exports = {
   aggregateTotals,
   aggregateByCampaign,
   aggregateByBrand,
+  aggregateDailyByCampaign,
   getCampaignDetail,
   listCampaignBrands,
 };

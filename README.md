@@ -1,6 +1,6 @@
 # 📊 Blinkit Optimized Dashboard (v6)
 
-A full-stack analytics dashboard for **Blinkit** sellers to track inventory health, city-level sales performance, and advertising campaign ROI — all from a single authenticated interface.
+A full-stack analytics dashboard for **Blinkit** sellers to track inventory health, city-level sales performance, and advertising campaign performance (ROAS) — all from a single authenticated interface.
 
 Built with **Node.js / Express** on the backend and **Angular 20** on the frontend, backed by **Supabase** (PostgreSQL) for user authentication, role management, and persistent key-value report storage.
 
@@ -58,7 +58,7 @@ Built with **Node.js / Express** on the backend and **Angular 20** on the fronte
 |---|---|
 | **Inventory** | Upload Blinkit "Stock On Hand" `.xlsx` reports → parsed product-warehouse grid with stock status (OK / Low / Out), units sold across 7/15/30/45/60-day windows, incoming inventory, search, sort, delete + undo |
 | **Sales Performance** | Upload order-level sales `.xlsx` → city-level aggregation with revenue, units, order count, avg order value, best-selling product per city, performance tiers, trend comparison vs previous upload, per-product & per-brand breakdowns |
-| **Campaign Analysis** | Upload advertising campaign `.xlsx` → multi-period campaign table with ad spend, sales, ROAS, ROI %, ROS/unit, impressions, ATC, qty sold, performance tiers, period selector |
+| **Campaign Analysis** | Upload advertising campaign `.xlsx` → multi-period campaign table with ad spend, impressions, ATC, qty sold, sales, ROAS, new users, a daily trend chart, performance tiers, period selector |
 | **Authentication** | Session-based login with bcrypt-hashed passwords stored in Supabase, role-based access (`admin` / `viewer`), admin-only uploads & deletes |
 | **Export** | Download individual or combined multi-sheet `.xlsx` workbooks covering any/all of the three modules |
 | **Undo / Restore** | Every delete operation returns the data needed for Ctrl+Z restoration — including trend-history snapshots for sales |
@@ -305,7 +305,7 @@ blinkit-dashboard/
 1. **Upload** a campaign performance `.xlsx` report from the Campaign tab.
 2. `parser/parseCampaign.js` detects **period blocks** within the sheet (e.g., "June 2025", "July 2025") and extracts campaign rows for each.
 3. Campaigns are stored per-period in `parser/campaignStore.js`, enabling **multi-period comparison** via a dropdown.
-4. Key metrics: Ad Spend, Sales, ROAS, ROI %, ROS/Unit, Impressions, ATC (Add to Cart), Qty Sold.
+4. Key metrics: Ad Spend, Impressions, ATC (Add to Cart), Qty Sold, Sales, ROAS, New Users. (Advertising ROI was removed in Nov 2026: it only subtracted ad spend, so it repeated ROAS and looked like profit. Real profit and its ROI are on the Profit tab.)
 5. Campaigns are assigned **performance tiers** based on ROAS.
 
 ### The 45 / 60-Day Columns
@@ -391,7 +391,7 @@ The authenticated dashboard is an **Angular 20** single-page application served 
 |-------|-----------|-------------|
 | `/app/inventory` | `InventoryPageComponent` | Inventory dashboard (default) |
 | `/app/sales-performance` | `SalesPageComponent` | Sales performance analytics |
-| `/app/campaign-analysis` | `CampaignPageComponent` | Campaign ROI analysis |
+| `/app/campaign-analysis` | `CampaignPageComponent` | Campaign (ROAS) analysis |
 
 **Key architectural decisions:**
 

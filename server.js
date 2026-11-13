@@ -38,6 +38,7 @@ const {
   aggregateTotals: aggregateCampaignTotals,
   aggregateByCampaign: aggregateCampaigns,
   aggregateByBrand: aggregateCampaignsByBrand,
+  aggregateDailyByCampaign: aggregateCampaignDaily,
   getCampaignDetail,
   listCampaignBrands,
 } = require('./parser/campaignStore');
@@ -1366,7 +1367,7 @@ app.get('/api/campaign-analysis', requireAuth, (req, res) => {
   const { periodKey, sheetType, brand } = campaignFilters(req, store);
 
   if (!periodKey) {
-    return res.json({ date: null, periods: [], periodKey: null, latestPeriodKey: null, campaigns: [], brandSummaries: [], allBrands: [] });
+    return res.json({ date: null, periods: [], periodKey: null, latestPeriodKey: null, campaigns: [], daily: [], brandSummaries: [], allBrands: [] });
   }
 
   // Brand summaries ignore the brand filter so the chip bar always lists every brand.
@@ -1374,8 +1375,10 @@ app.get('/api/campaign-analysis', requireAuth, (req, res) => {
   const brandSummaries = aggregateCampaignsByBrand(periodRows);
   const rows = brand ? periodRows.filter((r) => r.brandName.toLowerCase() === brand.toLowerCase()) : periodRows;
   const campaigns = aggregateCampaigns(rows);
+  // Per campaign per day, so the trend chart can follow whichever campaigns are shown or ticked.
+  const daily = aggregateCampaignDaily(rows);
 
-  res.json({ date: getCampaignUploadedDate(store, periodKey), periods, periodKey, latestPeriodKey, campaigns, brandSummaries, allBrands: listCampaignBrands(store).sort() });
+  res.json({ date: getCampaignUploadedDate(store, periodKey), periods, periodKey, latestPeriodKey, campaigns, daily, brandSummaries, allBrands: listCampaignBrands(store).sort() });
 });
 
 app.get('/api/campaign-brands', requireAuth, (req, res) => {
@@ -1444,7 +1447,7 @@ app.get('/api/campaign-summary', requireAuth, (req, res) => {
   const { periodKey, sheetType, brand } = campaignFilters(req, store);
 
   const empty = {
-    totalAdSpend: 0, totalSales: 0, overallRoas: null, directRoas: null, roiPct: null,
+    totalAdSpend: 0, totalSales: 0, overallRoas: null, directRoas: null,
     totalUnits: 0, totalCampaigns: 0, bestCampaign: null, worstCampaign: null,
     totalImpressions: 0, totalAtc: 0, totalDirectAtc: 0, totalIndirectAtc: 0, totalNewUsers: 0,
   };
@@ -1462,7 +1465,6 @@ app.get('/api/campaign-summary', requireAuth, (req, res) => {
     totalSales: totals.sales,
     overallRoas: totals.roas,
     directRoas: totals.directRoas,
-    roiPct: totals.roiPct,
     totalUnits: totals.qtySold,
     totalCampaigns: campaigns.length,
     bestCampaign: best ? { name: best.campaignName, roas: best.roas } : null,
@@ -1486,16 +1488,16 @@ function buildCampaignWorksheets(requestedPeriodKey, brand, sheetType) {
 
   const summaryHeaders = [
     'Campaign', 'Brand', 'Type', 'Targeting Types', 'Ad Spend', 'Sales', 'Direct Sales', 'Indirect Sales',
-    'ROAS', 'Direct ROAS', 'ROI %', 'ROS / Unit', 'Impressions', 'Direct ATC', 'Indirect ATC',
+    'ROAS', 'Direct ROAS', 'ROS / Unit', 'Impressions', 'Direct ATC', 'Indirect ATC',
     'Direct Qty Sold', 'Indirect Qty Sold', 'New Users',
   ];
   const summaryRows = campaigns.map((c) => [
     c.campaignName, c.brandName, c.sheetType, c.targetingTypes.join(', '), c.adSpend, c.sales, c.directSales, c.indirectSales,
-    c.roas, c.directRoas, c.roiPct, c.rosPerUnit, c.impressions, c.directAtc, c.indirectAtc,
+    c.roas, c.directRoas, c.rosPerUnit, c.impressions, c.directAtc, c.indirectAtc,
     c.directQtySold, c.indirectQtySold, c.newUsersAcquired,
   ]);
   const summaryWs = XLSX.utils.aoa_to_sheet([summaryHeaders, ...summaryRows]);
-  summaryWs['!cols'] = [{ wch: 45 }, { wch: 14 }, { wch: 24 }, { wch: 30 }, ...Array(14).fill({ wch: 14 })];
+  summaryWs['!cols'] = [{ wch: 45 }, { wch: 14 }, { wch: 24 }, { wch: 30 }, ...Array(13).fill({ wch: 14 })];
 
   const dailyHeaders = [
     'Date', 'Campaign ID', 'Campaign', 'Brand', 'Type', 'Targeting Type', 'Targeting Value', 'Match Type',
