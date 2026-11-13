@@ -63,9 +63,10 @@ const { computeStockHealth, decorateRows, stripHealth, productsNeedingAction } =
 const { monthSalesView, previousMonthKey } = require('./parser/salesMonthView');
 const { buildBrandOverview } = require('./parser/brandOverview');
 const { parseCostFile } = require('./parser/parseBrandCosts');
-const { getBrandCosts, saveBrandProducts, setOtherCost, listBrandCosts } = require('./parser/brandCosts');
+const { getBrandCosts, saveBrandProducts, setOtherCost, setProductField, setProfitSettings, listBrandCosts } = require('./parser/brandCosts');
 const { buildUploadsOverview } = require('./parser/uploadsOverview');
 const { buildBrandProfit } = require('./parser/brandProfit');
+const { buildProfitView } = require('./parser/profitView');
 const { buildProductMonthDetail, canSeeProductProfit } = require('./parser/productMonthDetail');
 const { buildBrandReport } = require('./parser/brandReport');
 
@@ -832,6 +833,71 @@ app.get('/api/brand-profit', requireAdmin, (req, res) => {
     adSpendByMonth: adSpendByMonthFor(brand),
   }));
 });
+
+// The Profit tab: net profit or loss for any mix of months, products and cities (parser/profitView.js).
+// ?brand= is required. ?groupBy=month|product|city, ?months=2026-09,2026-10 (default: the latest full month),
+// ?products= and ?cities= are JSON lists of names (left out = all; [] = none), ?includeAds=0 leaves ad spend out.
+function jsonNameList(raw) {
+  if (raw === undefined) return undefined;
+  try {
+    const list = JSON.parse(String(raw));
+    if (Array.isArray(list) && list.length <= 300 && list.every((x) => typeof x === 'string' && x.length <= 300)) return list;
+  } catch (err) { /* falls through to null */ }
+  return null; // malformed
+}
+
+app.get('/api/profit-view', requireAdmin, (req, res) => {
+  const brand = typeof req.query.brand === 'string' ? req.query.brand.trim() : '';
+  if (!brand) return res.status(400).json({ error: 'brand is required.' });
+  const products = jsonNameList(req.query.products);
+  const cities = jsonNameList(req.query.cities);
+  if (products === null || cities === null) return res.status(400).json({ error: 'products and cities must be JSON lists of names.' });
+  const months = typeof req.query.months === 'string'
+    ? req.query.months.split(',').map((m) => m.trim()).filter((m) => MONTH_KEY_RE.test(m)).slice(0, 12)
+    : [];
+
+  res.json(buildProfitView({
+    brand,
+    slots: slotsFor(brand, PROFIT_PLATFORM),
+    monthInfo: listMonths(brand, PROFIT_PLATFORM),
+    costs: getBrandCosts(brand),
+    adSpendByMonth: adSpendByMonthFor(brand),
+    groupBy: req.query.groupBy,
+    months,
+    products,
+    cities,
+    includeAds: req.query.includeAds !== '0',
+  }));
+});
+
+// One typed value of one product, body { brand, productName, field: 'cogs'|'taxPct'|'commissionPct', value: number|null }.
+// null clears it. Kept apart from the uploaded cost sheet (see parser/brandCosts.js).
+app.post('/api/profit-product-cost', requireAdmin, mutating(async (req, res) => {
+  const body = req.body || {};
+  const brand = typeof body.brand === 'string' ? body.brand.trim() : '';
+  if (!brand) return res.status(400).json({ error: 'brand is required.' });
+  try {
+    await setProductField(brand, body.productName, body.field, body.value === undefined ? null : body.value);
+    res.json({ ok: true });
+  } catch (err) {
+    if (err.kvError) throw err; // save failed -> 500 from mutating()
+    res.status(400).json({ error: err.message });
+  }
+}));
+
+// The Profit tab's default numbers, body { brand, settings: { defaultTaxPct?, defaultCommissionPct?, inwardFee?, fulfilmentFee?, storageFee? } }.
+app.post('/api/profit-settings', requireAdmin, mutating(async (req, res) => {
+  const body = req.body || {};
+  const brand = typeof body.brand === 'string' ? body.brand.trim() : '';
+  if (!brand) return res.status(400).json({ error: 'brand is required.' });
+  try {
+    const settings = await setProfitSettings(brand, body.settings);
+    res.json({ ok: true, settings });
+  } catch (err) {
+    if (err.kvError) throw err;
+    res.status(400).json({ error: err.message });
+  }
+}));
 
 // Cost sheet for one brand (multipart `report`, ?brand=). Replaces the brand's product costs; other costs are kept.
 app.post('/api/brand-costs-upload', requireAdmin, uploadReport, mutating(async (req, res) => {

@@ -27,6 +27,10 @@ import {
   SalesMonthUploadResult,
   BrandCostsUploadResult,
   BrandProfit,
+  ProfitProductField,
+  ProfitSettings,
+  ProfitView,
+  ProfitViewQuery,
   ProductMonthDetail,
   ProductMonthNames,
   UploadKind,
@@ -197,6 +201,26 @@ export class ApiService {
   /** Monthly profit / loss and ROI for one brand (admin only). */
   brandProfit(brand: string) {
     return this.get<BrandProfit>(`/api/brand-profit?brand=${encodeURIComponent(brand)}`);
+  }
+
+  /** The Profit tab: net profit or loss for the chosen months, products and cities (admin only). */
+  profitView(brand: string, query: ProfitViewQuery) {
+    const params = new URLSearchParams({ brand, groupBy: query.groupBy });
+    if (query.months.length) params.set('months', query.months.join(','));
+    if (query.products) params.set('products', JSON.stringify(query.products));
+    if (query.cities) params.set('cities', JSON.stringify(query.cities));
+    if (!query.includeAds) params.set('includeAds', '0');
+    return this.get<ProfitView>(`/api/profit-view?${params.toString()}`);
+  }
+
+  /** One typed value of one product (COGS, GST % or commission %); null clears it. */
+  setProfitProductCost(brand: string, productName: string, field: ProfitProductField, value: number | null) {
+    return this.post<{ ok: boolean }>('/api/profit-product-cost', { brand, productName, field, value });
+  }
+
+  /** The Profit tab's default GST %, commission % and per-unit inward / fulfilment / storage fees. */
+  setProfitSettings(brand: string, settings: Partial<ProfitSettings>) {
+    return this.post<{ ok: boolean; settings: ProfitSettings }>('/api/profit-settings', { brand, settings });
   }
 
   /** Cost sheet (one row per product); replaces the brand's product costs. */

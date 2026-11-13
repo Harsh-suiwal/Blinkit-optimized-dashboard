@@ -372,6 +372,119 @@ export interface BrandCostsUploadResult {
   productCount: number;
   skippedRows: number;
 }
+
+/** GET /api/profit-view: the Profit tab. Every money figure is a whole rupee; rows add up to `totals`. */
+export type ProfitGroup = 'month' | 'product' | 'city';
+
+export interface ProfitSettings {
+  defaultTaxPct: number;
+  defaultCommissionPct: number;
+  inwardFee: number;
+  fulfilmentFee: number;
+  storageFee: number;
+}
+
+export interface ProfitViewFigures {
+  units: number;
+  gross: number;
+  gst: number;
+  net: number;
+  /** Net sales of products with no COGS yet: shown, but left out of the profit. */
+  leftOut: number;
+  leftOutGross: number;
+  leftOutUnits: number;
+  cogs: number;
+  /** Blinkit fees without storage: commission + inward + fulfilment. */
+  fees: number;
+  storage: number;
+  ads: number;
+  other: number;
+  profit: number;
+  marginPct: number | null;
+}
+
+export interface ProfitViewRow extends ProfitViewFigures {
+  key: string;
+  label: string;
+  partial: boolean;
+  adMissing: boolean;
+  changeGrossPct?: number | null;
+  changeProfitPct?: number | null;
+}
+
+export interface ProfitViewCheck {
+  id: string;
+  label: string;
+  expected: number;
+  actual: number;
+  ok: boolean;
+}
+
+export interface ProfitViewMonthCost {
+  monthKey: string;
+  label: string;
+  partial: boolean;
+  adSpend: number;
+  adSpendExact: number | null;
+  adMissing: boolean;
+  otherCosts: number;
+  adShare: number;
+  otherShare: number;
+}
+
+export interface ProfitViewInputProduct {
+  productName: string;
+  units: number;
+  gross: number;
+  cogs: number | null;
+  cogsSource: 'typed' | 'sheet' | null;
+  hasCogs: boolean;
+  taxPct: number;
+  taxIsDefault: boolean;
+  commissionPct: number;
+  commissionIsDefault: boolean;
+}
+
+export interface ProfitView {
+  brand: string;
+  groupBy: ProfitGroup;
+  includeAds: boolean;
+  filters: { months: string[]; products: string[] | null; cities: string[] | null };
+  available: {
+    months: { monthKey: string; label: string; partial: boolean; cityDataMissing: boolean; gross: number }[];
+    products: { key: string; productName: string; gross: number; hasCogs: boolean }[];
+    cities: { city: string; gross: number }[];
+  };
+  rows: ProfitViewRow[];
+  totals: ProfitViewFigures;
+  brandCosts: { adSpend: number; adSpendExact: number | null; otherCosts: number; wholeBrand: boolean; months: ProfitViewMonthCost[] };
+  notes: {
+    leftOutProducts: { productName: string; units: number; gross: number }[];
+    partialMonths: string[];
+    adMissingMonths: string[];
+    cityGapMonths: string[];
+    unallocated: { monthKey: string; label: string; ads: number; other: number }[];
+  };
+  checks: ProfitViewCheck[];
+  inputs: {
+    settings: ProfitSettings;
+    defaults: ProfitSettings;
+    products: ProfitViewInputProduct[];
+    otherCosts: { monthKey: string; label: string; partial: boolean; amount: number }[];
+  };
+}
+
+export interface ProfitViewQuery {
+  groupBy: ProfitGroup;
+  /** Months to include; empty lets the server pick the latest full month. */
+  months: string[];
+  /** Names to keep; null = every product / city. */
+  products: string[] | null;
+  cities: string[] | null;
+  includeAds: boolean;
+}
+
+export type ProfitProductField = 'cogs' | 'taxPct' | 'commissionPct';
 /** GET /api/product-month-detail: the Sales > Month by month tab. Without `product` it returns only the names. */
 export interface ProductMonthNames {
   products: string[];
