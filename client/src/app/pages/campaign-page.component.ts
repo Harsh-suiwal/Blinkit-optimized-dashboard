@@ -1,4 +1,4 @@
-﻿import { Component, HostListener, OnDestroy, OnInit, computed, effect, inject, signal } from '@angular/core';
+﻿import { Component, ElementRef, HostListener, OnDestroy, OnInit, computed, effect, inject, signal, viewChild } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { ApiService } from '../core/api.service';
 import { AuthService } from '../core/auth.service';
@@ -97,10 +97,11 @@ const SHEET_LABELS: Record<CampaignSheetFilter, string> = {
       <div class="ad-trend-body">
         <div class="ad-trend-chart">
           @if (trend(); as t) {
-            <div class="ad-plot" role="img" [attr.aria-label]="'Daily ' + t.label">
-              <svg viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
-                @for (tick of t.ticks; track $index) { <line class="ad-grid" x1="0" x2="100" [attr.y1]="tick.y" [attr.y2]="tick.y" /> }
-                <polyline class="ad-line" [attr.points]="t.points" />
+            <div class="ad-plot" #plot role="img" [attr.aria-label]="'Daily ' + t.label">
+              @for (tick of t.ticks; track $index) { <span class="ad-gridline" [style.top.%]="tick.y"></span> }
+              <!-- The line is drawn in real screen pixels (the box is measured), with an ordinary stroke: nothing here depends on a browser-specific SVG feature. -->
+              <svg [attr.viewBox]="'0 0 ' + plotSize().w + ' ' + plotSize().h" preserveAspectRatio="none" aria-hidden="true">
+                <polyline class="ad-line" [attr.points]="trendLine()" />
               </svg>
               @for (tick of t.ticks; track $index) { <span class="ad-axis ad-axis-y" [style.top.%]="tick.y">{{ tick.label }}</span> }
               @for (label of t.labels; track $index) { <span class="ad-axis ad-axis-x" [style.left.%]="label.x">{{ label.text }}</span> }
@@ -206,9 +207,9 @@ const SHEET_LABELS: Record<CampaignSheetFilter, string> = {
 
 
     @if (menu(); as m) {
-      <div class="ad-menu" role="menu" [style.left.px]="m.x" [style.top.px]="m.y" (click)="$event.stopPropagation()" (dblclick)="$event.stopPropagation()" (contextmenu)="$event.preventDefault()">
+      <div class="ad-menu" role="menu" [style.left.px]="m.x" [style.top.px]="m.y" (click)="$event.stopPropagation()" (contextmenu)="$event.preventDefault(); $event.stopPropagation()">
         @if (m.kind === 'left') {
-          <label><input type="checkbox" [checked]="showSelect()" (change)="setShowSelect($any($event.target).checked); markMenuDirty()"> Select Ads</label>
+          <label><input type="checkbox" [checked]="showSelect()" (change)="setShowSelect($any($event.target).checked)"> Select Ads</label>
         } @else if (m.kind === 'right') {
           <div class="ad-menu-title">Show more</div>
           <label><input type="checkbox" [checked]="extraCols().perUnit" (change)="setExtra('perUnit', $any($event.target).checked)"> Spend per unit sold</label>
@@ -259,8 +260,8 @@ export class CampaignPageComponent implements OnInit, OnDestroy {
   readonly anyExtra = computed(() => this.extraCols().perUnit || this.extraCols().perUser);
   /** ATC, Qty and Sales show one merged number unless direct / indirect is ticked for that column. */
   readonly split = signal<Record<SplitKey, boolean>>({ atc: false, qtySold: false, sales: false });
-  /** The open right-click menu. Once a tick in it is changed (dirty) it closes only on a double click or Esc. */
-  readonly menu = signal<{ kind: MenuKind; x: number; y: number; dirty: boolean } | null>(null);
+  /** The open right-click menu. It stays open while you tick inside it and closes on any click outside it, Esc, or a page scroll. */
+  readonly menu = signal<{ kind: MenuKind; x: number; y: number } | null>(null);
   readonly tip = signal<{ text: string; x: number; y: number } | null>(null);
   /** Column widths set by dragging a header line (px); a column not listed sizes itself. Reset on reload. */
   readonly colWidths = signal<Record<string, number>>({});
@@ -355,8 +356,8 @@ export class CampaignPageComponent implements OnInit, OnDestroy {
     return cols;
   });
   readonly totals = computed<CampaignSummary>(() => this.summarise(this.scopeRows()));
-  /** The trend chart: one point per day for the campaigns in scope. Positions are percentages of the plot box (0 to 100), so the
-   *  line stretches with the page while the labels and dots stay their normal size. Null when there is nothing to draw. */
+  /** The trend chart: one point per day for the campaigns in scope. Positions are percentages of the plot box (0 to 100); the
+   *  labels and dots are placed by percentage, and trendLine() turns the same points into pixels for the line. Null when there is nothing to draw. */
   readonly trend = computed(() => {
     const keys = new Set(this.scopeRows().map((row) => this.rowKey(row)));
     const byDate = new Map<string, { adSpend: number; sales: number; impressions: number; atc: number; qtySold: number }>();
@@ -385,11 +386,20 @@ export class CampaignPageComponent implements OnInit, OnDestroy {
     const labelEvery = Math.max(1, Math.ceil(days.length / 8));
     return {
       label: this.trendMetrics.find((m) => m.key === metric)?.label ?? '',
-      points: days.map((d, i) => `${x(i)},${y(d.value)}`).join(' '),
       dots: days.map((d, i) => ({ x: x(i), y: y(d.value), title: `${this.dayLabel(d.date)}: ${exact(d.value)}` })),
       ticks: [0, 1, 2, 3, 4].map((i) => ({ y: y((top * i) / 4), label: short((top * i) / 4) })),
       labels: days.map((d, i) => ({ x: x(i), text: this.dayLabel(d.date) })).filter((_, i) => i % labelEvery === 0),
     };
+  });
+  /** The chart's plot box on screen, in CSS pixels. Starts at a sensible size and is corrected as soon as the box is measured. */
+  private readonly plot = viewChild<ElementRef<HTMLElement>>('plot');
+  readonly plotSize = signal({ w: 800, h: 160 }, { equal: (a, b) => a.w === b.w && a.h === b.h });
+  /** The line's points in those pixels, e.g. "0,120 72.5,96". */
+  readonly trendLine = computed(() => {
+    const t = this.trend();
+    if (!t) return '';
+    const { w, h } = this.plotSize();
+    return t.dots.map((d) => `${Math.round(d.x * w) / 100},${Math.round(d.y * h) / 100}`).join(' ');
   });
   readonly sortedBrands = computed(() => {
     const direction = this.brandSortAsc() ? 1 : -1;
@@ -414,6 +424,26 @@ export class CampaignPageComponent implements OnInit, OnDestroy {
     effect(() => {
       this.ui.focusedBrand();
       if (this.initialized) void this.load(this.selectedPeriod() || undefined);
+    });
+    // Keep plotSize equal to the chart box on screen, so the line is drawn in real pixels.
+    effect((onCleanup) => {
+      const box = this.plot()?.nativeElement;
+      if (!box) return;
+      const measure = () => {
+        const w = box.clientWidth;
+        const h = box.clientHeight;
+        if (w > 0 && h > 0) this.plotSize.set({ w, h });
+      };
+      measure();
+      if (typeof ResizeObserver === 'undefined') {
+        // Very old browser: measure again when the window changes size.
+        window.addEventListener('resize', measure);
+        onCleanup(() => window.removeEventListener('resize', measure));
+        return;
+      }
+      const observer = new ResizeObserver(measure);
+      observer.observe(box);
+      onCleanup(() => observer.disconnect());
     });
   }
 
@@ -479,7 +509,6 @@ export class CampaignPageComponent implements OnInit, OnDestroy {
   setExtra(key: 'perUnit' | 'perUser', on: boolean) {
     this.extraCols.update((current) => ({ ...current, [key]: on }));
     this.dropStaleSort();
-    this.markMenuDirty();
   }
 
   /** The direct / indirect tick of the header menu that is open (ATC, Qty or Sales). */
@@ -492,7 +521,6 @@ export class CampaignPageComponent implements OnInit, OnDestroy {
     const kind = this.menu()?.kind;
     if (kind !== 'atc' && kind !== 'qtySold' && kind !== 'sales') return;
     this.split.update((current) => ({ ...current, [kind]: on }));
-    this.markMenuDirty();
   }
 
   /** If the table was sorted by an optional column that is now hidden, go back to the default sort. */
@@ -512,7 +540,7 @@ export class CampaignPageComponent implements OnInit, OnDestroy {
     const zoom = this.cssZoom(event.currentTarget);
     const x = Math.max(8, Math.min(event.clientX, window.innerWidth - 240)) / zoom;
     const y = Math.max(8, Math.min(event.clientY, window.innerHeight - 130)) / zoom;
-    this.menu.set({ kind, x, y, dirty: false });
+    this.menu.set({ kind, x, y });
   }
 
   /** Right-click on a number header: only ATC, Qty and Sales have a menu; the others keep the browser's own. */
@@ -520,14 +548,12 @@ export class CampaignPageComponent implements OnInit, OnDestroy {
     if (col.splittable) this.openMenu(event, col.key as SplitKey);
   }
 
-  markMenuDirty() { this.menu.update((current) => (current ? { ...current, dirty: true } : current)); }
-
-  /** One click outside closes a menu nobody changed; after a tick was changed it takes a double click (or Esc). */
+  /** A menu never sticks: any click or right-click outside it, Esc, a page scroll or a window resize closes it. */
   @HostListener('document:click')
-  closeCleanMenu() { if (this.menu() && !this.menu()?.dirty) this.menu.set(null); }
-
-  @HostListener('document:dblclick')
+  @HostListener('document:contextmenu')
   @HostListener('document:keydown.escape')
+  @HostListener('window:scroll')
+  @HostListener('window:resize')
   closeMenu() { if (this.menu()) this.menu.set(null); }
 
   showTip(event: MouseEvent, text: string) {

@@ -121,9 +121,25 @@ function computeExtendedWindows({ itemId, warehouseId, latestDate, latestUnitsSo
   };
 }
 
+/**
+ * Forgets the stock upload history, which is all the 45-day and 60-day "units sold" figures are built from.
+ * With a `matches(snapshot)` test only the snapshots it accepts are removed (one brand); without it, everything.
+ * After this the 45d / 60d columns read "n/a" until about 30 days of new uploads exist. Returns how many
+ * snapshots were removed.
+ */
+async function clearSnapshotHistory(matches) {
+  const history = loadHistory();
+  const before = history.snapshots.length;
+  history.snapshots = typeof matches === 'function' ? history.snapshots.filter((s) => !matches(s)) : [];
+  const removed = before - history.snapshots.length;
+  if (removed) await saveHistory(history);
+  return removed;
+}
+
 module.exports = {
   appendSnapshot,
   computeExtendedWindows,
   loadHistory,
+  clearSnapshotHistory,
   todayDateString,
 };

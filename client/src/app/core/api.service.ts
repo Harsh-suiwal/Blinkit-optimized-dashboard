@@ -34,6 +34,7 @@ import {
   ProfitViewQuery,
   ProductMonthDetail,
   ProductMonthNames,
+  BrandWipeResult,
   UploadKind,
   UploadsOverview,
   UploadUndoResult,
@@ -61,8 +62,20 @@ export class ApiService {
     return this.upload<{ ok: boolean; date: string; rowCount: number; totalRowCount: number; brands: string[] }>('/api/upload', file);
   }
 
-  clearInventory(brand?: string) {
-    return this.delete<{ ok: boolean }>(`/api/inventory-data${this.brandQuery(brand)}`);
+  /** Clears the stock view of one brand (or all). resetHistory also forgets the upload history behind the 45d / 60d columns. */
+  clearInventory(brand?: string, resetHistory = false) {
+    const query = new URLSearchParams();
+    if (brand) query.set('brand', brand);
+    if (resetHistory) query.set('history', '1');
+    const text = query.toString();
+    return this.delete<{ ok: boolean }>(`/api/inventory-data${text ? `?${text}` : ''}`);
+  }
+
+  /** Wipes one brand from every report (admin only). typed also removes what was typed on the Profit tab (COGS and the like). */
+  wipeBrand(brand: string, typed: boolean) {
+    const query = new URLSearchParams({ brand });
+    if (typed) query.set('typed', '1');
+    return this.delete<BrandWipeResult>(`/api/brand?${query}`);
   }
 
   clearCampaignData(brand?: string) {
@@ -243,6 +256,11 @@ export class ApiService {
   productMonthDetail(brand: string, product: string) {
     const query = new URLSearchParams({ brand, product });
     return this.get<ProductMonthDetail>(`/api/product-month-detail?${query}`);
+  }
+
+  /** Several ticked products added together, month by month. */
+  productMonthSet(brand: string, products: string[]) {
+    return this.post<ProductMonthDetail>('/api/product-month-detail', { brand, products });
   }
 
   /** What is uploaded for each brand, and which uploads can be undone (admin only). */

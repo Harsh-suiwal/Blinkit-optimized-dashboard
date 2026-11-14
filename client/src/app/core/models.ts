@@ -566,6 +566,19 @@ export interface ProductMonthDetail {
   months: ProductMonthRow[];
   brandMonths: ProductMonthBrandRow[];
   brandTotals: ProductMonthBrandTotals | null;
+  /** Set when several products were ticked (POST): how many of them have monthly data. */
+  productCount?: number;
+  /** True when "orders" is each ticked product's orders added up (an order with two of them counts twice). */
+  ordersOverlap?: boolean;
+  /** How many ticked products have no cost-sheet row; their profit is not in the profit figures. */
+  profitMissing?: number;
+}
+
+/** DELETE /api/brand (admin): what a brand wipe removed. */
+export interface BrandWipeResult {
+  ok: boolean;
+  brand: string;
+  removed: { stockRows: number; stockHistory: number; salesRows: number; months: number; campaignRows: number; costSheet: boolean; typed: boolean };
 }
 
 /** GET /api/uploads-overview (admin): what is uploaded for each brand, and which uploads can still be undone. */
@@ -578,6 +591,8 @@ export interface UploadsBrandRow {
   monthly: { months: number; first: string; last: string; fileName: string; date: string } | null;
   advertising: { periods: string[]; fileName: string; date: string } | null;
   costs: { fileName: string; date: string; productCount: number } | null;
+  /** True when something was typed in by hand for this brand on the Profit tab (COGS and the like). */
+  typed?: boolean;
 }
 
 export interface UploadsUndoItem {

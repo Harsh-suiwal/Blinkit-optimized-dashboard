@@ -190,14 +190,17 @@ function readHiddenFeeders(): string[] {
       @if (!displayedRows().length) { <p class="muted">{{ emptyMessage() }}</p> }
     </section>
     @if (surgeMenu(); as m) {
-      <div class="ad-menu" role="menu" [style.left.px]="m.x" [style.top.px]="m.y" (click)="$event.stopPropagation()" (dblclick)="$event.stopPropagation()" (contextmenu)="$event.preventDefault()">
+      <div class="ad-menu" role="menu" [style.left.px]="m.x" [style.top.px]="m.y" (click)="$event.stopPropagation()" (contextmenu)="$event.preventDefault(); $event.stopPropagation()">
         <div class="ad-menu-title">Surge</div>
         <label><input type="checkbox" [checked]="showSurge()" (change)="setShowSurge($any($event.target).checked)"> Show surge</label>
       </div>
     }
     @if (surgeTip(); as hint) { <div class="ad-tip" role="tooltip" [style.left.px]="hint.x" [style.top.px]="hint.y">Surge</div> }
     @if (clearOpen()) {
-      <app-clear-data-dialog scope="inventory" note="Upload history (used for 45/60-day sold) is kept." [brands]="brandNames()" [initialBrand]="ui.focusedBrand()" (confirm)="clearData($event)" (cancel)="clearOpen.set(false)" />
+      <app-clear-data-dialog scope="inventory" [note]="resetHistory() ? 'The 45/60-day history is deleted too.' : 'Upload history (used for 45/60-day sold) is kept.'"
+        extraLabel="Also reset the 45/60-day history (start fresh)"
+        extraWarning="Consequence: the 45d and 60d columns will show n/a for the chosen brand(s) until about 30 days of new stock uploads have built up again. Old uploads cannot be used to rebuild it. The saved 'Undo the last upload' copies are cleared as well."
+        [brands]="brandNames()" [initialBrand]="ui.focusedBrand()" (extraChange)="resetHistory.set($event)" (confirm)="clearData($event)" (cancel)="clearOpen.set(false); resetHistory.set(false)" />
     }
   `,
 })
@@ -207,6 +210,8 @@ export class InventoryPageComponent implements OnInit {
   readonly ui = inject(UiStateService);
   readonly rows = signal<ProductRow[]>([]);
   readonly clearOpen = signal(false);
+  /** The "Also reset the 45/60-day history" tick in the Clear Data dialog. */
+  readonly resetHistory = signal(false);
   readonly brandUploads = signal<Record<string, BrandUpload>>({});
   readonly lastDate = signal<string | null>(null);
   // One chip per brand, weighted by total stock on hand.
@@ -264,8 +269,8 @@ export class InventoryPageComponent implements OnInit {
   readonly groupOpen = signal('');
   /** The surge badge under the status pill is hidden until ticked in the Status header's right-click menu. Not saved: a reload hides it again. */
   readonly showSurge = signal(false);
-  /** That menu, where it opened. Once its tick is changed (dirty) it closes only on a double click or Esc. */
-  readonly surgeMenu = signal<{ x: number; y: number; dirty: boolean } | null>(null);
+  /** That menu, where it opened. It closes on any click outside it, Esc, or a page scroll. */
+  readonly surgeMenu = signal<{ x: number; y: number } | null>(null);
   readonly surgeTip = signal<{ x: number; y: number } | null>(null);
   /**
    * The chips, most urgent first, each with its row count in the rows in view. Statuses that belong to a group
@@ -373,11 +378,14 @@ export class InventoryPageComponent implements OnInit {
     const target = event.target as HTMLElement | null;
     if (this.feederOpen() && !target?.closest('.feeder-picker')) this.feederOpen.set(false);
     if (this.groupOpen() && !target?.closest('.status-group')) this.groupOpen.set('');
-    if (this.surgeMenu() && !this.surgeMenu()?.dirty) this.surgeMenu.set(null);
+    if (this.surgeMenu()) this.surgeMenu.set(null);
   }
   @HostListener('document:keydown.escape')
   closeFeederMenuOnEscape() { this.feederOpen.set(false); this.groupOpen.set(''); this.surgeMenu.set(null); }
-  @HostListener('document:dblclick')
+  /** The surge menu never sticks: a right-click elsewhere, a page scroll or a window resize closes it too. */
+  @HostListener('document:contextmenu')
+  @HostListener('window:scroll')
+  @HostListener('window:resize')
   closeSurgeMenu() { if (this.surgeMenu()) this.surgeMenu.set(null); }
 
   // --- Status header: "Surge" tooltip and the right-click menu with the "Show surge" tick ---
@@ -388,12 +396,11 @@ export class InventoryPageComponent implements OnInit {
     const zoom = this.cssZoom(event.currentTarget);
     const x = Math.max(8, Math.min(event.clientX, window.innerWidth - 240)) / zoom;
     const y = Math.max(8, Math.min(event.clientY, window.innerHeight - 110)) / zoom;
-    this.surgeMenu.set({ x, y, dirty: false });
+    this.surgeMenu.set({ x, y });
   }
 
   setShowSurge(on: boolean) {
     this.showSurge.set(on);
-    this.surgeMenu.update((current) => (current ? { ...current, dirty: true } : current));
   }
 
   showSurgeTip(event: MouseEvent) {
@@ -435,14 +442,17 @@ export class InventoryPageComponent implements OnInit {
   /** Deletes one brand's inventory (or all brands when brand is empty). */
   async clearData(brand: string) {
     this.clearOpen.set(false);
+    const resetHistory = this.resetHistory();
+    this.resetHistory.set(false);
     try {
-      await this.api.clearInventory(brand || undefined);
+      await this.api.clearInventory(brand || undefined, resetHistory);
       if (brand && this.ui.focusedBrand().toLowerCase() === brand.toLowerCase()) this.ui.setBrand('');
       if (!brand) this.ui.setBrand('');
       this.ui.refreshLookups();
       this.undoStack = [];
       await this.load();
-      this.setStatus(brand ? `Inventory data for ${brand} cleared.` : 'All inventory data cleared.', 'success');
+      const history = resetHistory ? ' The 45/60-day history was reset too.' : '';
+      this.setStatus((brand ? `Inventory data for ${brand} cleared.` : 'All inventory data cleared.') + history, 'success');
     } catch (error) { this.setStatus(this.message(error), 'error'); }
   }
 

@@ -9,7 +9,7 @@ const path = require('path');
 const XLSX = require('xlsx');
 
 const { parseReport } = require('./parser/parseReport');
-const { appendSnapshot, computeExtendedWindows, loadHistory, todayDateString } = require('./parser/snapshotHistory');
+const { appendSnapshot, computeExtendedWindows, loadHistory, clearSnapshotHistory, todayDateString } = require('./parser/snapshotHistory');
 const { parseSalesRows, aggregateByCity, aggregateByProduct, assignPerformanceTiers } = require('./parser/parseSales');
 const {
   appendCitySnapshot,
@@ -55,6 +55,7 @@ const {
   slotsFor,
   compareMonths,
   removeMonth,
+  removeBrandMonths,
   restoreMonth,
   MONTH_KEY_RE,
 } = require('./parser/salesMonthly');
@@ -64,7 +65,7 @@ const { computeStockHealth, decorateRows, stripHealth, productsNeedingAction } =
 const { monthSalesView, previousMonthKey } = require('./parser/salesMonthView');
 const { buildBrandOverview } = require('./parser/brandOverview');
 const { parseCostFile } = require('./parser/parseBrandCosts');
-const { getBrandCosts, saveBrandProducts, setOtherCost, setProductField, setProfitSettings, listBrandCosts } = require('./parser/brandCosts');
+const { getBrandCosts, saveBrandProducts, setOtherCost, setProductField, setProfitSettings, listBrandCosts, removeBrandCosts } = require('./parser/brandCosts');
 const { buildUploadsOverview } = require('./parser/uploadsOverview');
 const { buildBrandProfit } = require('./parser/brandProfit');
 const { buildProfitView } = require('./parser/profitView');
@@ -72,7 +73,7 @@ const { buildProductMonthDetail, canSeeProductProfit } = require('./parser/produ
 const { buildBrandReport } = require('./parser/brandReport');
 
 const kv = require('./store/kv');
-const { captureUndo, listUndo, undoUpload, UNDO_KINDS } = require('./store/uploadUndo');
+const { captureUndo, listUndo, undoUpload, clearUndo, UNDO_KINDS } = require('./store/uploadUndo');
 const KvSessionStore = require('./store/sessionStore');
 const { requireAuth, requireAdmin } = require('./middleware/auth');
 const authRoutes = require('./routes/auth');
@@ -343,11 +344,16 @@ app.get('/api/summary', requireAuth, (req, res) => {
 });
 
 // Wipes the current inventory view for one brand (?brand=) or for every brand. The upload history log
-// (kv "history") is kept on purpose: it is what the 45/60-day figures
-// are computed from, and it cannot be rebuilt.
+// (kv "history") is kept by default: it is what the 45/60-day figures are computed from, and it cannot
+// be rebuilt. ?history=1 resets it too (a fresh start): 45d / 60d then read "n/a" until about 30 days of
+// new uploads exist. A reset also forgets the saved "undo the last stock upload", which would bring it back.
 app.delete('/api/inventory-data', requireAdmin, mutating(async (req, res) => {
   const brand = typeof req.query.brand === 'string' ? req.query.brand.trim() : '';
   const latest = brand ? loadLatest() : null;
+  if (req.query.history === '1') {
+    await clearSnapshotHistory(brand ? stockSnapshotOfBrand(brand) : undefined);
+    await clearUndo();
+  }
 
   if (brand && latest) {
     latest.rows = latest.rows.filter((r) => !sameBrand(r.brandName, brand));
@@ -364,6 +370,62 @@ app.delete('/api/inventory-data', requireAdmin, mutating(async (req, res) => {
   await kv.delete(LATEST_KEY);
   await clearUploadHashes('inventory');
   res.json({ ok: true });
+}));
+
+// The test for "this stock-history snapshot belongs to this brand". Old snapshots have no brandName, so
+// the brand is read from the product name, as everywhere else.
+function stockSnapshotOfBrand(brand) {
+  const aliases = loadAliases();
+  return (s) => sameBrand(s.brandName || brandOf(s.productName, '', aliases) || 'Unknown', brand);
+}
+
+// Wipes ONE brand from everything the app stores: stock, the 45/60-day stock history, sales, the sales
+// trend history, monthly sales, advertising and the uploaded cost sheet. ?typed=1 also removes what was
+// typed in by hand on the Profit tab (COGS, GST %, commission %, settings, monthly other costs).
+// Brand aliases are kept (they only teach the app how to read names). Saved "undo the last upload"
+// copies are dropped, because an undo would bring the brand back. This cannot be undone.
+app.delete('/api/brand', requireAdmin, mutating(async (req, res) => {
+  const brand = typeof req.query.brand === 'string' ? req.query.brand.trim() : '';
+  if (!brand) return res.status(400).json({ error: 'brand is required.' });
+  const typed = req.query.typed === '1';
+  const aliases = loadAliases();
+  const removed = { stockRows: 0, stockHistory: 0, salesRows: 0, months: 0, campaignRows: 0, costSheet: false, typed: false };
+
+  const latest = loadLatest();
+  if (latest) {
+    const before = latest.rows.length;
+    latest.rows = latest.rows.filter((r) =>
+      !sameBrand(r.brandName, brand) && !sameBrand(brandOf(r.productName, r.brandName, aliases) || 'Unknown', brand));
+    removed.stockRows = before - latest.rows.length;
+    Object.keys(latest.brandUploads || {}).forEach((b) => { if (sameBrand(b, brand)) delete latest.brandUploads[b]; });
+    if (latest.rows.length) await saveLatest(latest); else await kv.delete(LATEST_KEY);
+  }
+  removed.stockHistory = await clearSnapshotHistory(stockSnapshotOfBrand(brand));
+
+  const sales = loadSalesLatest();
+  if (sales) {
+    const before = (sales.cityRows || []).length;
+    sales.cityRows = (sales.cityRows || []).filter((r) => !sameBrand(r.brandName, brand));
+    removed.salesRows = before - sales.cityRows.length;
+    Object.keys(sales.brandUploads || {}).forEach((b) => { if (sameBrand(b, brand)) delete sales.brandUploads[b]; });
+    if (sales.cityRows.length) await saveSalesLatest(sales); else await kv.delete(SALES_LATEST_KEY);
+  }
+  const products = loadProductSalesLatest();
+  if (products && Array.isArray(products.productRows)) {
+    const kept = products.productRows.filter((p) => !sameBrand(p.brandName, brand));
+    if (kept.length) await saveProductSalesLatest(kept, products.date, products.fileName); else await kv.delete(PRODUCT_SALES_KEY);
+  }
+  await removeBrandFromHistory(brand);
+
+  removed.months = await removeBrandMonths(brand);
+  removed.campaignRows = await removeCampaignBrandRows(brand);
+  campaignTrash.clear();
+  Object.assign(removed, await removeBrandCosts(brand, { typed }));
+
+  // The same files can be uploaded again, and no saved undo can bring the brand back.
+  for (const kind of ['inventory', 'sales', 'salesMonthly', 'campaign']) await clearUploadHashes(kind);
+  await clearUndo();
+  res.json({ ok: true, brand, removed });
 }));
 
 // Removes one product+warehouse row from the current inventory view.
@@ -936,6 +998,31 @@ app.post('/api/brand-other-costs', requireAdmin, mutating(async (req, res) => {
 // ?brand= is required. Without ?product= it lists the product names that have monthly data; with it
 // the product is shown month by month plus the whole brand's profit. Profit fields are removed when
 // PRODUCT_PROFIT_ADMIN_ONLY is on and the user is not an admin (this endpoint only).
+// Several ticked products added together: POST { brand, products: [names] } (a POST only because a long
+// list of names does not fit in a web address; it changes nothing).
+app.post('/api/product-month-detail', requireAuth, (req, res) => {
+  const body = req.body || {};
+  const brand = typeof body.brand === 'string' ? body.brand.trim() : '';
+  if (!brand) return res.status(400).json({ error: 'brand is required.' });
+  const products = Array.isArray(body.products)
+    ? body.products.filter((name) => typeof name === 'string' && name.trim()).map((name) => name.trim()).slice(0, 2000)
+    : [];
+  if (!products.length) return res.status(400).json({ error: 'Tick at least one product.' });
+
+  const slots = slotsFor(brand, PROFIT_PLATFORM);
+  const monthInfo = listMonths(brand, PROFIT_PLATFORM);
+  const costs = getBrandCosts(brand);
+  res.json(buildProductMonthDetail({
+    brand,
+    products,
+    monthInfo,
+    slots,
+    costs,
+    brandProfit: buildBrandProfit({ brand, monthInfo, slots, costs, adSpendByMonth: adSpendByMonthFor(brand) }),
+    profitVisible: canSeeProductProfit(PRODUCT_PROFIT_ADMIN_ONLY, req.session.user),
+  }));
+});
+
 app.get('/api/product-month-detail', requireAuth, (req, res) => {
   const brand = typeof req.query.brand === 'string' ? req.query.brand.trim() : '';
   if (!brand) return res.status(400).json({ error: 'brand is required.' });

@@ -22,7 +22,7 @@ function buildUploadsOverview(input) {
   const rowFor = (name) => {
     const key = brandKey(name);
     if (!rows.has(key)) {
-      rows.set(key, { brand: String(name || 'Unknown').trim() || 'Unknown', stock: null, sales: null, monthly: null, advertising: null, costs: null });
+      rows.set(key, { brand: String(name || 'Unknown').trim() || 'Unknown', stock: null, sales: null, monthly: null, advertising: null, costs: null, typed: false });
     }
     return rows.get(key);
   };
@@ -71,6 +71,8 @@ function buildUploadsOverview(input) {
   }
 
   for (const entry of input.costs || []) {
+    // Hand-typed Profit data (COGS and the like) keeps a brand in the list even with nothing uploaded, so it can still be wiped.
+    if (entry.hasTyped) rowFor(entry.brandName).typed = true;
     if (!entry.productCount) continue;
     rowFor(entry.brandName).costs = { fileName: entry.fileName || '', date: entry.uploadedAt || '', productCount: entry.productCount };
   }

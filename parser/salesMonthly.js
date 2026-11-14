@@ -258,6 +258,16 @@ async function removeMonth(brand, monthKey, platform = DEFAULT_PLATFORM) {
   return removed;
 }
 
+/** Removes every stored month of one brand, on every platform. Returns how many months were removed. */
+async function removeBrandMonths(brand) {
+  const store = kv.get(KEY, null) || { slots: [] };
+  const slots = Array.isArray(store.slots) ? store.slots : [];
+  const kept = slots.filter((s) => brandKey(s.brandName) !== brandKey(brand));
+  const removed = slots.length - kept.length;
+  if (removed) await kv.set(KEY, { slots: kept });
+  return removed;
+}
+
 /** Checks a slot sent back by the client for undo. Returns the cleaned slot or null. */
 function validSlot(slot) {
   if (!slot || typeof slot !== 'object') return null;
@@ -328,6 +338,7 @@ module.exports = {
   slotsFor,
   compareMonths,
   removeMonth,
+  removeBrandMonths,
   restoreMonth,
   MONTH_KEY_RE,
   PLATFORM_RE,

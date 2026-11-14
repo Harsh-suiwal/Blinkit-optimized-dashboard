@@ -12,6 +12,10 @@ import { Component, HostListener, OnInit, computed, input, output, signal } from
           <option value="" [selected]="choice() === ''">All brands</option>
           @for (brand of brands(); track brand) { <option [value]="brand" [selected]="brand === choice()">{{ brand }}</option> }
         </select>
+        @if (extraLabel()) {
+          <label class="dialog-check"><input type="checkbox" [checked]="extra()" (change)="setExtra($event)"> <span>{{ extraLabel() }}</span></label>
+          @if (extra() && extraWarning()) { <p class="dialog-consequence">{{ extraWarning() }}</p> }
+        }
         <p class="dialog-warning">{{ warning() }}</p>
         <div class="dialog-actions">
           <button type="button" class="secondary-btn" (click)="cancel.emit()">Cancel</button>
@@ -28,6 +32,12 @@ export class ClearDataDialogComponent implements OnInit {
   readonly initialBrand = input('');
   /** Extra sentence for what is kept, e.g. upload history. */
   readonly note = input('');
+  /** An optional extra tick (e.g. "Also reset the 45/60-day history"); empty = no tick. Its state is sent through extraChange. */
+  readonly extraLabel = input('');
+  /** What ticking it means, shown as soon as it is ticked. */
+  readonly extraWarning = input('');
+  readonly extraChange = output<boolean>();
+  readonly extra = signal(false);
   readonly confirm = output<string>();
   readonly cancel = output<void>();
   readonly choice = signal('');
@@ -42,6 +52,12 @@ export class ClearDataDialogComponent implements OnInit {
   }
 
   selectValue(event: Event) { return (event.target as HTMLSelectElement).value; }
+
+  setExtra(event: Event) {
+    const on = (event.target as HTMLInputElement).checked;
+    this.extra.set(on);
+    this.extraChange.emit(on);
+  }
 
   @HostListener('document:keydown.escape')
   close() { this.cancel.emit(); }

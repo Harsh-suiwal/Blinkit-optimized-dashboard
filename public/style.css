@@ -2320,8 +2320,10 @@ tr.detail-row > td {
 }
 
 .sparkline {
+  /* Same shape as its 300 x 70 drawing, so the lines are never stretched and keep an even thickness in every browser. */
   width: 100%;
-  height: 90px;
+  height: auto;
+  aspect-ratio: 300 / 70;
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: 10px;
@@ -2329,8 +2331,9 @@ tr.detail-row > td {
 
 .sparkline polyline {
   fill: none;
-  stroke-width: 2;
-  vector-effect: non-scaling-stroke;
+  stroke-width: 1.4;
+  stroke-linejoin: round;
+  stroke-linecap: round;
 }
 
 .spark-sales {
@@ -4244,8 +4247,9 @@ html app-campaign-page .ad-kpis .card-value {
   min-width: 0;
 }
 
-/* The plot box. The line and grid are an SVG stretched to fill it; the axis labels and the day dots are ordinary
-   elements placed by percentage, so their size never changes with the width of the page. */
+/* The plot box. The grid lines, axis labels and day dots are ordinary elements placed by percentage. The line is an
+   SVG whose drawing size is the box's own size in pixels (measured in the page code), with a plain stroke, so it
+   shows the same in every browser. */
 .ad-plot {
   position: relative;
   height: clamp(130px, 13vw, 190px);
@@ -4260,19 +4264,23 @@ html app-campaign-page .ad-kpis .card-value {
   overflow: visible;
 }
 
-.ad-grid {
-  stroke: color-mix(in srgb, var(--text) 12%, transparent);
-  stroke-width: 1;
-  vector-effect: non-scaling-stroke;
+.ad-gridline {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 0;
+  border-top: 1px solid rgba(128, 128, 128, 0.25); /* for browsers without color-mix */
+  border-top-color: color-mix(in srgb, var(--text) 12%, transparent);
+  pointer-events: none;
 }
 
 .ad-line {
   fill: none;
+  stroke: #7c3aed; /* in case the accent colour cannot be read */
   stroke: var(--accent);
   stroke-width: 2.5;
   stroke-linejoin: round;
   stroke-linecap: round;
-  vector-effect: non-scaling-stroke;
 }
 
 .ad-axis {
@@ -4634,4 +4642,186 @@ table#campaignListTable :is(th, td).ad-clip {
    The menu and its tooltip reuse .ad-menu and .ad-tip above. */
 #productTable.stock-table thead th.th-static.th-menu {
   cursor: pointer;
+}
+
+/* ==========================================================================================================
+   14 Nov 2026: delete a whole brand, the 45/60-day history reset tick, and the product tick menu in
+   Sales > Month by month.
+   ========================================================================================================== */
+
+/* The cross beside the selected brand in the sidebar (admins): goes to the "Delete brand" confirmation */
+.brand-wipe-btn {
+  flex: 0 0 22px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: none;
+  border-radius: 6px;
+  background: none;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.brand-wipe-btn svg {
+  width: 13px;
+  height: 13px;
+}
+
+.brand-wipe-btn:hover,
+.brand-wipe-btn:focus-visible {
+  background: rgba(var(--danger-rgb), 0.14);
+  color: var(--danger);
+  outline: none;
+}
+
+/* Dialogs: a tick with its label, and the "what this means" box shown under it */
+.dialog-check {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text);
+  cursor: pointer;
+}
+
+.dialog-check input {
+  margin-top: 3px;
+}
+
+.dialog-consequence {
+  margin: 0;
+  padding: 10px 12px;
+  border: 1px solid rgba(var(--danger-rgb), 0.4);
+  border-radius: 10px;
+  background: rgba(var(--danger-rgb), 0.08);
+  color: var(--text);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.dialog.wipe-dialog {
+  width: min(480px, 100%);
+  max-height: calc(100vh - 32px);
+  overflow: auto;
+}
+
+.dialog.wipe-dialog h2 {
+  text-transform: none;
+}
+
+.wipe-dialog p {
+  margin: 0;
+  font-size: 14px;
+}
+
+.wipe-list {
+  margin: 0;
+  padding-left: 20px;
+  font-size: 13.5px;
+  line-height: 1.6;
+}
+
+.wipe-dialog .wipe-hint {
+  font-size: 12.5px;
+}
+
+.wipe-dialog .styled-select {
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.dialog .danger-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+/* Sales > Month by month: the product tick menu */
+.product-months-controls .pm-picker {
+  position: relative;
+  flex: 1 1 220px;
+  min-width: 0;
+  max-width: 420px;
+}
+
+.pm-picker .pm-picker-btn {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  width: 100%;
+  min-width: 0;
+}
+
+.pm-picker-text {
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.pm-menu {
+  width: max(100%, 320px);
+  max-width: min(520px, 90vw);
+  max-height: min(420px, 60vh);
+}
+
+.pm-menu .pm-all {
+  margin-bottom: 4px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--border);
+  border-radius: 8px 8px 0 0;
+  font-weight: 700;
+}
+
+.pm-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  border-radius: 8px;
+}
+
+.pm-row:hover {
+  background: var(--surface-alt);
+}
+
+.pm-row .feeder-option {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.pm-row .feeder-option span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.pm-only {
+  flex: none;
+  padding: 3px 8px;
+  border: none;
+  border-radius: 6px;
+  background: none;
+  color: var(--accent);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  opacity: 0;
+}
+
+.pm-row:hover .pm-only,
+.pm-only:focus-visible {
+  opacity: 1;
+}
+
+.pm-only:hover {
+  background: rgba(var(--accent-rgb), 0.12);
+}
+
+.pm-none {
+  margin: 0;
+  padding: 8px;
 }

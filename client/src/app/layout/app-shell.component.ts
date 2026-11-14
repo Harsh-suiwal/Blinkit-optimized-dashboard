@@ -19,6 +19,12 @@ import { UiStateService } from '../core/ui-state.service';
             <option value="">All brands</option>
             @for (brand of brands(); track brand) { <option [value]="brand">{{ brand }}</option> }
           </select>
+          @if (ui.focusedBrand() && auth.isAdmin()) {
+            <!-- Admins only: takes you to the Uploads page with the "Delete brand" confirmation open for this brand. Nothing is deleted by this click. -->
+            <button type="button" class="brand-wipe-btn" [title]="'Delete all data of ' + ui.focusedBrand() + ' (asks you to confirm first)'" [attr.aria-label]="'Delete all data of ' + ui.focusedBrand()" (click)="wipeFocusedBrand()">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>
+            </button>
+          }
         </div>
       </div>
       <ul class="sidebar-nav">
@@ -85,6 +91,12 @@ export class AppShellComponent implements OnInit {
   readonly ui = inject(UiStateService);
   readonly brands = signal<string[]>([]);
   readonly leaderActive = signal(false);
+
+  /** The cross beside the selected brand: opens the Uploads page with the delete confirmation for that brand. */
+  wipeFocusedBrand() {
+    const brand = this.ui.focusedBrand();
+    if (brand) void this.router.navigate(['/uploads'], { queryParams: { wipe: brand } });
+  }
 
   /** First letter of the selected brand for the switcher badge ("A" for All brands). */
   brandInitial() {

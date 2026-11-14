@@ -1,5 +1,5 @@
-import { Component, OnInit, computed, inject, signal } from '@angular/core';
-import { RouterLink } from '@angular/router';
+import { Component, HostListener, OnDestroy, OnInit, computed, inject, signal } from '@angular/core';
+import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { ApiService } from '../core/api.service';
 import { AuthService } from '../core/auth.service';
 import { UploadKind, UploadsOverview, UploadsUndoItem } from '../core/models';
@@ -70,7 +70,7 @@ interface CardMessage { text: string; type: 'success' | 'error' | ''; }
             <p class="muted">Nothing has been uploaded yet.</p>
           } @else {
             <table id="uploadedTable">
-              <thead><tr><th>Brand</th><th>Stock</th><th>Sales</th><th>Monthly sales</th><th>Advertising</th><th>Cost sheet</th></tr></thead>
+              <thead><tr><th>Brand</th><th>Stock</th><th>Sales</th><th>Monthly sales</th><th>Advertising</th><th>Cost sheet</th><th></th></tr></thead>
               <tbody>
                 @for (b of o.brands; track b.brand) {
                   <tr>
@@ -79,7 +79,8 @@ interface CardMessage { text: string; type: 'success' | 'error' | ''; }
                     <td>@if (b.sales; as s) { {{ dateText(s.date) }}<br><span class="muted">{{ rangeText(s.from, s.to) || s.fileName }}</span> } @else { <span class="muted">Not uploaded</span> }</td>
                     <td>@if (b.monthly; as m) { {{ m.months }} {{ m.months === 1 ? 'month' : 'months' }}: {{ m.first }}{{ m.months > 1 ? ' to ' + m.last : '' }}<br><span class="muted">latest file {{ m.fileName }}</span> } @else { <span class="muted">Not uploaded</span> }</td>
                     <td>@if (b.advertising; as a) { {{ a.periods.join(', ') }}<br><span class="muted">{{ a.fileName }}</span> } @else { <span class="muted">Not uploaded</span> }</td>
-                    <td>@if (b.costs; as c) { {{ c.productCount }} products<br><span class="muted">{{ dateText(c.date) }}</span> } @else { <span class="muted">Not uploaded</span> }</td>
+                    <td>@if (b.costs; as c) { {{ c.productCount }} products<br><span class="muted">{{ dateText(c.date) }}</span> } @else { <span class="muted">Not uploaded</span> }@if (b.typed) { <br><span class="muted">Typed data saved (COGS)</span> }</td>
+                    <td><button type="button" class="secondary-btn danger-btn" (click)="openWipe(b.brand)">Delete brand</button></td>
                   </tr>
                 }
               </tbody>
@@ -89,12 +90,39 @@ interface CardMessage { text: string; type: 'success' | 'error' | ''; }
       } @else if (loading()) {
         <p class="muted overview-loading">Loading…</p>
       }
+
+      @if (wipeBrand(); as brand) {
+        <div class="dialog-backdrop" (click)="closeWipe()">
+          <div class="dialog wipe-dialog" role="dialog" aria-modal="true" aria-labelledby="wipeTitle" (click)="$event.stopPropagation()">
+            <h2 id="wipeTitle">Delete brand: {{ brand }}</h2>
+            <p>This removes <strong>{{ brand }}</strong> from the whole dashboard:</p>
+            <ul class="wipe-list">
+              <li>Stock, and its 45/60-day history</li>
+              <li>Sales, and its trend history</li>
+              <li>Monthly sales (Trends and Month by month)</li>
+              <li>Advertising</li>
+              <li>The uploaded cost sheet</li>
+            </ul>
+            <label class="dialog-check"><input type="checkbox" [checked]="wipeTyped()" (change)="wipeTyped.set(checked($event))"> <span>Also remove manually typed data (COGS)</span></label>
+            <p class="muted wipe-hint">{{ wipeTyped() ? 'The COGS, GST %, commission %, Profit settings and monthly other costs typed on the Profit tab are deleted too.' : 'Left unticked, what was typed on the Profit tab (COGS, GST %, commission %, settings, monthly other costs) is kept for when this brand is uploaded again.' }}</p>
+            <p class="dialog-consequence">This cannot be undone. Other brands are not touched. The saved "Undo the last upload" copies are cleared for every report, because an undo would bring this brand back.</p>
+            <label class="filter-label" for="wipeConfirm">Type the brand name to confirm</label>
+            <input id="wipeConfirm" class="styled-select" autocomplete="off" [placeholder]="brand" [value]="wipeText()" (input)="wipeText.set(valueOf($event))" (keydown.enter)="confirmWipe()">
+            <div class="dialog-actions">
+              <button type="button" class="secondary-btn" (click)="closeWipe()">Cancel</button>
+              <button type="button" class="secondary-btn danger-btn" [disabled]="!wipeReady() || wiping()" (click)="confirmWipe()">{{ wiping() ? 'Deleting...' : 'Delete ' + brand }}</button>
+            </div>
+          </div>
+        </div>
+      }
     }
   `,
 })
-export class UploadsPageComponent implements OnInit {
+export class UploadsPageComponent implements OnInit, OnDestroy {
   private readonly api = inject(ApiService);
   private readonly auth = inject(AuthService);
+  private readonly route = inject(ActivatedRoute);
+  private readonly router = inject(Router);
   readonly ui = inject(UiStateService);
   readonly cards: UploadCard[] = [
     { kind: 'inventory', title: 'Stock report', help: 'The Blinkit stock export (.xlsx). Replaces the stock of every brand in the file.' },
@@ -113,12 +141,66 @@ export class UploadsPageComponent implements OnInit {
   private readonly messages = signal<Partial<Record<UploadKind, CardMessage>>>({});
   readonly brandNames = computed(() => (this.overview()?.brands ?? []).map((b) => b.brand));
   private pendingTimer?: ReturnType<typeof setTimeout>;
+  /** The brand whose "Delete brand" confirmation is open ('' = closed). */
+  readonly wipeBrand = signal('');
+  readonly wipeTyped = signal(false);
+  readonly wipeText = signal('');
+  readonly wiping = signal(false);
+  /** The Delete button works only once the brand name has been typed (capitals and spaces at the ends don't matter). */
+  readonly wipeReady = computed(() => this.wipeBrand() !== '' && this.wipeText().trim().toLowerCase() === this.wipeBrand().trim().toLowerCase());
+  // The cross beside the brand in the sidebar arrives here as /uploads?wipe=<brand>.
+  private readonly wipeParam = this.route.queryParamMap.subscribe((params) => {
+    const brand = (params.get('wipe') ?? '').trim();
+    if (!brand) return;
+    this.openWipe(brand); // the dialog itself is only drawn for admins, and the server checks again
+    void this.router.navigate([], { relativeTo: this.route, queryParams: {}, replaceUrl: true }); // so a reload does not reopen it
+  });
 
   async ngOnInit() { await this.loadOverview(); }
+  ngOnDestroy() { this.wipeParam.unsubscribe(); clearTimeout(this.pendingTimer); }
 
   isAdmin() { return this.auth.user()?.role === 'admin'; }
   message(kind: UploadKind): CardMessage | null { return this.messages()[kind] ?? null; }
   valueOf(event: Event) { return (event.target as HTMLInputElement).value; }
+  checked(event: Event) { return (event.target as HTMLInputElement).checked; }
+
+  // --- Delete a whole brand ---
+  openWipe(brand: string) {
+    this.wipeBrand.set(brand);
+    this.wipeTyped.set(false);
+    this.wipeText.set('');
+  }
+
+  @HostListener('document:keydown.escape')
+  closeWipe() { if (!this.wiping()) this.wipeBrand.set(''); }
+
+  async confirmWipe() {
+    const brand = this.wipeBrand();
+    if (!this.wipeReady() || this.wiping()) return;
+    this.wiping.set(true);
+    try {
+      const result = await this.api.wipeBrand(brand, this.wipeTyped());
+      const r = result.removed;
+      const parts = [
+        r.stockRows ? `${r.stockRows} stock rows` : '',
+        r.salesRows ? `${r.salesRows} sales rows` : '',
+        r.months ? `${r.months} ${r.months === 1 ? 'month' : 'months'} of monthly sales` : '',
+        r.campaignRows ? `${r.campaignRows} advertising rows` : '',
+        r.costSheet ? 'the cost sheet' : '',
+        r.typed ? 'the typed data (COGS)' : '',
+      ].filter(Boolean);
+      this.setStatus(parts.length ? `Deleted ${brand}: ${parts.join(', ')}.` : `Nothing was stored for ${brand}.`, 'success');
+      if (this.ui.focusedBrand().toLowerCase() === brand.toLowerCase()) this.ui.setBrand('');
+      this.wipeBrand.set('');
+      this.ui.refreshLookups();
+      await this.loadOverview();
+    } catch (error) {
+      this.setStatus(error instanceof Error ? error.message : 'The delete failed.', 'error');
+      this.wipeBrand.set('');
+    } finally {
+      this.wiping.set(false);
+    }
+  }
 
   dateText(date: string) {
     const [year, month, day] = date.slice(0, 10).split('-').map(Number);

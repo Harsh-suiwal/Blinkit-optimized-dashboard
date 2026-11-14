@@ -104,6 +104,14 @@ async function setProfitSettings(brand, patch) {
   return entry.manual.settings;
 }
 
+/** True when something was typed in by hand for this brand: COGS / GST / commission per product, Profit settings, or monthly other costs. */
+function hasTypedData(entry) {
+  const manual = entry.manual || {};
+  return Object.keys(manual.products || {}).length > 0
+    || Object.keys(manual.settings || {}).length > 0
+    || Object.keys(entry.otherCosts || {}).length > 0;
+}
+
 /** One summary line per brand that has stored costs (no product data). */
 function listBrandCosts() {
   return peekBrands().map((b) => ({
@@ -111,7 +119,29 @@ function listBrandCosts() {
     fileName: b.fileName || '',
     uploadedAt: b.uploadedAt || '',
     productCount: Array.isArray(b.products) ? b.products.length : 0,
+    hasTyped: hasTypedData(b),
   }));
 }
 
-module.exports = { getBrandCosts, saveBrandProducts, setOtherCost, setProductField, setProfitSettings, listBrandCosts };
+/**
+ * Removes a brand's uploaded cost sheet. With `typed` true the hand-typed data goes too (COGS, GST %,
+ * commission %, Profit settings, monthly other costs); otherwise it is kept for when the brand is uploaded again.
+ * Returns { costSheet, typed }: what was actually removed.
+ */
+async function removeBrandCosts(brand, { typed = false } = {}) {
+  const brands = loadForWrite();
+  const index = brands.findIndex((b) => brandKey(b.brandName) === brandKey(brand));
+  if (index === -1) return { costSheet: false, typed: false };
+  const entry = brands[index];
+  const hadSheet = Array.isArray(entry.products) && entry.products.length > 0;
+  const hadTyped = hasTypedData(entry);
+  if (typed || !hadTyped) {
+    brands.splice(index, 1);
+  } else {
+    brands[index] = { ...entry, fileName: '', uploadedAt: '', products: [] };
+  }
+  await kv.set(KEY, { brands });
+  return { costSheet: hadSheet, typed: typed && hadTyped };
+}
+
+module.exports = { getBrandCosts, saveBrandProducts, setOtherCost, setProductField, setProfitSettings, listBrandCosts, removeBrandCosts };

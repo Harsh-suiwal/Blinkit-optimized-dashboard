@@ -368,6 +368,7 @@ export class ProfitPageComponent {
     if (this.menu() && !target?.closest('.feeder-picker')) this.menu.set('');
   }
   @HostListener('document:keydown.escape')
+  @HostListener('window:resize')
   closeMenuOnEscape() { this.menu.set(''); }
 
   isProductOn(name: string) { const f = this.productFilter(); return f === null || f.includes(name); }

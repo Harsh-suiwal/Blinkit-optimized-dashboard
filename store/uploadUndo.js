@@ -59,4 +59,14 @@ async function undoUpload(kind) {
   return { kind: saved.kind, label: saved.label, fileName: saved.fileName, brands: saved.brands };
 }
 
-module.exports = { captureUndo, listUndo, undoUpload, UNDO_KINDS };
+/**
+ * Forgets every saved "undo the last upload". Used when a brand is wiped or the stock history is reset: an undo
+ * puts whole stores back as they were, so it would quietly bring the deleted data back.
+ */
+async function clearUndo() {
+  for (const kind of UNDO_KINDS) {
+    if (kv.peek(slotKey(kind), null)) await kv.delete(slotKey(kind));
+  }
+}
+
+module.exports = { captureUndo, listUndo, undoUpload, clearUndo, UNDO_KINDS };
