@@ -44,8 +44,13 @@ import { AdminUser, RoleOption } from '../core/models';
         <div class="profile-row">
           <span class="profile-label">Brands</span>
           <div class="users-brands">
+            @if (brands().length) {
+              <label class="brand-chip select-all">
+                <input type="checkbox" [checked]="allSelected(newUser.brands)" (change)="toggleAll(newUser.brands, $any($event.target).checked)" /> Select all
+              </label>
+            }
             @for (b of brands(); track b) {
-              <label><input type="checkbox" [checked]="newUser.brands.includes(b)" (change)="toggle(newUser.brands, b, $any($event.target).checked)" /> {{ b }}</label>
+              <label class="brand-chip"><input type="checkbox" [checked]="newUser.brands.includes(b)" (change)="toggle(newUser.brands, b, $any($event.target).checked)" /> {{ b }}</label>
             }
             @if (!brands().length) { <span class="muted">No brands uploaded yet.</span> }
           </div>
@@ -69,8 +74,13 @@ import { AdminUser, RoleOption } from '../core/models';
               <div class="profile-row">
                 <span class="profile-label">Brands</span>
                 <div class="users-brands">
+                  @if (brands().length) {
+                    <label class="brand-chip select-all">
+                      <input type="checkbox" [checked]="allSelected(editDraft.brands)" (change)="toggleAll(editDraft.brands, $any($event.target).checked)" /> Select all
+                    </label>
+                  }
                   @for (b of brands(); track b) {
-                    <label><input type="checkbox" [checked]="editDraft.brands.includes(b)" (change)="toggle(editDraft.brands, b, $any($event.target).checked)" /> {{ b }}</label>
+                    <label class="brand-chip"><input type="checkbox" [checked]="editDraft.brands.includes(b)" (change)="toggle(editDraft.brands, b, $any($event.target).checked)" /> {{ b }}</label>
                   }
                 </div>
               </div>
@@ -88,6 +98,17 @@ import { AdminUser, RoleOption } from '../core/models';
         }
       </div>
     </section>
+  `,
+  styles: `
+    .users-brands { display: flex; flex-wrap: wrap; gap: 8px; }
+    .brand-chip {
+      display: inline-flex; align-items: center; gap: 6px;
+      padding: 5px 10px; border: 1px solid #d0d5dd; border-radius: 6px;
+      cursor: pointer; user-select: none; font-size: 13px;
+    }
+    .brand-chip:hover { background: rgba(127, 127, 127, 0.12); }
+    .brand-chip input { cursor: pointer; accent-color: #4f46e5; }
+    .brand-chip.select-all { font-weight: 600; border-style: dashed; }
   `,
 })
 export class UsersPageComponent implements OnInit {
@@ -142,6 +163,16 @@ export class UsersPageComponent implements OnInit {
     const at = list.indexOf(brand);
     if (on && at === -1) list.push(brand);
     if (!on && at !== -1) list.splice(at, 1);
+  }
+
+  allSelected(list: string[]) {
+    const all = this.brands();
+    return all.length > 0 && all.every((b) => list.includes(b));
+  }
+
+  toggleAll(list: string[], on: boolean) {
+    list.length = 0;
+    if (on) list.push(...this.brands());
   }
 
   roleLabel(value: string) {
