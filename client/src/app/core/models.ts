@@ -1,7 +1,45 @@
+export type PermKey = 'allBrands' | 'profit' | 'upload' | 'deleteData' | 'download' | 'manageUsers';
+
+export interface Perms {
+  allBrands: boolean;
+  profit: boolean;
+  upload: boolean;
+  deleteData: boolean;
+  download: boolean;
+  manageUsers: boolean;
+}
+
+/** From GET /api/me. brands is null when the role sees every brand. */
 export interface User {
   id?: string;
   email: string;
-  role: 'admin' | string;
+  role: string;
+  roleLabel?: string;
+  name?: string;
+  brands: string[] | null;
+  perms: Perms;
+}
+
+/** One row of GET /api/users. */
+export interface AdminUser {
+  id: string;
+  email: string;
+  role: string;
+  name: string;
+  brands: string[];
+  active: boolean;
+}
+
+export interface RoleOption {
+  value: string;
+  label: string;
+}
+
+/** GET /api/users. */
+export interface UsersResponse {
+  users: AdminUser[];
+  roles: RoleOption[];
+  brands: string[];
 }
 
 export interface ProductRow {
