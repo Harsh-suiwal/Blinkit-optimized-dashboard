@@ -85,7 +85,15 @@ import { UiStateService } from '../core/ui-state.service';
     }
 
     <main class="main-content" [class.sidebar-collapsed]="ui.collapsed()" [class.presenting]="ui.presenting()">
-      <router-outlet />
+      @if (noBrandAssigned()) {
+        <section class="overview-empty no-brand">
+          <h2>No brand assigned</h2>
+          <p class="muted">Your account has no brands yet. Ask an admin to tick a brand for you on the Users page.</p>
+          <a routerLink="/profile" class="secondary-btn">Profile</a>
+        </section>
+      } @else {
+        <router-outlet />
+      }
     </main>
   `,
 })
@@ -102,6 +110,12 @@ export class AppShellComponent implements OnInit {
     const mine = this.auth.user()?.brands;
     if (!mine) return this.brands();
     return this.brands().filter((b) => mine.some((m) => m.toLowerCase() === b.toLowerCase()));
+  });
+
+  /** True for a restricted account with no brands ticked. False while the account is still loading. */
+  readonly noBrandAssigned = computed(() => {
+    const mine = this.auth.user()?.brands;
+    return Array.isArray(mine) && mine.length === 0;
   });
 
   /** The cross beside the selected brand: opens the Uploads page with the delete confirmation for that brand. */
