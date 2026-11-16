@@ -133,7 +133,7 @@ export class ReportsPageComponent {
   readonly use = signal<Record<InputGroup, boolean>>({ price: true, availability: true, decisions: true });
   readonly zoom = signal(0.6);
   readonly sectionList = REPORT_SECTIONS;
-  readonly isAdmin = computed(() => this.auth.isAdmin());
+  readonly isAdmin = computed(() => this.auth.can('profit'));
   private requestId = 0;
 
   /** What is actually used: an input group that is switched off counts as empty. */

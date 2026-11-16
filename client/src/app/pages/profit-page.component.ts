@@ -289,7 +289,7 @@ export class ProfitPageComponent {
     });
   }
 
-  isAdmin() { return this.auth.isAdmin(); }
+  isAdmin() { return this.auth.can('profit'); }
   signed(value: number) { return value < 0 ? `-${money(-value, 0)}` : money(value, 0); }
   percent(value: number | null) {
     return value === null ? 'n/a' : `${value.toLocaleString('en-IN', { maximumFractionDigits: 1 })}%`;

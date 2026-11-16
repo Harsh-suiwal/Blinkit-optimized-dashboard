@@ -159,7 +159,7 @@ export class UploadsPageComponent implements OnInit, OnDestroy {
   async ngOnInit() { await this.loadOverview(); }
   ngOnDestroy() { this.wipeParam.unsubscribe(); clearTimeout(this.pendingTimer); }
 
-  isAdmin() { return this.auth.user()?.role === 'admin'; }
+  isAdmin() { return this.auth.can('upload'); }
   message(kind: UploadKind): CardMessage | null { return this.messages()[kind] ?? null; }
   valueOf(event: Event) { return (event.target as HTMLInputElement).value; }
   checked(event: Event) { return (event.target as HTMLInputElement).checked; }

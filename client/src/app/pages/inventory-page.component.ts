@@ -61,7 +61,7 @@ function readHiddenFeeders(): string[] {
     <header class="topbar topbar-static">
       <div class="topbar-left"><div><h1>Stock</h1><span class="muted">{{ lastUpdated() }}</span></div></div>
       <div class="topbar-right">
-        @if (isAdmin()) { <label class="upload-btn">Upload Inventory<input type="file" accept=".xlsx" hidden (change)="upload($event)"></label> }
+        @if (canUpload()) { <label class="upload-btn">Upload Inventory<input type="file" accept=".xlsx" hidden (change)="upload($event)"></label> }
         @if (!ui.presenting()) { <button class="secondary-btn" (click)="download('/api/export')">Get Sheet</button> }
         <button class="secondary-btn full-report-btn" (click)="download('/api/export-all')">📊 Full Report</button>
         @if (isAdmin()) { <button class="secondary-btn danger-btn" (click)="clearOpen.set(true)">🗑️ Clear Data</button> }
@@ -340,7 +340,8 @@ export class InventoryPageComponent implements OnInit {
     await this.load();
   }
 
-  isAdmin() { return this.auth.isAdmin(); }
+  isAdmin() { return this.auth.can('deleteData'); }
+  canUpload() { return this.auth.can('upload'); }
   rowKey(row: ProductRow) { return `${row.productName}::${row.warehouseName}`; }
   /** Clicking the picked status again goes back to all statuses. */
   toggleStatus(key: string) { this.statusFilter.set(this.statusFilter() === key ? '' : key); this.groupOpen.set(''); }

@@ -35,7 +35,7 @@ const SHEET_LABELS: Record<CampaignSheetFilter, string> = {
     <header class="topbar">
       <div class="topbar-left"><div><h1>Advertising</h1><span class="muted">{{ lastUpdated() }}</span></div></div>
       <div class="topbar-right">
-        @if (isAdmin()) { <label class="upload-btn">Upload Campaign Sheet<input type="file" accept=".xls,.xlsx" hidden (change)="upload($event)"></label> }
+        @if (canUpload()) { <label class="upload-btn">Upload Campaign Sheet<input type="file" accept=".xls,.xlsx" hidden (change)="upload($event)"></label> }
         @if (!ui.presenting()) { <button class="secondary-btn" (click)="exportCampaign()">Get Sheet</button> }
         @if (isAdmin()) { <button class="secondary-btn danger-btn" (click)="clearOpen.set(true)">🗑️ Clear Data</button> }
       </div>
@@ -73,7 +73,7 @@ const SHEET_LABELS: Record<CampaignSheetFilter, string> = {
     @if (brandChips().length && !ui.focusedBrand()) {
       <section class="brand-bar"><app-brand-filter [brands]="brandChips()" [selected]="ui.focusedBrand()" (select)="ui.setBrand($event)" /></section>
     }
-    @if (hasUnknownBrand() && isAdmin() && !ui.focusedBrand()) {
+    @if (hasUnknownBrand() && canUpload() && !ui.focusedBrand()) {
       <p class="muted brand-note">Some campaigns couldn't be matched to a brand ("Unknown"). Teach the resolver with <code>POST /api/brand-alias</code> or by editing <code>data/brandAliases.json</code>, then re-upload.</p>
     }
     @if (focusNote()) { <p class="muted brand-note">{{ focusNote() }}</p> }
@@ -449,7 +449,8 @@ export class CampaignPageComponent implements OnInit, OnDestroy {
 
   async ngOnInit() { this.initialized = true; await this.load(); }
   ngOnDestroy() { this.stopResize(); }
-  isAdmin() { return this.auth.isAdmin(); }
+  isAdmin() { return this.auth.can('deleteData'); }
+  canUpload() { return this.auth.can('upload'); }
   sheetLabel(type: CampaignSheetFilter) { return SHEET_LABELS[type] ?? type; }
   rowKey(row: CampaignRow) { return `${row.sheetType}|${row.campaignId}`; }
   isFocusedBrand(name: string) { return this.ui.focusedBrand().toLowerCase() === name.toLowerCase(); }

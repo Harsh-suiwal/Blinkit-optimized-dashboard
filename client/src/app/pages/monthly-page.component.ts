@@ -203,7 +203,7 @@ export class MonthlyPageComponent {
     });
   }
 
-  isAdmin() { return this.auth.isAdmin(); }
+  isAdmin() { return this.auth.can('upload'); }
   isSelected(monthKey: string) { return this.selected().includes(monthKey); }
 
   toggleMonth(monthKey: string) {

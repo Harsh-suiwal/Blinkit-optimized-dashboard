@@ -21,7 +21,7 @@ const TOP_CITY_LIMIT = 7; // how many cities the Top City hover list shows
     <header class="topbar">
       <div class="topbar-left"><div><h1>{{ view() === 'months' ? 'Sales by month' : view() === 'product' ? 'Sales by product' : 'Sales by city' }}</h1><span class="muted">{{ lastUpdated() }}</span></div></div>
       <div class="topbar-right">
-        @if (isAdmin()) { <label class="upload-btn">Upload Sales Report<input type="file" accept=".xlsx" hidden (change)="upload($event)"></label> }
+        @if (canUpload()) { <label class="upload-btn">Upload Sales Report<input type="file" accept=".xlsx" hidden (change)="upload($event)"></label> }
         @if (!ui.presenting()) { <button class="secondary-btn" (click)="getSheet()">Get Sheet</button> }
         @if (isAdmin()) { <button class="secondary-btn danger-btn" (click)="clearOpen.set(true)">🗑️ Clear Data</button> }
       </div>
@@ -362,7 +362,8 @@ export class SalesPageComponent implements OnInit {
   }
 
   async ngOnInit() { this.initialized = true; await this.load(); }
-  isAdmin() { return this.auth.isAdmin(); }
+  isAdmin() { return this.auth.can('deleteData'); }
+  canUpload() { return this.auth.can('upload'); }
   // Deleting a city removes it for every brand, so it is only offered in the unfiltered view.
   isFocused() { return Boolean(this.ui.focusedBrand()) || Boolean(this.ui.focusedFeeder()); }
   ordersLabel() { return this.summary().totalOrders; }
