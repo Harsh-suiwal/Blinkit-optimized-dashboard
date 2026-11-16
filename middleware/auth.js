@@ -1,6 +1,6 @@
 /**
  * Auth middleware – session-based.
- * Protects routes that require login and/or admin role.
+ * Protects routes that require login. Permissions: see middleware/access.js.
  */
 
 function requireAuth(req, res, next) {
@@ -10,14 +10,5 @@ function requireAuth(req, res, next) {
   next();
 }
 
-function requireAdmin(req, res, next) {
-  if (!req.session || !req.session.user) {
-    return res.status(401).json({ error: 'Not authenticated. Please log in.' });
-  }
-  if (req.session.user.role !== 'admin') {
-    return res.status(403).json({ error: 'Admin access required.' });
-  }
-  next();
-}
-
-module.exports = { requireAuth, requireAdmin };
+// Role checks live in middleware/access.js (requirePerm). Use requireAuth for "logged in" only.
+module.exports = { requireAuth };

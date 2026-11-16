@@ -6,6 +6,8 @@ const express = require('express');
 const bcrypt = require('bcrypt');
 const rateLimit = require('express-rate-limit');
 const supabase = require('../db/supabase');
+const accounts = require('../store/accounts');
+const { accountFrom, resolveAccount, publicAccount } = require('../middleware/access');
 
 const router = express.Router();
 
@@ -39,7 +41,8 @@ router.post('/login', loginLimiter, async (req, res) => {
     }
 
     const match = await bcrypt.compare(password, user.password);
-    if (!match) {
+    // A deactivated user gets the same answer as a wrong password.
+    if (!match || !accounts.profileOf(user.id).active) {
       return res.status(401).json({ error: 'Invalid email or password.' });
     }
 
@@ -61,7 +64,7 @@ router.post('/login', loginLimiter, async (req, res) => {
         }
         res.json({
           ok: true,
-          user: { email: user.email, role: user.role },
+          user: publicAccount(accountFrom(user, accounts.profileOf(user.id))),
         });
       });
     });
@@ -83,11 +86,19 @@ router.post('/logout', (req, res) => {
 });
 
 // GET /api/me  — check current session
-router.get('/me', (req, res) => {
+router.get('/me', async (req, res) => {
   if (!req.session || !req.session.user) {
     return res.status(401).json({ error: 'Not logged in.' });
   }
-  res.json({ user: req.session.user });
+  try {
+    // Read again every time: role, brands and active flag can change while the session lives.
+    const account = await resolveAccount(req.session.user.id);
+    if (!account) return res.status(401).json({ error: 'Not logged in.' });
+    res.json({ user: publicAccount(account) });
+  } catch (err) {
+    console.error('Account lookup failed:', err.message);
+    res.status(500).json({ error: 'Internal server error.' });
+  }
 });
 
 module.exports = router;

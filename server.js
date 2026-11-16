@@ -69,13 +69,16 @@ const { getBrandCosts, saveBrandProducts, setOtherCost, setProductField, setProf
 const { buildUploadsOverview } = require('./parser/uploadsOverview');
 const { buildBrandProfit } = require('./parser/brandProfit');
 const { buildProfitView } = require('./parser/profitView');
-const { buildProductMonthDetail, canSeeProductProfit } = require('./parser/productMonthDetail');
+const { buildProductMonthDetail } = require('./parser/productMonthDetail');
 const { buildBrandReport } = require('./parser/brandReport');
 
 const kv = require('./store/kv');
 const { captureUndo, listUndo, undoUpload, clearUndo, UNDO_KINDS } = require('./store/uploadUndo');
 const KvSessionStore = require('./store/sessionStore');
-const { requireAuth, requireAdmin } = require('./middleware/auth');
+const { requireAuth } = require('./middleware/auth');
+const { loadAccount, brandGuard, requirePerm, canSeeBrand } = require('./middleware/access');
+const { createUsersRouter } = require('./routes/users');
+const accounts = require('./store/accounts');
 const authRoutes = require('./routes/auth');
 
 const app = express();
@@ -88,8 +91,6 @@ const SALES_LATEST_KEY = 'salesLatest';
 const PRODUCT_SALES_KEY = 'salesByProduct';
 const ANGULAR_DIST_PATH = path.join(__dirname, 'client', 'dist', 'client', 'browser');
 // Stock status rules (lead time, healthy days, surge) live in parser/stockStatus.js; LOW_STOCK_THRESHOLD in .env is no longer used.
-// "true" hides per-product profit on Sales > Month by month from non-admins (default: shown to everyone logged in).
-const PRODUCT_PROFIT_ADMIN_ONLY = String(process.env.PRODUCT_PROFIT_ADMIN_ONLY || '').trim().toLowerCase() === 'true';
 
 if (!fs.existsSync(UPLOAD_DIR)) fs.mkdirSync(UPLOAD_DIR, { recursive: true });
 
@@ -195,6 +196,12 @@ app.use((req, res, next) => {
   next();
 });
 
+// Every /api call from here on: load the account (role, brands, active flag from storage), apply the brand
+// rules (middleware/access.js), then the route's own permission (requirePerm). Users API: admin only.
+app.use(loadAccount);
+app.use(brandGuard);
+app.use('/api/users', createUsersRouter({ knownBrands: knownBrandNames }));
+
 // Preserve useful legacy URLs while moving the actual dashboard to Angular.
 app.get('/', (_req, res) => res.redirect('/app/'));
 
@@ -268,7 +275,7 @@ function loadLatest() {
 
 // --- Upload (admin only) --------------------------------------------------
 
-app.post('/api/upload', requireAdmin, uploadReport, mutating(async (req, res) => {
+app.post('/api/upload', requirePerm('upload'), uploadReport, mutating(async (req, res) => {
   if (!req.file) {
     return res.status(400).json({ error: 'No file uploaded.' });
   }
@@ -323,9 +330,12 @@ app.post('/api/upload', requireAdmin, uploadReport, mutating(async (req, res) =>
 app.get('/api/products', requireAuth, (req, res) => {
   const latest = loadLatest();
   if (!latest) return res.json({ date: null, rows: [] });
-  // Stamp the resolved brand so the client never has to guess it.
+  // Stamp the resolved brand so the client never has to guess it. ?brand= keeps that brand's rows only.
   const aliases = loadAliases();
-  const rows = latest.rows.map((r) => ({ ...r, brandName: brandOf(r.productName, r.brandName, aliases) }));
+  const brand = typeof req.query.brand === 'string' ? req.query.brand.trim() : '';
+  const rows = latest.rows
+    .map((r) => ({ ...r, brandName: brandOf(r.productName, r.brandName, aliases) }))
+    .filter((r) => !brand || sameBrand(r.brandName || 'Unknown', brand));
   res.json({ ...latest, rows });
 });
 
@@ -335,6 +345,12 @@ app.get('/api/summary', requireAuth, (req, res) => {
     return res.json({ totalUnitsSold30: 0, totalStock: 0, productCount: 0, lowOrOutCount: 0 });
   }
 
+  // ?brand= counts that brand only (a brand-limited account always sends one).
+  const brand = typeof req.query.brand === 'string' ? req.query.brand.trim() : '';
+  if (brand) {
+    const aliases = loadAliases();
+    latest.rows = latest.rows.filter((r) => sameBrand(brandOf(r.productName, r.brandName, aliases) || 'Unknown', brand));
+  }
   const totalUnitsSold30 = latest.rows.reduce((sum, r) => sum + r.unitsSold30, 0);
   const totalStock = latest.rows.reduce((sum, r) => sum + r.totalStockAvailable, 0);
   const productCount = new Set(latest.rows.map((r) => r.productName)).size;
@@ -347,7 +363,7 @@ app.get('/api/summary', requireAuth, (req, res) => {
 // (kv "history") is kept by default: it is what the 45/60-day figures are computed from, and it cannot
 // be rebuilt. ?history=1 resets it too (a fresh start): 45d / 60d then read "n/a" until about 30 days of
 // new uploads exist. A reset also forgets the saved "undo the last stock upload", which would bring it back.
-app.delete('/api/inventory-data', requireAdmin, mutating(async (req, res) => {
+app.delete('/api/inventory-data', requirePerm('deleteData'), mutating(async (req, res) => {
   const brand = typeof req.query.brand === 'string' ? req.query.brand.trim() : '';
   const latest = brand ? loadLatest() : null;
   if (req.query.history === '1') {
@@ -384,7 +400,7 @@ function stockSnapshotOfBrand(brand) {
 // typed in by hand on the Profit tab (COGS, GST %, commission %, settings, monthly other costs).
 // Brand aliases are kept (they only teach the app how to read names). Saved "undo the last upload"
 // copies are dropped, because an undo would bring the brand back. This cannot be undone.
-app.delete('/api/brand', requireAdmin, mutating(async (req, res) => {
+app.delete('/api/brand', requirePerm('deleteData'), mutating(async (req, res) => {
   const brand = typeof req.query.brand === 'string' ? req.query.brand.trim() : '';
   if (!brand) return res.status(400).json({ error: 'brand is required.' });
   const typed = req.query.typed === '1';
@@ -432,7 +448,7 @@ app.delete('/api/brand', requireAdmin, mutating(async (req, res) => {
 // Kept intentionally simple: this only touches the current view (not the
 // 45/60 day snapshot history), since that history is shared across
 // products and warehouses and shouldn't be wiped by a single-row delete.
-app.delete('/api/products', requireAdmin, mutating(async (req, res) => {
+app.delete('/api/products', requirePerm('deleteData'), mutating(async (req, res) => {
   const { productName, warehouseName } = req.query;
   if (!productName || !warehouseName) {
     return res.status(400).json({ error: 'productName and warehouseName are required.' });
@@ -457,7 +473,7 @@ app.delete('/api/products', requireAdmin, mutating(async (req, res) => {
 
 // Re-inserts a previously deleted row (Ctrl+Z / undo) at its original
 // position.
-app.post('/api/products/restore', requireAdmin, mutating(async (req, res) => {
+app.post('/api/products/restore', requirePerm('deleteData'), mutating(async (req, res) => {
   const { row, index } = req.body || {};
   if (!row) return res.status(400).json({ error: 'row is required.' });
 
@@ -477,12 +493,23 @@ app.post('/api/products/restore', requireAdmin, mutating(async (req, res) => {
 // the "focus one product" dropdown always reflects real data across tabs.
 app.get('/api/product-names', requireAuth, (req, res) => {
   const names = new Set();
+  // ?brand= keeps that brand's products only.
+  const brand = typeof req.query.brand === 'string' ? req.query.brand.trim() : '';
+  const aliases = loadAliases();
 
   const inventory = loadLatest();
-  if (inventory) inventory.rows.forEach((r) => names.add(r.productName));
+  if (inventory) {
+    inventory.rows.forEach((r) => {
+      if (!brand || sameBrand(brandOf(r.productName, r.brandName, aliases) || 'Unknown', brand)) names.add(r.productName);
+    });
+  }
 
   const productSales = loadProductSalesLatest();
-  if (productSales) productSales.productRows.forEach((r) => names.add(r.productName));
+  if (productSales) {
+    productSales.productRows.forEach((r) => {
+      if (!brand || sameBrand(r.brandName, brand)) names.add(r.productName);
+    });
+  }
 
   res.json({ names: Array.from(names).sort((a, b) => a.localeCompare(b)) });
 });
@@ -497,7 +524,7 @@ function brandOf(name, explicitBrand, aliases) {
 }
 
 // Distinct brand names across all uploaded data (inventory + sales + campaigns).
-app.get('/api/brand-names', requireAuth, (req, res) => {
+function knownBrandNames() {
   const brands = new Set();
   const aliases = loadAliases();
   const add = (name, explicit) => {
@@ -527,12 +554,16 @@ app.get('/api/brand-names', requireAuth, (req, res) => {
   // Brands that only have monthly sales uploads must still be selectable.
   listMonthlyBrands().forEach((b) => add('', b));
 
-  res.json({ brands: Array.from(brands).sort((x, y) => x.localeCompare(y)) });
+  return Array.from(brands).sort((x, y) => x.localeCompare(y));
+}
+
+app.get('/api/brand-names', requireAuth, (req, res) => {
+  res.json({ brands: knownBrandNames() }); // filtered to the account's brands by brandGuard
 });
 
 // Teaches the brand resolver a new mapping, e.g. { raw: 'Knife PB', canonical: 'Oicia' }.
 // Applies to files parsed from now on; already-stored campaign rows keep their brand.
-app.post('/api/brand-alias', requireAdmin, mutating(async (req, res) => {
+app.post('/api/brand-alias', requirePerm('upload'), mutating(async (req, res) => {
   const { raw, canonical } = req.body || {};
   if (typeof raw !== 'string' || typeof canonical !== 'string' || !raw.trim() || !canonical.trim()) {
     return res.status(400).json({ error: 'raw and canonical are required.' });
@@ -581,7 +612,7 @@ function buildInventoryWorksheet(brand = '') {
   return { ws, date: latest.date };
 }
 
-app.get('/api/export', requireAuth, (req, res) => {
+app.get('/api/export', requirePerm('download'), (req, res) => {
   const brand = typeof req.query.brand === 'string' ? req.query.brand.trim() : '';
   const built = buildInventoryWorksheet(brand);
   if (!built) return res.status(400).json({ error: brand ? `No stock rows found for ${brand}.` : 'No report uploaded yet.' });
@@ -639,7 +670,7 @@ function salesRowsForBrand(store, brand) {
   return brand ? store.cityRows.filter((r) => sameBrand(r.brandName, brand)) : store.cityRows;
 }
 
-app.post('/api/sales-upload', requireAdmin, uploadReport, mutating(async (req, res) => {
+app.post('/api/sales-upload', requirePerm('upload'), uploadReport, mutating(async (req, res) => {
   if (!req.file) {
     return res.status(400).json({ error: 'No file uploaded.' });
   }
@@ -726,7 +757,7 @@ app.post('/api/sales-upload', requireAdmin, uploadReport, mutating(async (req, r
 // --- Monthly sales comparison ------------------------------------------------
 // kv `salesMonthly`: one slot per (brand, order-date month); see parser/salesMonthly.js.
 // This upload only adds months; it does not change the Sales tab's current view.
-app.post('/api/sales-month-upload', requireAdmin, uploadReport, mutating(async (req, res) => {
+app.post('/api/sales-month-upload', requirePerm('upload'), uploadReport, mutating(async (req, res) => {
   if (!req.file) {
     return res.status(400).json({ error: 'No file uploaded.' });
   }
@@ -787,7 +818,7 @@ app.get('/api/sales-month-compare', requireAuth, (req, res) => {
 });
 
 // Deletes one brand's month; returns the removed slot so the client can undo.
-app.delete('/api/sales-month', requireAdmin, mutating(async (req, res) => {
+app.delete('/api/sales-month', requirePerm('deleteData'), mutating(async (req, res) => {
   const brand = typeof req.query.brand === 'string' ? req.query.brand.trim() : '';
   const month = typeof req.query.month === 'string' ? req.query.month.trim() : '';
   if (!brand || !MONTH_KEY_RE.test(month)) {
@@ -799,7 +830,7 @@ app.delete('/api/sales-month', requireAdmin, mutating(async (req, res) => {
   res.json({ ok: true, removed });
 }));
 
-app.post('/api/sales-month/restore', requireAdmin, mutating(async (req, res) => {
+app.post('/api/sales-month/restore', requirePerm('deleteData'), mutating(async (req, res) => {
   const restored = await restoreMonth(req.body && req.body.slot);
   if (!restored) return res.status(400).json({ error: 'Nothing valid to restore.' });
   res.json({ ok: true });
@@ -844,7 +875,7 @@ app.get('/api/brand-overview', requireAuth, (req, res) => {
 // forgets the file's hash, so the same file can be uploaded again.
 const UPLOAD_HASH_KIND = { inventory: 'inventory', sales: 'sales', salesMonthly: 'salesMonthly', campaign: 'campaign' };
 
-app.post('/api/uploads/undo', requireAdmin, mutating(async (req, res) => {
+app.post('/api/uploads/undo', requirePerm('upload'), mutating(async (req, res) => {
   const kind = req.body && typeof req.body.kind === 'string' ? req.body.kind : '';
   if (!UNDO_KINDS.includes(kind)) return res.status(400).json({ error: 'Unknown report type.' });
   const undone = await undoUpload(kind);
@@ -854,7 +885,7 @@ app.post('/api/uploads/undo', requireAdmin, mutating(async (req, res) => {
 }));
 
 // What is uploaded for each brand, and which uploads can be undone.
-app.get('/api/uploads-overview', requireAdmin, (req, res) => {
+app.get('/api/uploads-overview', requirePerm('upload'), (req, res) => {
   const inventory = loadLatest();
   const sales = loadSalesLatest();
   const campaignStore = loadCampaignStore();
@@ -884,7 +915,7 @@ function adSpendByMonthFor(brand) {
   return adSpendByMonth;
 }
 
-app.get('/api/brand-profit', requireAdmin, (req, res) => {
+app.get('/api/brand-profit', requirePerm('profit'), (req, res) => {
   const brand = typeof req.query.brand === 'string' ? req.query.brand.trim() : '';
   if (!brand) return res.status(400).json({ error: 'brand is required.' });
 
@@ -909,7 +940,7 @@ function jsonNameList(raw) {
   return null; // malformed
 }
 
-app.get('/api/profit-view', requireAdmin, (req, res) => {
+app.get('/api/profit-view', requirePerm('profit'), (req, res) => {
   const brand = typeof req.query.brand === 'string' ? req.query.brand.trim() : '';
   if (!brand) return res.status(400).json({ error: 'brand is required.' });
   const products = jsonNameList(req.query.products);
@@ -935,7 +966,7 @@ app.get('/api/profit-view', requireAdmin, (req, res) => {
 
 // One typed value of one product, body { brand, productName, field: 'cogs'|'taxPct'|'commissionPct', value: number|null }.
 // null clears it. Kept apart from the uploaded cost sheet (see parser/brandCosts.js).
-app.post('/api/profit-product-cost', requireAdmin, mutating(async (req, res) => {
+app.post('/api/profit-product-cost', requirePerm('profit'), mutating(async (req, res) => {
   const body = req.body || {};
   const brand = typeof body.brand === 'string' ? body.brand.trim() : '';
   if (!brand) return res.status(400).json({ error: 'brand is required.' });
@@ -949,7 +980,7 @@ app.post('/api/profit-product-cost', requireAdmin, mutating(async (req, res) => 
 }));
 
 // The Profit tab's default numbers, body { brand, settings: { defaultTaxPct?, defaultCommissionPct?, inwardFee?, fulfilmentFee?, storageFee? } }.
-app.post('/api/profit-settings', requireAdmin, mutating(async (req, res) => {
+app.post('/api/profit-settings', requirePerm('profit'), mutating(async (req, res) => {
   const body = req.body || {};
   const brand = typeof body.brand === 'string' ? body.brand.trim() : '';
   if (!brand) return res.status(400).json({ error: 'brand is required.' });
@@ -963,7 +994,7 @@ app.post('/api/profit-settings', requireAdmin, mutating(async (req, res) => {
 }));
 
 // Cost sheet for one brand (multipart `report`, ?brand=). Replaces the brand's product costs; other costs are kept.
-app.post('/api/brand-costs-upload', requireAdmin, uploadReport, mutating(async (req, res) => {
+app.post('/api/brand-costs-upload', requirePerm('upload'), uploadReport, mutating(async (req, res) => {
   const brand = typeof req.query.brand === 'string' ? req.query.brand.trim() : '';
   if (!req.file) return res.status(400).json({ error: 'No file uploaded.' });
   try {
@@ -981,7 +1012,7 @@ app.post('/api/brand-costs-upload', requireAdmin, uploadReport, mutating(async (
 }));
 
 // One month's other costs in rupees, body { brand, monthKey: 'YYYY-MM', amount }. 0 clears it.
-app.post('/api/brand-other-costs', requireAdmin, mutating(async (req, res) => {
+app.post('/api/brand-other-costs', requirePerm('profit'), mutating(async (req, res) => {
   const brand = typeof req.body.brand === 'string' ? req.body.brand.trim() : '';
   const monthKey = typeof req.body.monthKey === 'string' ? req.body.monthKey : '';
   const amount = Number(req.body.amount);
@@ -997,7 +1028,7 @@ app.post('/api/brand-other-costs', requireAdmin, mutating(async (req, res) => {
 // --- Product by month (Sales > Month by month) ---------------------------------
 // ?brand= is required. Without ?product= it lists the product names that have monthly data; with it
 // the product is shown month by month plus the whole brand's profit. Profit fields are removed when
-// PRODUCT_PROFIT_ADMIN_ONLY is on and the user is not an admin (this endpoint only).
+// the profit fields are left out for a role without the profit permission (config/permissions.js).
 // Several ticked products added together: POST { brand, products: [names] } (a POST only because a long
 // list of names does not fit in a web address; it changes nothing).
 app.post('/api/product-month-detail', requireAuth, (req, res) => {
@@ -1019,7 +1050,7 @@ app.post('/api/product-month-detail', requireAuth, (req, res) => {
     slots,
     costs,
     brandProfit: buildBrandProfit({ brand, monthInfo, slots, costs, adSpendByMonth: adSpendByMonthFor(brand) }),
-    profitVisible: canSeeProductProfit(PRODUCT_PROFIT_ADMIN_ONLY, req.session.user),
+    profitVisible: Boolean(req.account.perms.profit),
   }));
 });
 
@@ -1040,7 +1071,7 @@ app.get('/api/product-month-detail', requireAuth, (req, res) => {
     slots,
     costs,
     brandProfit: buildBrandProfit({ brand, monthInfo, slots, costs, adSpendByMonth: adSpendByMonthFor(brand) }),
-    profitVisible: canSeeProductProfit(PRODUCT_PROFIT_ADMIN_ONLY, req.session.user),
+    profitVisible: Boolean(req.account.perms.profit),
   }));
 });
 
@@ -1053,7 +1084,7 @@ app.get('/api/brand-report', requireAuth, (req, res) => {
   const monthKeys = typeof req.query.months === 'string'
     ? req.query.months.split(',').map((m) => m.trim()).filter((m) => MONTH_KEY_RE.test(m)).slice(0, 12)
     : [];
-  const wantsProfit = req.query.profit === '1' && Boolean(req.session.user && req.session.user.role === 'admin');
+  const wantsProfit = req.query.profit === '1' && req.account.perms.profit;
 
   const slots = slotsFor(brand, PROFIT_PLATFORM);
   const campaignStore = loadCampaignStore();
@@ -1100,7 +1131,10 @@ function salesViewForMonth(month, brand) {
     productRows: v.productRows.filter(inBrand),
     view: {
       mode: 'month', monthKey: month, label: monthLabel(month), from: v.from, to: v.to,
-      partial: Boolean(cur && cur.partial), fileNames: v.fileNames, comparesPrevious: comparePrev,
+      partial: Boolean(cur && cur.partial),
+      // Only the files of the brand asked for (a brand-limited account must not see other brands' file names).
+      fileNames: brand ? Array.from(new Set(slots.filter((s) => sameBrand(s.brandName, brand)).map((s) => s.fileName).filter(Boolean))) : v.fileNames,
+      comparesPrevious: comparePrev,
     },
   };
 }
@@ -1148,7 +1182,7 @@ app.get('/api/city-performance', requireAuth, (req, res) => {
 
 // Wipes sales data: one brand (?brand=) or everything. Trend history for the removed
 // scope goes with it so it can't resurface as a stale "previous" comparison.
-app.delete('/api/sales-history', requireAdmin, mutating(async (req, res) => {
+app.delete('/api/sales-history', requirePerm('deleteData'), mutating(async (req, res) => {
   const brand = typeof req.query.brand === 'string' ? req.query.brand.trim() : '';
   const latest = brand ? loadSalesLatest() : null;
 
@@ -1179,7 +1213,7 @@ app.delete('/api/sales-history', requireAdmin, mutating(async (req, res) => {
 // Removes one city (all brands) from the current view and purges its history so it
 // doesn't resurface as a "previous" comparison point later. Returns everything needed
 // to fully undo the delete (Ctrl+Z), including the trend-history snapshots.
-app.delete('/api/city-performance/:city', requireAdmin, mutating(async (req, res) => {
+app.delete('/api/city-performance/:city', requirePerm('deleteData'), mutating(async (req, res) => {
   const { city } = req.params;
   const latest = loadSalesLatest();
   if (!latest) return res.status(404).json({ error: 'No sales data to delete from.' });
@@ -1201,7 +1235,7 @@ app.delete('/api/city-performance/:city', requireAdmin, mutating(async (req, res
 }));
 
 // Re-inserts a previously deleted city (Ctrl+Z / undo), including its trend-history snapshots.
-app.post('/api/city-performance/restore', requireAdmin, mutating(async (req, res) => {
+app.post('/api/city-performance/restore', requirePerm('deleteData'), mutating(async (req, res) => {
   const { cityRows, historySnapshots } = req.body || {};
   if (!Array.isArray(cityRows) || !cityRows.length) return res.status(400).json({ error: 'cityRows is required.' });
 
@@ -1226,7 +1260,8 @@ app.get('/api/product-sales', requireAuth, (req, res) => {
   const latest = loadProductSalesLatest();
   if (!latest) return res.json({ date: null, row: null });
 
-  const row = latest.productRows.find((r) => r.productName === product) || null;
+  // A brand-limited account only gets a product row of one of its brands.
+  const row = latest.productRows.find((r) => r.productName === product && canSeeBrand(req.account, r.brandName)) || null;
   res.json({ date: latest.date, row });
 });
 
@@ -1338,7 +1373,7 @@ function buildSalesWorksheet(brand = '', month = '') {
   return { ws, date };
 }
 
-app.get('/api/export-sales', requireAuth, (req, res) => {
+app.get('/api/export-sales', requirePerm('download'), (req, res) => {
   const month = typeof req.query.month === 'string' ? req.query.month.trim() : '';
   if (month && !MONTH_KEY_RE.test(month)) return res.status(400).json({ error: 'month must look like 2026-10.' });
   const built = buildSalesWorksheet(typeof req.query.brand === 'string' ? req.query.brand.trim() : '', month);
@@ -1397,7 +1432,7 @@ function parseCampaignBrands(raw) {
   }
 }
 
-app.post('/api/campaign-upload', requireAdmin, uploadReport, mutating(async (req, res) => {
+app.post('/api/campaign-upload', requirePerm('upload'), uploadReport, mutating(async (req, res) => {
   if (!req.file) {
     return res.status(400).json({ error: 'No file uploaded.' });
   }
@@ -1485,11 +1520,15 @@ app.get('/api/campaign-detail', requireAuth, (req, res) => {
   const store = loadCampaignStore();
   const periodKey = resolveCampaignPeriod(store, req.query.periodKey);
   if (!periodKey) return res.json({ periodKey: null, targeting: [], daily: [] });
+  // A brand-limited account only sees a campaign that belongs to its brand (same answer as "not found").
+  const brand = typeof req.query.brand === 'string' ? req.query.brand.trim() : '';
+  const owned = store.rows.some((r) => String(r.campaignId) === String(campaignId) && r.sheetType === sheetType && sameBrand(r.brandName, brand));
+  if (!req.account.perms.allBrands && !owned) return res.status(404).json({ error: 'Not found.' });
   res.json({ periodKey, ...getCampaignDetail(store, { periodKey, sheetType, campaignId }) });
 });
 
 // Wipes stored campaign data: one brand across every period (?brand=), or everything.
-app.delete('/api/campaign-data', requireAdmin, mutating(async (req, res) => {
+app.delete('/api/campaign-data', requirePerm('deleteData'), mutating(async (req, res) => {
   const brand = typeof req.query.brand === 'string' ? req.query.brand.trim() : '';
   if (brand) await removeCampaignBrandRows(brand);
   else await clearCampaignStore();
@@ -1499,7 +1538,7 @@ app.delete('/api/campaign-data', requireAdmin, mutating(async (req, res) => {
 }));
 
 // Removes every daily row of one campaign in a period. Returns an undo token.
-app.delete('/api/campaign-analysis', requireAdmin, mutating(async (req, res) => {
+app.delete('/api/campaign-analysis', requirePerm('deleteData'), mutating(async (req, res) => {
   const { periodKey, sheetType, campaignId } = req.body || {};
   if (!periodKey || !SHEET_TYPES.includes(sheetType) || !campaignId) {
     return res.status(400).json({ error: 'periodKey, sheetType and campaignId are required.' });
@@ -1517,7 +1556,7 @@ app.delete('/api/campaign-analysis', requireAdmin, mutating(async (req, res) => 
 }));
 
 // Re-inserts a previously deleted campaign (Ctrl+Z / undo) using its token.
-app.post('/api/campaign-analysis/restore', requireAdmin, mutating(async (req, res) => {
+app.post('/api/campaign-analysis/restore', requirePerm('deleteData'), mutating(async (req, res) => {
   const { undoToken } = req.body || {};
   sweepCampaignTrash();
   const entry = undoToken ? campaignTrash.get(undoToken) : null;
@@ -1604,7 +1643,7 @@ function buildCampaignWorksheets(requestedPeriodKey, brand, sheetType) {
   return { summaryWs, dailyWs, periodKey };
 }
 
-app.get('/api/export-campaign', requireAuth, (req, res) => {
+app.get('/api/export-campaign', requirePerm('download'), (req, res) => {
   const sheetType = SHEET_TYPES.includes(req.query.sheetType) ? req.query.sheetType : 'ALL';
   const built = buildCampaignWorksheets(req.query.periodKey, req.query.brand, sheetType);
   if (!built) return res.status(400).json({ error: 'No campaign report uploaded yet.' });
@@ -1621,7 +1660,7 @@ app.get('/api/export-campaign', requireAuth, (req, res) => {
 
 // --- Full report: all sheets in one workbook -------------------------------
 
-app.get('/api/export-all', requireAuth, (req, res) => {
+app.get('/api/export-all', requirePerm('download'), requirePerm('allBrands'), (req, res) => {
   const inventory = buildInventoryWorksheet();
   const sales = buildSalesWorksheet();
   const campaign = buildCampaignWorksheets(req.query.periodKey, '', 'ALL');
@@ -1646,14 +1685,23 @@ app.get('/api/export-all', requireAuth, (req, res) => {
 });
 
 // Report data must be loaded before serving; never start with an empty store.
-kv.init()
-  .then((count) => {
-    console.log(`Loaded ${count} kv_store key(s).`);
-    app.listen(PORT, () => {
-      console.log(`Blinkit dashboard running at http://localhost:${PORT}`);
+function start() {
+  kv.init()
+    .then((count) => {
+      console.log(`Loaded ${count} kv_store key(s).`);
+      return accounts.migrateUnknownRoles().then((changed) => {
+        if (changed) console.log(`Moved ${changed} account(s) with an unknown role to Ecom executive.`);
+        app.listen(PORT, () => {
+          console.log(`Blinkit dashboard running at http://localhost:${PORT}`);
+        });
+      });
+    })
+    .catch((err) => {
+      console.error(err.message);
+      process.exit(1);
     });
-  })
-  .catch((err) => {
-    console.error(err.message);
-    process.exit(1);
-  });
+}
+
+// Tests import this file (module.exports) without starting the server.
+if (require.main === module) start();
+module.exports = app;
