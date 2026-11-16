@@ -33,7 +33,7 @@ import { UiStateService } from '../core/ui-state.service';
         <h3>Account</h3>
         <dl class="profile-facts">
           <div><dt>Email</dt><dd>{{ auth.user()?.email }}</dd></div>
-          <div><dt>Role</dt><dd>{{ auth.user()?.role === 'admin' ? 'Admin' : 'Viewer' }}</dd></div>
+          <div><dt>Role</dt><dd>{{ auth.user()?.roleLabel || auth.user()?.role }}</dd></div>
         </dl>
       </div>
     </section>
