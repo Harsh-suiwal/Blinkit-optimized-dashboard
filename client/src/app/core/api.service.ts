@@ -72,6 +72,14 @@ export class ApiService {
     return this.post<{ ok: boolean }>(`/api/users/${encodeURIComponent(id)}/password`, { password });
   }
 
+  addBrand(name: string) {
+    return this.post<{ brands: string[] }>('/api/users/brands', { name });
+  }
+
+  removeBrand(name: string) {
+    return this.delete<{ brands: string[] }>(`/api/users/brands?name=${encodeURIComponent(name)}`);
+  }
+
   products() {
     return this.get<{ date: string | null; brandUploads?: Record<string, BrandUpload>; rows: ProductRow[] }>('/api/products');
   }
