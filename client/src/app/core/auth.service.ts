@@ -1,6 +1,6 @@
 import { Injectable, computed, inject, signal } from '@angular/core';
 import { ApiService } from './api.service';
-import { User } from './models';
+import { PermKey, User } from './models';
 import { UiStateService } from './ui-state.service';
 
 @Injectable({ providedIn: 'root' })
@@ -9,6 +9,11 @@ export class AuthService {
   readonly user = signal<User | null>(null);
   /** True for an admin outside presentation mode. Every admin-only control checks this one rule. */
   readonly isAdmin = computed(() => this.user()?.role === 'admin' && !this.ui.presenting());
+
+  /** One permission check for the signed-in role (from /api/me). Off while presenting. */
+  can(key: PermKey): boolean {
+    return Boolean(this.user()?.perms?.[key]) && !this.ui.presenting();
+  }
 
   constructor(private readonly api: ApiService) {}
 
