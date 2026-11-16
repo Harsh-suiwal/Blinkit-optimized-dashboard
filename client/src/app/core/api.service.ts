@@ -21,6 +21,8 @@ import {
   ProductSalesRow,
   SalesSummary,
   User,
+  AdminUser,
+  UsersResponse,
   BrandOverview,
   SalesMonth,
   SalesView,
@@ -51,6 +53,23 @@ export class ApiService {
 
   logout() {
     return this.post<{ ok: boolean }>('/api/logout', {});
+  }
+
+  /** Users (admin only). */
+  users() {
+    return this.get<UsersResponse>('/api/users');
+  }
+
+  createUser(body: { email: string; password: string; name: string; role: string; brands: string[]; active: boolean }) {
+    return this.post<{ user: AdminUser }>('/api/users', body);
+  }
+
+  updateUser(id: string, body: { name?: string; role?: string; brands?: string[]; active?: boolean }) {
+    return this.patch<{ user: AdminUser }>(`/api/users/${encodeURIComponent(id)}`, body);
+  }
+
+  setUserPassword(id: string, password: string) {
+    return this.post<{ ok: boolean }>(`/api/users/${encodeURIComponent(id)}/password`, { password });
   }
 
   products() {
@@ -348,6 +367,10 @@ export class ApiService {
 
   private async post<T>(url: string, body: unknown): Promise<T> {
     return this.call(this.http.post<T>(url, body), url);
+  }
+
+  private async patch<T>(url: string, body: unknown): Promise<T> {
+    return this.call(this.http.patch<T>(url, body), url);
   }
 
   private async delete<T>(url: string, body?: unknown): Promise<T> {
