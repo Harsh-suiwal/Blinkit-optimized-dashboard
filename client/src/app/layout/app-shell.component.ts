@@ -1,6 +1,6 @@
 ﻿import { Component, HostListener, OnInit, computed, effect, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
-import { Router, RouterLink, RouterLinkActive, RouterOutlet } from '@angular/router';
+import { NavigationEnd, Router, RouterLink, RouterLinkActive, RouterOutlet } from '@angular/router';
 import { ApiService } from '../core/api.service';
 import { AuthService } from '../core/auth.service';
 import { UiStateService } from '../core/ui-state.service';
@@ -128,6 +128,9 @@ export class AppShellComponent implements OnInit {
     await this.auth.loadSession();
     await this.loadBrands();
     this.enforceBrand();
+    this.router.events.subscribe((event) => {
+      if (event instanceof NavigationEnd) void this.refreshAccess();
+    });
   }
 
   /** Restricted accounts always have one of their own brands selected (no "All brands"). */
@@ -137,6 +140,18 @@ export class AppShellComponent implements OnInit {
     const current = this.ui.focusedBrand();
     if (current && mine.some((b) => b.toLowerCase() === current.toLowerCase())) return;
     this.ui.setBrand(mine[0] ?? '');
+  }
+
+  /** Re-reads the account (role, brands, active) and the brand list. Runs on every page change and when the window regains focus. */
+  async refreshAccess() {
+    await this.auth.loadSession();
+    await this.loadBrands();
+    this.enforceBrand();
+  }
+
+  @HostListener('window:focus')
+  onWindowFocus() {
+    void this.refreshAccess();
   }
 
   private async loadBrands() {
