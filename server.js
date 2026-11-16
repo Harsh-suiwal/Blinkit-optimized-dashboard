@@ -73,6 +73,7 @@ const { buildProductMonthDetail } = require('./parser/productMonthDetail');
 const { buildBrandReport } = require('./parser/brandReport');
 
 const kv = require('./store/kv');
+const brandRegistry = require('./store/brandRegistry');
 const { captureUndo, listUndo, undoUpload, clearUndo, UNDO_KINDS } = require('./store/uploadUndo');
 const KvSessionStore = require('./store/sessionStore');
 const { requireAuth } = require('./middleware/auth');
@@ -200,7 +201,7 @@ app.use((req, res, next) => {
 // rules (middleware/access.js), then the route's own permission (requirePerm). Users API: admin only.
 app.use(loadAccount);
 app.use(brandGuard);
-app.use('/api/users', createUsersRouter({ knownBrands: knownBrandNames }));
+app.use('/api/users', createUsersRouter({ knownBrands: allBrandNames, dataBrands: knownBrandNames }));
 
 // Preserve useful legacy URLs while moving the actual dashboard to Angular.
 app.get('/', (_req, res) => res.redirect('/app/'));
@@ -557,8 +558,17 @@ function knownBrandNames() {
   return Array.from(brands).sort((x, y) => x.localeCompare(y));
 }
 
+/** Every brand: the ones with uploaded data plus the ones added on the Users page. */
+function allBrandNames() {
+  const byLower = new Map();
+  for (const b of [...knownBrandNames(), ...brandRegistry.list()]) {
+    if (!byLower.has(b.toLowerCase())) byLower.set(b.toLowerCase(), b);
+  }
+  return Array.from(byLower.values()).sort((x, y) => x.localeCompare(y));
+}
+
 app.get('/api/brand-names', requireAuth, (req, res) => {
-  res.json({ brands: knownBrandNames() }); // filtered to the account's brands by brandGuard
+  res.json({ brands: allBrandNames() }); // filtered to the account's brands by brandGuard
 });
 
 // Teaches the brand resolver a new mapping, e.g. { raw: 'Knife PB', canonical: 'Oicia' }.

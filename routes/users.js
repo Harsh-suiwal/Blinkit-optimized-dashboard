@@ -11,6 +11,7 @@ const express = require('express');
 const bcrypt = require('bcrypt');
 const supabase = require('../db/supabase');
 const accounts = require('../store/accounts');
+const brandRegistry = require('../store/brandRegistry');
 const { requirePerm } = require('../middleware/access');
 
 const BCRYPT_ROUNDS = 12;
@@ -22,7 +23,7 @@ function wrap(handler) {
   });
 }
 
-function createUsersRouter({ knownBrands }) {
+function createUsersRouter({ knownBrands, dataBrands }) {
   const router = express.Router();
   router.use(requirePerm('manageUsers'));
 
@@ -101,6 +102,29 @@ function createUsersRouter({ knownBrands }) {
     if (error) throw new Error(error.message);
     await accounts.endSessionsOf(row.id);
     res.json({ ok: true });
+  }));
+
+  // Brand names an admin can add without any uploaded data.
+  router.post('/brands', wrap(async (req, res) => {
+    const result = await brandRegistry.add((req.body || {}).name, knownBrands());
+    if (result.error) return res.status(400).json({ error: result.error });
+    res.status(201).json({ brands: knownBrands() });
+  }));
+
+  // Removes a registry-only brand. Refused while it has uploaded data or a user has it ticked.
+  router.delete('/brands', wrap(async (req, res) => {
+    const name = String((req.query && req.query.name) || '').trim();
+    const lower = name.toLowerCase();
+    if (dataBrands().some((b) => b.toLowerCase() === lower)) {
+      return res.status(409).json({ error: 'This brand has uploaded data. Delete its data first.' });
+    }
+    const users = await allUsers();
+    if (users.some((u) => u.brands.some((b) => b.toLowerCase() === lower))) {
+      return res.status(409).json({ error: 'A user still has this brand. Untick it first.' });
+    }
+    const result = await brandRegistry.remove(name);
+    if (result.error) return res.status(404).json({ error: result.error });
+    res.json({ brands: knownBrands() });
   }));
 
   return router;
