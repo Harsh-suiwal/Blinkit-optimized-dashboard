@@ -29,7 +29,7 @@ const MODULE_NEEDS = { // playbook Part 5 prerequisites
   A9: 'Needs a floor price set.', A10: 'Needs a stable hero. Launch in 1-2 cities first.',
 };
 const SOURCES = new Set(['raw', 'dashboard', 'both']);
-const INPUT_KEYS = ['compliance', 'title', 'description', 'imageCount', 'firstImageHasText', 'mrp', 'price', 'rating', 'reviewCount', 'cities', 'adBudget', 'specs'];
+const INPUT_KEYS = ['compliance', 'title', 'description', 'imageCount', 'firstImageHasText', 'mrp', 'price', 'rating', 'reviewCount', 'cities', 'adBudget'];
 const MAX_PAYLOAD_CHARS = 45000; // free models have small limits; drop the heaviest data first
 const inFlight = new Set();
 
@@ -49,6 +49,35 @@ function cleanInputs(raw) {
   }
   if (out.compliance && !['confirmed', 'doubt'].includes(out.compliance)) delete out.compliance;
   if ('firstImageHasText' in out) out.firstImageHasText = out.firstImageHasText === true || out.firstImageHasText === 'true';
+  return out;
+}
+/** Values read from the uploads. A typed value in Inputs always wins over these. */
+function autoInputsFor(data, hero) {
+  const name = String(hero || '').trim().toLowerCase();
+  const out = {};
+  if (!name) return out;
+  let revenue = 0;
+  let units = 0;
+  const cityRevenue = new Map();
+  for (const slot of data.slots || []) {
+    for (const p of slot.products || []) {
+      if (String(p.productName || '').trim().toLowerCase() !== name) continue;
+      revenue += Number(p.revenue) || 0;
+      units += Number(p.units) || 0;
+      for (const c of p.cities || []) cityRevenue.set(c.city, (cityRevenue.get(c.city) || 0) + (Number(c.revenue) || 0));
+    }
+  }
+  const costProduct = ((data.costs && data.costs.products) || []).find((p) => String(p.productName || '').trim().toLowerCase() === name);
+  if (costProduct && Number(costProduct.sellingPrice) > 0) out.price = Number(costProduct.sellingPrice);
+  else if (units > 0) out.price = Math.round((revenue / units) * 100) / 100;
+  if (costProduct && Number(costProduct.mrp) > 0) out.mrp = Number(costProduct.mrp);
+  const topCities = [...cityRevenue.entries()].sort((a, b) => b[1] - a[1]).slice(0, 3).map(([city]) => city);
+  if (topCities.length) out.cities = topCities.join(', ');
+  const months = Object.keys(data.adSpendByMonth || {}).sort().slice(-3);
+  if (months.length) {
+    const total = months.reduce((sum, m) => sum + (Number(data.adSpendByMonth[m]) || 0), 0);
+    out.adBudget = Math.round(total / months.length);
+  }
   return out;
 }
 
@@ -207,22 +236,24 @@ function createStrategyRouter({ getBrandData }) {
     if (!brand) { res.status(400).json({ error: 'Choose a brand first.' }); return null; }
     return brand;
   };
-  const scoreFor = (brand, product, req) => {
+    const scoreFor = (brand, product, req) => {
     const canSeeProfit = Boolean(req.account && req.account.perms && req.account.perms.profit);
     const data = getBrandData(brand, { includeProfit: canSeeProfit });
     const saved = load(brand);
-    const card = computeScorecard({ ...data, inputs: saved.inputs || {}, product, canSeeProfit });
-    return { data, saved, card, canSeeProfit };
+    const first = computeScorecard({ ...data, inputs: saved.inputs || {}, product, canSeeProfit });
+    const auto = autoInputsFor(data, first.hero);
+    const card = computeScorecard({ ...data, inputs: { ...auto, ...(saved.inputs || {}) }, product, canSeeProfit });
+    return { data, saved, card, canSeeProfit, auto };
   };
 
   router.get('/scorecard', wrap(async (req, res) => {
     const brand = needBrand(req, res); if (!brand) return;
     const product = typeof req.query.product === 'string' ? req.query.product.trim() : '';
-    const { data, saved, card } = scoreFor(brand, product, req);
+    const { data, saved, card, auto } = scoreFor(brand, product, req);
     const products = Array.from(new Set((data.stockRows || []).map((r) => r.productName))).sort();
     res.json({
       brand, products, hero: card.hero, pills: card.pills, actions: card.actions, missing: card.missing,
-      rows: composeRows(card, saved.last), inputs: saved.inputs || {},
+      rows: composeRows(card, saved.last), inputs: saved.inputs || {}, auto,
       modules: MODULES, last: saved.last ? { at: saved.last.at, source: saved.last.source, product: saved.last.product || '', modules: saved.last.moduleIds || [] } : null,
       talkingPoints: (saved.last && saved.last.talkingPoints) || [],
       moduleRows: Object.entries((saved.last && saved.last.modules) || {}).map(([id, v]) => ({ id, title: MODULES[id] || id, summary: (v && v.summary) || '', points: ((v && v.points) || []).map(String) })),
@@ -235,6 +266,13 @@ function createStrategyRouter({ getBrandData }) {
     await save(brand, { inputs: cleanInputs(req.body && req.body.inputs) });
     res.json({ ok: true });
   }));
+  
+  router.post('/clear', wrap(async (req, res) => {
+    const brand = needBrand(req, res); if (!brand) return;
+    if (inFlight.has(brandKey(brand))) return res.status(429).json({ error: 'A report is being written for this brand. Wait for it to finish.' });
+    await save(brand, { last: undefined });
+    res.json({ ok: true });
+  }));  
 
   router.post('/generate', wrap(async (req, res) => {
     const brand = needBrand(req, res); if (!brand) return;

@@ -232,6 +232,10 @@ export class ApiService {
     return this.post<{ ok: boolean; note?: string }>('/api/strategy/generate', { brand, ...body });
   }
 
+  clearStrategy(brand: string) {
+    return this.post<{ ok: boolean }>('/api/strategy/clear', { brand });
+  }
+
   salesMonths(brand?: string) {
     return this.get<{ months: SalesMonth[] }>(`/api/sales-months${this.brandQuery(brand)}`);
   }

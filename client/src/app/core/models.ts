@@ -720,7 +720,7 @@ export type StrategySource = 'raw' | 'dashboard' | 'both';
 
 export interface StrategyInputs {
   compliance?: 'confirmed' | 'doubt';
-  title?: string; description?: string; specs?: string; cities?: string;
+    title?: string; description?: string; cities?: string;
   imageCount?: number; mrp?: number; price?: number; rating?: number; reviewCount?: number; adBudget?: number;
   firstImageHasText?: boolean;
 }
@@ -736,6 +736,7 @@ export interface StrategyScorecard {
   missing: { key: string; label: string }[];
   rows: StrategyRow[];
   inputs: StrategyInputs;
+  auto: StrategyInputs;
   modules: Record<string, string>;
   moduleRows: { id: string; title: string; summary: string; points: string[] }[];
   last: { at: string; source: StrategySource; product: string; modules: string[] } | null;

@@ -1,8 +1,9 @@
 import { NgTemplateOutlet } from '@angular/common';
 import { Component, HostListener, computed, effect, inject, signal, untracked } from '@angular/core';
+import { Router } from '@angular/router';
 import { ApiService } from '../core/api.service';
 import { AuthService } from '../core/auth.service';
-import { StrategyInputs, StrategyRow, StrategyScorecard, StrategySource, StrategyStatus } from '../core/models';
+import { StrategyAction, StrategyInputs, StrategyRow, StrategyScorecard, StrategySource, StrategyStatus } from '../core/models';
 import { UiStateService } from '../core/ui-state.service';
 
 const WORD: Record<StrategyStatus, string> = { g: 'OK', a: 'Watch', r: 'Fix', na: 'No data', n: '' };
@@ -40,7 +41,9 @@ const PILL_ROW: Record<string, string> = { compliance: 'plan', stock: 'stock', l
           <button type="button" role="tab" class="sheet-tab" [class.active]="view() === 'talking'" [attr.aria-selected]="view() === 'talking'" (click)="view.set('talking')">Talking points</button>
         </div>
         <button type="button" class="upload-btn" [disabled]="generating()" (click)="generate()">{{ generating() ? 'Writing…' : 'Generate' }}</button>
+                <button type="button" class="secondary-btn" [disabled]="!d.last || generating()" (click)="clearReport()">Clear AI report</button>
         <span class="muted strat-last">{{ d.last ? 'Last generated: ' + lastLabel() : 'Not generated yet' }}</span>
+        <span class="muted strat-last">Hero: <b>{{ d.hero || '—' }}</b></span>
       </section>
 
       @if (view() === 'report') {
@@ -55,12 +58,15 @@ const PILL_ROW: Record<string, string> = { compliance: 'plan', stock: 'stock', l
         <section>
           <h2 class="strat-h">Do this first</h2>
           <div class="strat-actions">
-            @for (a of d.actions; track a.area) {
-              <article class="strat-card">
-                <h3>{{ a.title }}</h3>
-                <p><b>Why:</b> {{ a.why }}</p>
-                <p><b>Result:</b> {{ a.result }}</p>
-              </article>
+                        @for (a of d.actions; track a.area) {
+              @if (showAction(a)) {
+                <article class="strat-card" [style.cursor]="actionPage(a) ? 'pointer' : null" [attr.role]="actionPage(a) ? 'link' : null" [attr.tabindex]="actionPage(a) ? 0 : null" (click)="goAction(a)" (keydown.enter)="goAction(a)">
+                  <h3>{{ a.title }}</h3>
+                  <p><b>Why:</b> {{ a.why }}</p>
+                  <p><b>Result:</b> {{ a.result }}</p>
+                  @if (actionPage(a)) { <span class="muted">Open the problem →</span> }
+                </article>
+              }
             } @empty { <article class="strat-card"><h3>No urgent fixes</h3><p>Nothing is red or amber right now.</p></article> }
           </div>
         </section>
@@ -101,13 +107,19 @@ const PILL_ROW: Record<string, string> = { compliance: 'plan', stock: 'stock', l
         <aside class="strat-side strat-pop-host" role="dialog" aria-label="Inputs needed">
           <div class="strat-side-head"><b>Inputs</b><button type="button" class="secondary-btn" aria-label="Close" (click)="inputsOpen.set(false)">×</button></div>
           <p class="muted">The reports do not contain these.</p>
-          <label>Compliance
-            <select [value]="form().compliance || ''" (change)="setField('compliance', $any($event.target).value)">
-              <option value="">Not checked</option><option value="confirmed">Confirmed by the brand</option><option value="doubt">Doubt or violation</option>
-            </select>
-          </label>
-          @for (f of fields; track f.key) {
-            <label>{{ f.label }}<input [type]="f.type" [value]="form()[f.key] ?? ''" [placeholder]="f.hint" (input)="setField(f.key, $any($event.target).value)"></label>
+                    <label class="feeder-option"><input type="checkbox" [checked]="showCompliance()" (change)="showCompliance.set(!showCompliance())"><span>Show compliance (optional)</span></label>
+          @if (showCompliance()) {
+            <label>Compliance (optional)
+              <select [value]="form().compliance || ''" (change)="setField('compliance', $any($event.target).value)">
+                <option value="">Not checked</option><option value="confirmed">Confirmed by the brand</option><option value="doubt">Doubt or violation</option>
+              </select>
+            </label>
+          }
+                    @for (f of fields; track f.key) {
+            <label>{{ f.label }}
+              <input [type]="f.type" [value]="form()[f.key] ?? ''" [placeholder]="autoText(f.key) || f.hint" (input)="setField(f.key, $any($event.target).value)">
+            </label>
+            @if (form()[f.key] !== undefined && auto()[f.key] !== undefined) { <button type="button" class="secondary-btn" (click)="setField(f.key, '')">Use upload value</button> }
           }
           <label>First image has text
             <select [value]="form().firstImageHasText === undefined ? '' : String(form().firstImageHasText)" (change)="setField('firstImageHasText', $any($event.target).value)">
@@ -141,8 +153,10 @@ const PILL_ROW: Record<string, string> = { compliance: 'plan', stock: 'stock', l
   `,
   imports: [NgTemplateOutlet],
 })
+
 export class StrategyPageComponent {
   private readonly api = inject(ApiService);
+  private readonly router = inject(Router);
   private readonly ui = inject(UiStateService);
   readonly auth = inject(AuthService);
   protected readonly String = String;
@@ -160,7 +174,9 @@ export class StrategyPageComponent {
   readonly menu = signal<'modules' | null>(null);
   readonly modulesOn = signal<string[]>([]);
   readonly inputsOpen = signal(false);
+  readonly showCompliance = signal(false);
   readonly form = signal<StrategyInputs>({});
+  readonly auto = signal<StrategyInputs>({});
 
   readonly sources: { id: StrategySource; label: string }[] = [
     { id: 'raw', label: 'Raw sheets' }, { id: 'dashboard', label: 'Dashboard' }, { id: 'both', label: 'Both' },
@@ -174,8 +190,7 @@ export class StrategyPageComponent {
     { key: 'rating', label: 'Rating', type: 'number', hint: 'e.g. 4.2' },
     { key: 'reviewCount', label: 'Review count', type: 'number', hint: '' },
     { key: 'cities', label: 'Target cities', type: 'text', hint: 'Comma separated' },
-    { key: 'adBudget', label: 'Monthly ad budget', type: 'number', hint: '' },
-    { key: 'specs', label: 'Product specs', type: 'text', hint: 'e.g. blade length and width' },
+    { key: 'adBudget', label: 'Monthly ad budget', type: 'number', hint: '' }
   ];
 
   readonly moduleList = computed(() => Object.entries(this.data()?.modules ?? {}).map(([id, name]) => ({ id, name })));
@@ -212,6 +227,7 @@ export class StrategyPageComponent {
       const d = await this.api.strategyScorecard(brand, product);
       this.data.set(d);
       this.form.set({ ...d.inputs });
+      this.auto.set(d.auto ?? {});
       if (!this.modulesOn().length && d.last?.modules.length) this.modulesOn.set(d.last.modules);
       this.say('');
     } catch (err) {
@@ -233,7 +249,26 @@ export class StrategyPageComponent {
       this.say(err instanceof Error ? err.message : 'Could not write the strategy.', 'error');
     } finally { this.generating.set(false); }
   }
+    async clearReport() {
+    const brand = this.brand();
+    if (!brand || this.generating()) return;
+    if (!window.confirm('Delete the AI-written strategy for ' + brand + '? Your typed inputs stay. This cannot be undone.')) return;
+    try {
+      await this.api.clearStrategy(brand);
+      this.modulesOn.set([]);
+      this.openId.set(null);
+      await this.load(brand, this.product());
+      this.say('Strategy cleared. Press Generate to start fresh.', 'success');
+    } catch (err) {
+      this.say(err instanceof Error ? err.message : 'Could not clear the strategy.', 'error');
+    }
+  }
 
+    /** The upload's value for a field, shown as the placeholder. Empty when there is none. */
+  autoText(key: string): string {
+    const v = (this.auto() as Record<string, unknown>)[key];
+    return v === undefined || v === null || v === '' ? '' : 'Upload: ' + v;
+  }
   setField(key: keyof StrategyInputs | 'compliance' | 'firstImageHasText', value: string) {
     const next: Record<string, unknown> = { ...this.form() };
     if (value === '') delete next[key];
@@ -255,6 +290,30 @@ export class StrategyPageComponent {
   }
 
   toggleRow(id: string) { this.openId.set(this.openId() === id ? null : id); }
+    /** Where each "Do this first" card leads. Listing opens the Inputs panel (its fields are the problem). */
+  private readonly ACTION_PAGE: Record<string, string> = {
+    stock: '/inventory', ads: '/campaign-analysis', margin: '/profit', listing: 'inputs',
+  };
+
+  actionPage(a: StrategyAction): string {
+    return this.ACTION_PAGE[a.area] ?? '';
+  }
+
+  /** Profit is hidden while presenting (its page is blocked then) and for accounts without the profit permission. */
+  showAction(a: StrategyAction): boolean {
+    const page = this.actionPage(a);
+    if (page === '/profit') return this.auth.can('profit') && !this.ui.presenting();
+    return true;
+  }
+
+  goAction(a: StrategyAction) {
+    const target = this.actionPage(a);
+    if (!target) return;
+    if (target === 'inputs') { this.inputsOpen.set(true); return; }
+    const hero = this.data()?.hero;
+    if (hero) this.ui.setFocus(hero); // Stock and Advertising open on the hero product
+    void this.router.navigateByUrl(target);
+  }
   openFor(pillKey: string) {
     const id = PILL_ROW[pillKey];
     this.openId.set(id);

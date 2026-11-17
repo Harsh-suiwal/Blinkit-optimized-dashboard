@@ -11,9 +11,9 @@ const HERO_THIN_PCT = 20;   // below this = sales spread thin = red
 const MARGIN_FLAT_PCT = 1;  // margin after ads within +-1% counts as "about zero" = amber
 const ROAS_BAND = 0.1;      // net ROAS within 10% of break-even = amber
 
-const FIX_ORDER = ['compliance', 'stock', 'listing', 'margin', 'ads', 'trend', 'hero', 'organic'];
+const FIX_ORDER = ['stock', 'listing', 'margin', 'ads', 'trend', 'hero', 'organic'];
 const LABELS = { compliance: 'Compliance', stock: 'Stock', listing: 'Listing', hero: 'Hero', ads: 'Ads', organic: 'Organic', trend: 'Trend', margin: 'Margin' };
-const SHOWN_ORDER = ['compliance', 'stock', 'listing', 'hero', 'ads', 'organic', 'trend', 'margin'];
+const SHOWN_ORDER = ['stock', 'listing', 'hero', 'ads', 'organic', 'trend', 'margin'];
 
 const num = (v) => (v === null || v === undefined || v === '' || !Number.isFinite(Number(v)) ? null : Number(v));
 const r1 = (n) => Math.round(n * 10) / 10;
@@ -125,7 +125,6 @@ function evalMargin(profit, canSeeProfit) {
 }
 
 const ACTIONS = {
-  compliance: (p) => ({ title: 'Confirm product specs with the brand', why: p.status === 'r' ? 'There is a compliance doubt. Ads stop until it is cleared.' : 'Compliance is unchecked. Ads should not run on a doubtful listing.', result: 'Safe to advertise.' }),
   stock: (p) => ({ title: `Rebuild stock on ${p.facts.hero}`, why: p.note + '. Target is 60 days.', result: 'Ads run without stockouts.' }),
   listing: (p) => ({ title: 'Fix the product page first', why: p.note + '.', result: 'The same traffic converts better.' }),
   margin: (p) => ({ title: 'Fix margin before scaling ads', why: p.note + '.', result: 'Each extra sale adds profit.' }),
@@ -145,7 +144,6 @@ function topActions(pills) {
 /** Missing manual inputs. Only these are required for the "N inputs needed" chip. */
 function missingInputs(i) {
   const need = [
-    ['compliance', 'Compliance check', !i.compliance],
     ['title', 'Current title', !i.title],
     ['price', 'Price', num(i.price) === null],
     ['rating', 'Rating', num(i.rating) === null],
@@ -164,7 +162,7 @@ function rowSummaries(pills) {
     stock: by.stock.note,
     hero: by.hero.note,
     profit: by.margin.note,
-    plan: by.compliance.status === 'g' ? 'Start at month 1: fix the shelf' : 'Month 1 starts with compliance',
+    plan: 'Start at month 1: fix the shelf',
     buyers: SUMMARY_NA,
   };
 }
