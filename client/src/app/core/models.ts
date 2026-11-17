@@ -713,3 +713,32 @@ export interface BrandReport {
   };
   available: { sales: boolean; trajectory: boolean; concentration: boolean; ads: boolean; efficiency: boolean; weekday: boolean; funnel: boolean; keywords: boolean; stock: boolean; profit: boolean };
 }
+
+// ---- Strategy tab (append to the end of client/src/app/core/models.ts) ----
+export type StrategyStatus = 'g' | 'a' | 'r' | 'na' | 'n';
+export type StrategySource = 'raw' | 'dashboard' | 'both';
+
+export interface StrategyInputs {
+  compliance?: 'confirmed' | 'doubt';
+  title?: string; description?: string; specs?: string; cities?: string;
+  imageCount?: number; mrp?: number; price?: number; rating?: number; reviewCount?: number; adBudget?: number;
+  firstImageHasText?: boolean;
+}
+export interface StrategyPill { key: string; name: string; status: StrategyStatus; note: string; }
+export interface StrategyAction { area: string; status: StrategyStatus; title: string; why: string; result: string; }
+export interface StrategyRow { id: string; title: string; status: StrategyStatus; summary: string; points: string[]; link: string; }
+export interface StrategyScorecard {
+  brand: string;
+  products: string[];
+  hero: string;
+  pills: StrategyPill[];
+  actions: StrategyAction[];
+  missing: { key: string; label: string }[];
+  rows: StrategyRow[];
+  inputs: StrategyInputs;
+  modules: Record<string, string>;
+  moduleRows: { id: string; title: string; summary: string; points: string[] }[];
+  last: { at: string; source: StrategySource; product: string; modules: string[] } | null;
+  talkingPoints: string[];
+  assumptions: string[];
+}

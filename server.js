@@ -79,6 +79,7 @@ const KvSessionStore = require('./store/sessionStore');
 const { requireAuth } = require('./middleware/auth');
 const { loadAccount, brandGuard, requirePerm, canSeeBrand } = require('./middleware/access');
 const { createUsersRouter } = require('./routes/users');
+const { createStrategyRouter } = require('./routes/strategy');
 const accounts = require('./store/accounts');
 const authRoutes = require('./routes/auth');
 
@@ -202,6 +203,43 @@ app.use((req, res, next) => {
 app.use(loadAccount);
 app.use(brandGuard);
 app.use('/api/users', createUsersRouter({ knownBrands: allBrandNames, dataBrands: knownBrandNames }));
+// Strategy tab: the router reads the brand's data through this function (same sources as /api/brand-overview and /api/brand-profit).
+function strategyBrandData(brand, { includeProfit }) {
+  const aliases = loadAliases();
+  const uploadFor = (brandUploads) => {
+    const key = Object.keys(brandUploads || {}).find((b) => sameBrand(b, brand));
+    return key ? brandUploads[key] : null;
+  };
+  const inventory = loadLatest();
+  const salesLatest = loadSalesLatest();
+  const productSales = loadProductSalesLatest();
+  const stockRows = inventory
+    ? inventory.rows.filter((r) => sameBrand(brandOf(r.productName, r.brandName, aliases) || 'Unknown', brand))
+    : [];
+  const overview = buildBrandOverview({
+    brand,
+    cityRows: salesLatest ? combineCityRows(salesRowsForBrand(salesLatest, brand)) : [],
+    productRows: productSales ? (productSales.productRows || []).filter((p) => sameBrand(p.brandName, brand)) : [],
+    salesUpload: salesLatest ? uploadFor(salesLatest.brandUploads) : null,
+    inventoryRows: stockRows,
+    inventoryUpload: inventory ? uploadFor(inventory.brandUploads) : null,
+    campaignStore: loadCampaignStore(),
+    months: listMonths(brand),
+    month: '',
+    monthSlots: [],
+  });
+  const monthInfo = listMonths(brand, PROFIT_PLATFORM);
+  const slots = slotsFor(brand, PROFIT_PLATFORM);
+  const profit = includeProfit
+    ? buildBrandProfit({ brand, monthInfo, slots, costs: getBrandCosts(brand), adSpendByMonth: adSpendByMonthFor(brand) })
+    : null;
+  const rawMonthly = slots.slice(-6).map((s) => ({
+    month: s.monthKey,
+    products: (s.products || []).slice(0, 30).map((p) => ({ product: p.productName, revenue: p.revenue, units: p.units })),
+  }));
+  return { overview, stockRows, monthInfo, profit, rawMonthly };
+}
+app.use('/api/strategy', createStrategyRouter({ getBrandData: strategyBrandData }));
 
 // Preserve useful legacy URLs while moving the actual dashboard to Angular.
 app.get('/', (_req, res) => res.redirect('/app/'));

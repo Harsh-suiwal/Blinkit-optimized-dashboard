@@ -24,6 +24,9 @@ import {
   AdminUser,
   UsersResponse,
   BrandOverview,
+  StrategyInputs,
+  StrategyScorecard,
+  StrategySource,
   SalesMonth,
   SalesView,
   SalesMonthComparison,
@@ -213,6 +216,20 @@ export class ApiService {
   brandOverview(brand: string, month = '') {
     const monthQuery = month ? `&month=${encodeURIComponent(month)}` : '';
     return this.get<BrandOverview>(`/api/brand-overview?brand=${encodeURIComponent(brand)}${monthQuery}`);
+  }
+
+  // ---- Strategy tab (paste inside the ApiService class, e.g. after brandOverview) ----
+  strategyScorecard(brand: string, product = '') {
+    const p = product ? `&product=${encodeURIComponent(product)}` : '';
+    return this.get<StrategyScorecard>(`/api/strategy/scorecard?brand=${encodeURIComponent(brand)}${p}`);
+  }
+
+  saveStrategyInputs(brand: string, inputs: StrategyInputs) {
+    return this.call(this.http.put<{ ok: boolean }>('/api/strategy/inputs', { brand, inputs }), '/api/strategy/inputs');
+  }
+
+  generateStrategy(brand: string, body: { product: string; source: StrategySource; modules: string[] }) {
+    return this.post<{ ok: boolean; note?: string }>('/api/strategy/generate', { brand, ...body });
   }
 
   salesMonths(brand?: string) {

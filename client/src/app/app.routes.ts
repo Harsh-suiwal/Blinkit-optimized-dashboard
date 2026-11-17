@@ -13,6 +13,7 @@ import { UploadsPageComponent } from './pages/uploads-page.component';
 import { ReportsPageComponent } from './pages/reports-page.component';
 import { notWhilePresentingGuard, presentGuard } from './core/present.guard';
 import { permGuard } from './core/perm.guard';
+import { StrategyPageComponent } from './pages/strategy-page.component';
 import { UsersPageComponent } from './pages/users-page.component';
 
 export const routes: Routes = [
@@ -28,6 +29,7 @@ export const routes: Routes = [
       { path: 'monthly-comparison', component: MonthlyPageComponent },
       { path: 'profile', component: ProfilePageComponent, canActivate: [notWhilePresentingGuard] },
       { path: 'profit', component: ProfitPageComponent, canActivate: [notWhilePresentingGuard, permGuard('profit')] },
+      { path: 'strategy', component: StrategyPageComponent, canActivate: [notWhilePresentingGuard] },
       // Planned features: each shows a "Coming soon" page until it is built.
       { path: 'reports', component: ReportsPageComponent, canActivate: [notWhilePresentingGuard], data: { title: 'Reports', description: 'Create a client-ready report for one brand: pick the months and sections, then download it as a PDF.' } },
       { path: 'uploads', component: UploadsPageComponent, canActivate: [notWhilePresentingGuard, permGuard('upload')], data: { title: 'Uploads', description: 'One place to upload every report, see what was uploaded for each brand, and undo an upload. Until then, upload from the Sales, Stock, Advertising and Trends pages.' } },

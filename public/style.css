@@ -3802,6 +3802,58 @@ html[data-presenting="true"] {
   }
 }
 
+/* ===== Strategy tab. Paste just ABOVE the "Pro look (v7)" comment block in public/style.css. Tokens only. ===== */
+.strat-bar { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin-bottom: 16px; }
+.strat-select { height: 36px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); color: var(--text); padding: 0 10px; font: inherit; }
+.strat-last { font-size: 12px; }
+.strat-h { font-size: 12px; font-weight: 600; letter-spacing: 0.04em; text-transform: none; color: var(--text-muted); margin: 18px 0 8px; }
+
+.strat-strip { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 8px; }
+.strat-pill { display: inline-flex; align-items: center; gap: 8px; padding: 7px 14px; border: 1px solid var(--border); border-radius: 999px; background: var(--surface); color: var(--text); font: inherit; font-size: 13px; cursor: pointer; }
+.strat-pill i, .strat-dot { width: 9px; height: 9px; border-radius: 50%; flex: none; display: inline-block; background: var(--text-muted); }
+.strat-pill span { font-size: 11px; color: var(--text-muted); }
+.strat-g i, .strat-dot.strat-g { background: var(--success); }
+.strat-a i, .strat-dot.strat-a { background: var(--warning); }
+.strat-r i, .strat-dot.strat-r { background: var(--danger); }
+.strat-pill.strat-g { border-color: var(--success); }
+.strat-pill.strat-a { border-color: var(--warning); }
+.strat-pill.strat-r { border-color: var(--danger); }
+
+.strat-actions { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+.strat-card { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 14px 16px; }
+.strat-card h3 { margin: 0 0 6px; font-size: 14px; }
+.strat-card p { margin: 4px 0; font-size: 12.5px; color: var(--text-muted); }
+
+.strat-acc { margin-top: 18px; background: var(--surface); border: 1px solid var(--border); border-radius: 12px; overflow: hidden; }
+.strat-row + .strat-row { border-top: 1px solid var(--border); }
+.strat-row-btn { width: 100%; display: flex; align-items: center; gap: 12px; padding: 14px 16px; border: 0; background: none; color: var(--text); font: inherit; text-align: left; cursor: pointer; }
+.strat-row-title { width: 230px; flex: none; font-weight: 600; font-size: 14px; }
+.strat-row-sum { flex: 1; min-width: 0; font-size: 13px; color: var(--text-muted); }
+.strat-row-body { padding: 0 16px 16px 38px; font-size: 13px; line-height: 1.6; }
+.strat-row-body ul { margin: 0 0 6px; padding-left: 18px; }
+
+.strat-foot { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; margin-top: 16px; position: relative; }
+.strat-pop-host { position: relative; }
+.strat-grow { flex: 1; }
+.strat-chip { border: 1px solid var(--warning); background: var(--surface); color: var(--text); border-radius: 999px; padding: 6px 12px; font: inherit; font-size: 12px; cursor: pointer; }
+.strat-assume { margin-top: 12px; font-size: 12.5px; color: var(--text-muted); }
+
+.strat-talk { padding: 18px 20px; }
+.strat-talk-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
+.strat-talk-head h2 { margin: 0; font-size: 14px; }
+.strat-talk ol { margin: 0; padding-left: 20px; font-size: 14px; line-height: 1.9; }
+
+.strat-side { position: fixed; top: 0; right: 0; bottom: 0; width: 320px; z-index: 40; overflow-y: auto; background: var(--surface); border-left: 1px solid var(--border); padding: 16px; box-shadow: -8px 0 24px rgba(0, 0, 0, 0.12); }
+.strat-side-head { display: flex; justify-content: space-between; align-items: center; }
+.strat-side label { display: block; font-size: 12px; margin: 10px 0 0; color: var(--text-muted); }
+.strat-side input, .strat-side select { display: block; width: 100%; box-sizing: border-box; height: 34px; margin-top: 4px; border: 1px solid var(--border); border-radius: 6px; background: var(--surface); color: var(--text); padding: 0 10px; font: inherit; font-size: 13px; }
+.strat-side .upload-btn { margin-top: 16px; }
+
+@media (max-width: 800px) {
+  .strat-actions { grid-template-columns: 1fr; }
+  .strat-row-title { width: 140px; }
+}
+
 /* ==========================================================================
    Pro look (v7): flat, quiet surfaces for client meetings.
    Applies only when <html data-look="pro"> (Profile > Appearance). Without it the

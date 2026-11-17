@@ -33,6 +33,7 @@ import { UiStateService } from '../core/ui-state.service';
         <li><a routerLink="/inventory" routerLinkActive="active"><span class="sidebar-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3l8 4.5l0 9l-8 4.5l-8 -4.5l0 -9l8 -4.5"/><path d="M12 12l8 -4.5"/><path d="M12 12l0 9"/><path d="M12 12l-8 -4.5"/><path d="M16 5.25l-8 4.5"/></svg></span><span class="sidebar-label">Stock</span></a></li>
         <li><a routerLink="/campaign-analysis" routerLinkActive="active"><span class="sidebar-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 8a3 3 0 0 1 0 6"/><path d="M10 8v11a1 1 0 0 1 -1 1h-1a1 1 0 0 1 -1 -1v-5"/><path d="M12 8h0l4.524 -3.77a.9 .9 0 0 1 1.476 .692v12.156a.9 .9 0 0 1 -1.476 .692l-4.524 -3.77h-8a1 1 0 0 1 -1 -1v-4a1 1 0 0 1 1 -1h8"/></svg></span><span class="sidebar-label">Advertising</span></a></li>
         <li><a routerLink="/monthly-comparison" routerLinkActive="active"><span class="sidebar-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M11.795 21h-6.795a2 2 0 0 1 -2 -2v-12a2 2 0 0 1 2 -2h12a2 2 0 0 1 2 2v4"/><path d="M18 14v4h4"/><path d="M18 18m-4 0a4 4 0 1 0 8 0a4 4 0 1 0 -8 0"/><path d="M15 3v4"/><path d="M7 3v4"/><path d="M3 11h16"/></svg></span><span class="sidebar-label">Trends</span></a></li>
+        <li><a routerLink="/strategy" routerLinkActive="active"><span class="sidebar-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 12m-9 0a9 9 0 1 0 18 0a9 9 0 1 0 -18 0"/><path d="M12 12m-5 0a5 5 0 1 0 10 0a5 5 0 1 0 -10 0"/><path d="M12 12m-1 0a1 1 0 1 0 2 0a1 1 0 1 0 -2 0"/></svg></span><span class="sidebar-label">Strategy</span></a></li>
         @if (auth.can('profit')) {
           <li><a routerLink="/profit" routerLinkActive="active"><span class="sidebar-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 17l6 -6l4 4l8 -8"/><path d="M14 7l7 0l0 7"/></svg></span><span class="sidebar-label">Profit</span></a></li>
         }
@@ -79,6 +80,7 @@ import { UiStateService } from '../core/ui-state.service';
           <a routerLink="/inventory" routerLinkActive="active">Stock</a>
           <a routerLink="/campaign-analysis" routerLinkActive="active">Advertising</a>
           <a routerLink="/monthly-comparison" routerLinkActive="active">Trends</a>
+          <a routerLink="/strategy" routerLinkActive="active">Strategy</a>
         </nav>
         <button type="button" class="present-exit" (click)="ui.stopPresenting()" title="Exit presentation (Esc)">Exit</button>
       </header>
