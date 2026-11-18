@@ -237,7 +237,7 @@ function strategyBrandData(brand, { includeProfit }) {
     month: s.monthKey,
     products: (s.products || []).slice(0, 30).map((p) => ({ product: p.productName, revenue: p.revenue, units: p.units })),
   }));
-    return { overview, stockRows, monthInfo, profit, rawMonthly, slots, costs: getBrandCosts(brand), adSpendByMonth: adSpendByMonthFor(brand) };
+    return { overview, stockRows, monthInfo, profit, rawMonthly, slots, costs: getBrandCosts(brand), adSpendByMonth: adSpendByMonthFor(brand), campaignStore: loadCampaignStore() };
 }
 app.use('/api/strategy', createStrategyRouter({ getBrandData: strategyBrandData }));
 

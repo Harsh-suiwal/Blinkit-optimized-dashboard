@@ -717,16 +717,20 @@ export interface BrandReport {
 // ---- Strategy tab (append to the end of client/src/app/core/models.ts) ----
 export type StrategyStatus = 'g' | 'a' | 'r' | 'na' | 'n';
 export type StrategySource = 'raw' | 'dashboard' | 'both';
-
+ 
 export interface StrategyInputs {
   compliance?: 'confirmed' | 'doubt';
-    title?: string; description?: string; cities?: string;
+  title?: string; description?: string; specs?: string; cities?: string;
   imageCount?: number; mrp?: number; price?: number; rating?: number; reviewCount?: number; adBudget?: number;
   firstImageHasText?: boolean;
 }
-export interface StrategyPill { key: string; name: string; status: StrategyStatus; note: string; }
+/** value = headline number, note = what it means now, rule = what makes it green/amber/red, fix = what to do. */
+export interface StrategyPill { key: string; name: string; status: StrategyStatus; value: string; note: string; rule: string; fix: string; }
 export interface StrategyAction { area: string; status: StrategyStatus; title: string; why: string; result: string; }
-export interface StrategyRow { id: string; title: string; status: StrategyStatus; summary: string; points: string[]; link: string; }
+export interface StrategyRow { id: string; title: string; status: StrategyStatus; value: string; summary: string; rule: string; fix: string; points: string[]; link: string; }
+export interface StrategyReportInfo { id: string; at: string; product: string; source: StrategySource; model: string; filled: number; }
+export interface StrategyFailure { at: string; model: string; reason: string; sample: string; }
+export interface StrategyQuota { available: boolean; remaining?: number; limit?: number; used?: number; }
 export interface StrategyScorecard {
   brand: string;
   products: string[];
@@ -739,7 +743,12 @@ export interface StrategyScorecard {
   auto: StrategyInputs;
   modules: Record<string, string>;
   moduleRows: { id: string; title: string; summary: string; points: string[] }[];
-  last: { at: string; source: StrategySource; product: string; modules: string[] } | null;
+  reports: StrategyReportInfo[];
+  selectedId: string;
+  hasDraft: boolean;
+  failed: StrategyFailure[];
+  failedCount: number;
+  last: { at: string; source: StrategySource; product: string; modules: string[]; model: string; builtin: boolean } | null;
   talkingPoints: string[];
   assumptions: string[];
 }

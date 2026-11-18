@@ -3,12 +3,12 @@ import { Component, HostListener, computed, effect, inject, signal, untracked } 
 import { Router } from '@angular/router';
 import { ApiService } from '../core/api.service';
 import { AuthService } from '../core/auth.service';
-import { StrategyAction, StrategyInputs, StrategyRow, StrategyScorecard, StrategySource, StrategyStatus } from '../core/models';
+import { StrategyAction, StrategyInputs, StrategyPill, StrategyQuota, StrategyReportInfo, StrategyRow, StrategyScorecard, StrategySource, StrategyStatus } from '../core/models';
 import { UiStateService } from '../core/ui-state.service';
 
 const WORD: Record<StrategyStatus, string> = { g: 'OK', a: 'Watch', r: 'Fix', na: 'No data', n: '' };
 // Which accordion row a health pill opens.
-const PILL_ROW: Record<string, string> = { compliance: 'plan', stock: 'stock', listing: 'page', hero: 'hero', ads: 'kw', organic: 'kw', trend: 'hero', margin: 'profit' };
+// Row ids now equal pill keys, so a pill opens its own row.
 
 /**
  * Strategy for the brand picked in the sidebar. The colours and numbers come from the server's scorecard
@@ -41,8 +41,22 @@ const PILL_ROW: Record<string, string> = { compliance: 'plan', stock: 'stock', l
           <button type="button" role="tab" class="sheet-tab" [class.active]="view() === 'talking'" [attr.aria-selected]="view() === 'talking'" (click)="view.set('talking')">Talking points</button>
         </div>
         <button type="button" class="upload-btn" [disabled]="generating()" (click)="generate()">{{ generating() ? 'Writing…' : 'Generate' }}</button>
-                <button type="button" class="secondary-btn" [disabled]="!d.last || generating()" (click)="clearReport()">Clear AI report</button>
-        <span class="muted strat-last">{{ d.last ? 'Last generated: ' + lastLabel() : 'Not generated yet' }}</span>
+        @if (generating()) {
+          <button type="button" class="secondary-btn" (click)="cancelGenerate()">Cancel</button>
+        }
+        @if (d.reports.length || d.hasDraft) {
+          <select class="strat-select" aria-label="Saved report" [value]="d.selectedId" (change)="pickReport($any($event.target).value)">
+            @if (d.hasDraft) { <option value="draft">Built-in draft (not saved)</option> }
+            @for (r of d.reports; track r.id) { <option [value]="r.id">{{ reportLabel(r) }}</option> }
+          </select>
+          @if (!generating() && d.selectedId) {
+            <button type="button" class="secondary-btn" (click)="deleteReport()">{{ d.selectedId === 'draft' ? 'Discard draft' : 'Delete this report' }}</button>
+          }
+        }
+        <span class="muted strat-last">{{ d.last ? (d.last.builtin ? 'Built-in draft, not written by the AI' : 'Written: ' + lastLabel()) : 'No report yet' }}</span>
+        @if (quota(); as q) {
+          @if (q.available) { <span class="muted strat-last">Requests left today: <b>{{ q.remaining }}/{{ q.limit }}</b></span> }
+        }
         <span class="muted strat-last">Hero: <b>{{ d.hero || '—' }}</b></span>
       </section>
 
@@ -50,7 +64,7 @@ const PILL_ROW: Record<string, string> = { compliance: 'plan', stock: 'stock', l
         <section class="strat-strip" aria-label="Health strip">
           @for (p of d.pills; track p.key) {
             <button type="button" class="strat-pill" [class]="'strat-pill strat-' + p.status" [attr.title]="p.note" (click)="openFor(p.key)">
-              <i aria-hidden="true"></i><b>{{ p.name }}</b><span>{{ word(p.status) }}</span>
+              <i aria-hidden="true"></i><b>{{ p.name }}</b><span>{{ pillText(p) }}</span>
             </button>
           }
         </section>
@@ -58,7 +72,7 @@ const PILL_ROW: Record<string, string> = { compliance: 'plan', stock: 'stock', l
         <section>
           <h2 class="strat-h">Do this first</h2>
           <div class="strat-actions">
-                        @for (a of d.actions; track a.area) {
+            @for (a of d.actions; track a.area) {
               @if (showAction(a)) {
                 <article class="strat-card" [style.cursor]="actionPage(a) ? 'pointer' : null" [attr.role]="actionPage(a) ? 'link' : null" [attr.tabindex]="actionPage(a) ? 0 : null" (click)="goAction(a)" (keydown.enter)="goAction(a)">
                   <h3>{{ a.title }}</h3>
@@ -95,6 +109,12 @@ const PILL_ROW: Record<string, string> = { compliance: 'plan', stock: 'stock', l
         @if (d.assumptions.length) {
           <details class="strat-assume"><summary>Assumptions ({{ d.assumptions.length }})</summary><ul>@for (a of d.assumptions; track a) { <li>{{ a }}</li> }</ul></details>
         }
+        @if (d.failedCount) {
+          <details class="strat-assume">
+            <summary>Failed attempts ({{ d.failedCount }})</summary>
+            <ul>@for (f of d.failed; track f.at) { <li>{{ when(f.at) }} · {{ f.model || 'no model' }} · {{ f.reason }}@if (f.sample) { <br><span class="muted">{{ f.sample }}</span> }</li> }</ul>
+          </details>
+        }
       } @else {
         <section class="strat-card strat-talk">
           <div class="strat-talk-head"><h2>Talking points</h2><button type="button" class="secondary-btn" [disabled]="!d.talkingPoints.length" (click)="copyPoints()">Copy</button></div>
@@ -107,7 +127,7 @@ const PILL_ROW: Record<string, string> = { compliance: 'plan', stock: 'stock', l
         <aside class="strat-side strat-pop-host" role="dialog" aria-label="Inputs needed">
           <div class="strat-side-head"><b>Inputs</b><button type="button" class="secondary-btn" aria-label="Close" (click)="inputsOpen.set(false)">×</button></div>
           <p class="muted">The reports do not contain these.</p>
-                    <label class="feeder-option"><input type="checkbox" [checked]="showCompliance()" (change)="showCompliance.set(!showCompliance())"><span>Show compliance (optional)</span></label>
+          <label class="feeder-option"><input type="checkbox" [checked]="showCompliance()" (change)="showCompliance.set(!showCompliance())"><span>Show compliance (optional)</span></label>
           @if (showCompliance()) {
             <label>Compliance (optional)
               <select [value]="form().compliance || ''" (change)="setField('compliance', $any($event.target).value)">
@@ -115,7 +135,7 @@ const PILL_ROW: Record<string, string> = { compliance: 'plan', stock: 'stock', l
               </select>
             </label>
           }
-                    @for (f of fields; track f.key) {
+          @for (f of fields; track f.key) {
             <label>{{ f.label }}
               <input [type]="f.type" [value]="form()[f.key] ?? ''" [placeholder]="autoText(f.key) || f.hint" (input)="setField(f.key, $any($event.target).value)">
             </label>
@@ -137,14 +157,16 @@ const PILL_ROW: Record<string, string> = { compliance: 'plan', stock: 'stock', l
       <div class="strat-row" [id]="'strat-' + r.id">
         <button type="button" class="strat-row-btn" [attr.aria-expanded]="openId() === r.id" (click)="toggleRow(r.id)">
           <span class="strat-dot" [class]="'strat-dot strat-' + (r.status || 'n')"></span>
-          <span class="strat-row-title">{{ r.title }}</span>
+          <span class="strat-row-title">{{ r.title }}@if (r.value) { <b> · {{ r.value }}</b> }</span>
           <span class="strat-row-sum">{{ r.summary }}</span>
           <span class="muted">{{ openId() === r.id ? 'Close' : 'Open' }}</span>
         </button>
         @if (openId() === r.id) {
           <div class="strat-row-body">
+            @if (r.rule) { <p class="muted"><b>Rule:</b> {{ r.rule }}</p> }
+            @if (r.fix && r.status !== 'g') { <p><b>Fix:</b> {{ r.fix }}</p> }
             @if (r.points?.length) { <ul>@for (p of r.points; track p) { <li>{{ p }}</li> }</ul> }
-            @else { <p class="muted">Press Generate to fill this section.</p> }
+            @else { <p class="muted">Press Generate to add the written advice.</p> }
             @if (r.link) { <span class="muted">{{ r.link }}</span> }
           </div>
         }
@@ -153,7 +175,6 @@ const PILL_ROW: Record<string, string> = { compliance: 'plan', stock: 'stock', l
   `,
   imports: [NgTemplateOutlet],
 })
-
 export class StrategyPageComponent {
   private readonly api = inject(ApiService);
   private readonly router = inject(Router);
@@ -177,6 +198,10 @@ export class StrategyPageComponent {
   readonly showCompliance = signal(false);
   readonly form = signal<StrategyInputs>({});
   readonly auto = signal<StrategyInputs>({});
+  readonly reportId = signal('');
+  readonly quota = signal<StrategyQuota | null>(null);
+  private lastBrand = '';
+  private runId = 0; // bumps on Cancel/Clear/timeout so a late answer from an old run is ignored
 
   readonly sources: { id: StrategySource; label: string }[] = [
     { id: 'raw', label: 'Raw sheets' }, { id: 'dashboard', label: 'Dashboard' }, { id: 'both', label: 'Both' },
@@ -190,7 +215,7 @@ export class StrategyPageComponent {
     { key: 'rating', label: 'Rating', type: 'number', hint: 'e.g. 4.2' },
     { key: 'reviewCount', label: 'Review count', type: 'number', hint: '' },
     { key: 'cities', label: 'Target cities', type: 'text', hint: 'Comma separated' },
-    { key: 'adBudget', label: 'Monthly ad budget', type: 'number', hint: '' }
+    { key: 'adBudget', label: 'Monthly ad budget', type: 'number', hint: '' },
   ];
 
   readonly moduleList = computed(() => Object.entries(this.data()?.modules ?? {}).map(([id, name]) => ({ id, name })));
@@ -200,7 +225,7 @@ export class StrategyPageComponent {
     const made = new Map(d.moduleRows.map((m) => [m.id, m]));
     return this.modulesOn().slice().sort((a, b) => Number(a.slice(1)) - Number(b.slice(1))).map((id) => {
       const m = made.get(id);
-      return { id, title: d.modules[id] ?? id, status: 'n' as StrategyStatus, summary: m?.summary || 'Generate to fill this module', points: m?.points ?? [], link: '' };
+      return { id, title: d.modules[id] ?? id, status: 'n' as StrategyStatus, value: '', rule: '', fix: '', summary: m?.summary || 'Generate to fill this module', points: m?.points ?? [], link: '' };
     });
   });
 
@@ -208,11 +233,18 @@ export class StrategyPageComponent {
     effect(() => {
       const brand = this.brand();
       const product = this.product();
-      untracked(() => void this.load(brand, product));
+      untracked(() => {
+        if (brand !== this.lastBrand) { this.lastBrand = brand; this.reportId.set(''); }
+        void this.load(brand, product);
+        void this.refreshQuota(brand);
+      });
     });
   }
 
   word(s: StrategyStatus) { return WORD[s]; }
+  pillText(p: StrategyPill) { return p.value ? p.value : this.word(p.status); }
+  when(iso: string) { return new Date(iso).toLocaleString('en-IN', { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' }); }
+  reportLabel(r: StrategyReportInfo) { return this.when(r.at) + (r.product ? ' · ' + r.product : ' · all products'); }
   lastLabel() {
     const at = this.data()?.last?.at;
     return at ? new Date(at).toLocaleString('en-IN', { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' }) : '';
@@ -224,10 +256,11 @@ export class StrategyPageComponent {
     if (!brand) { this.data.set(null); return; }
     this.loading.set(true);
     try {
-      const d = await this.api.strategyScorecard(brand, product);
+      const d = await this.api.strategyScorecard(brand, product, this.reportId());
       this.data.set(d);
       this.form.set({ ...d.inputs });
       this.auto.set(d.auto ?? {});
+      this.reportId.set(d.selectedId);
       if (!this.modulesOn().length && d.last?.modules.length) this.modulesOn.set(d.last.modules);
       this.say('');
     } catch (err) {
@@ -239,36 +272,77 @@ export class StrategyPageComponent {
   async generate() {
     const brand = this.brand();
     if (!brand || this.generating()) return;
+    const id = ++this.runId;
     this.generating.set(true);
-    this.say('Writing the strategy. This takes up to a minute.');
+    this.say('Writing the strategy. This takes up to two minutes.');
+    // Safety net: if nothing comes back, free the page so it never stays frozen.
+    const guard = setTimeout(() => {
+      if (id !== this.runId) return;
+      this.runId++;
+      this.generating.set(false);
+      this.say('The AI took too long. Press Clear AI report, then Generate.', 'error');
+    }, 150000);
     try {
       const res = await this.api.generateStrategy(brand, { product: this.product(), source: this.source(), modules: this.modulesOn() });
+      if (id !== this.runId) return;
+      this.reportId.set(res.saved && res.reportId ? res.reportId : 'draft');
       await this.load(brand, this.product());
-      if (res.note) this.say(res.note, 'error'); else this.say('Strategy written.', 'success');
+      void this.refreshQuota(brand);
+      if (!res.saved) this.say(res.note || 'The AI did not answer.', 'error');
+      else this.say(res.note ? 'Saved as a new report. ' + res.note : 'Saved as a new report.', 'success');
     } catch (err) {
+      if (id !== this.runId) return;
       this.say(err instanceof Error ? err.message : 'Could not write the strategy.', 'error');
-    } finally { this.generating.set(false); }
-  }
-    async clearReport() {
-    const brand = this.brand();
-    if (!brand || this.generating()) return;
-    if (!window.confirm('Delete the AI-written strategy for ' + brand + '? Your typed inputs stay. This cannot be undone.')) return;
-    try {
-      await this.api.clearStrategy(brand);
-      this.modulesOn.set([]);
-      this.openId.set(null);
-      await this.load(brand, this.product());
-      this.say('Strategy cleared. Press Generate to start fresh.', 'success');
-    } catch (err) {
-      this.say(err instanceof Error ? err.message : 'Could not clear the strategy.', 'error');
+    } finally {
+      clearTimeout(guard);
+      if (id === this.runId) this.generating.set(false);
     }
   }
 
-    /** The upload's value for a field, shown as the placeholder. Empty when there is none. */
+  /** Stops waiting for a running Generate and tells the server to drop it. No confirmation, nothing is deleted but the run. */
+  async cancelGenerate() {
+    const brand = this.brand();
+    this.runId++;
+    this.generating.set(false);
+    this.say('Cancelled.');
+    if (!brand) return;
+    try { await this.api.clearStrategy(brand); await this.load(brand, this.product()); } catch { /* the page is already free */ }
+  }
+
+  /** Deletes only the report being shown. Older saved reports and the failed log stay. */
+  async deleteReport() {
+    const brand = this.brand();
+    const id = this.data()?.selectedId;
+    if (!brand || !id || this.generating()) return;
+    const text = id === 'draft' ? 'Discard the built-in draft?' : 'Delete this saved report for ' + brand + '? Your other reports and typed inputs stay. This cannot be undone.';
+    if (!window.confirm(text)) return;
+    try {
+      await this.api.clearStrategy(brand, id);
+      this.reportId.set('');
+      await this.load(brand, this.product());
+      this.say('Deleted.', 'success');
+    } catch (err) {
+      this.say(err instanceof Error ? err.message : 'Could not delete.', 'error');
+    }
+  }
+
+  async pickReport(id: string) {
+    this.reportId.set(id);
+    await this.load(this.brand(), this.product());
+  }
+
+  /** Free requests left today. Hidden when the server cannot read it. */
+  async refreshQuota(brand: string) {
+    if (!brand) return;
+    try { this.quota.set(await this.api.strategyQuota(brand)); } catch { this.quota.set(null); }
+  }
+
+  /** The upload's value for a field, shown as the placeholder. Empty when there is none. */
   autoText(key: string): string {
     const v = (this.auto() as Record<string, unknown>)[key];
     return v === undefined || v === null || v === '' ? '' : 'Upload: ' + v;
   }
+
   setField(key: keyof StrategyInputs | 'compliance' | 'firstImageHasText', value: string) {
     const next: Record<string, unknown> = { ...this.form() };
     if (value === '') delete next[key];
@@ -290,7 +364,8 @@ export class StrategyPageComponent {
   }
 
   toggleRow(id: string) { this.openId.set(this.openId() === id ? null : id); }
-    /** Where each "Do this first" card leads. Listing opens the Inputs panel (its fields are the problem). */
+
+  /** Where each "Do this first" card leads. Listing opens the Inputs panel (its fields are the problem). */
   private readonly ACTION_PAGE: Record<string, string> = {
     stock: '/inventory', ads: '/campaign-analysis', margin: '/profit', listing: 'inputs',
   };
@@ -314,8 +389,9 @@ export class StrategyPageComponent {
     if (hero) this.ui.setFocus(hero); // Stock and Advertising open on the hero product
     void this.router.navigateByUrl(target);
   }
+
   openFor(pillKey: string) {
-    const id = PILL_ROW[pillKey];
+    const id = pillKey;
     this.openId.set(id);
     setTimeout(() => document.getElementById('strat-' + id)?.scrollIntoView({ behavior: 'smooth', block: 'center' }));
   }
@@ -336,9 +412,9 @@ export class StrategyPageComponent {
     const rows: StrategyRow[] = [...d.rows, ...this.moduleRows() as StrategyRow[]];
     const md = [
       '# Strategy: ' + d.brand, '',
-      '## Health', ...d.pills.map((p) => '- ' + p.name + ': ' + WORD[p.status] + '. ' + p.note), '',
+      '## Health', ...d.pills.map((p) => '- ' + p.name + ' (' + WORD[p.status] + (p.value ? ', ' + p.value : '') + '): ' + p.note), '',
       '## Do this first', ...d.actions.map((a) => '- **' + a.title + '**. Why: ' + a.why + ' Result: ' + a.result), '',
-      ...rows.flatMap((r) => ['## ' + r.title, r.summary, ...r.points.map((p) => '- ' + p), '']),
+      ...rows.flatMap((r) => ['## ' + r.title + (r.value ? ' (' + r.value + ')' : ''), r.summary, ...(r.rule ? ['Rule: ' + r.rule] : []), ...(r.fix && r.status !== 'g' ? ['Fix: ' + r.fix] : []), ...r.points.map((p) => '- ' + p), '']),
       ...(d.talkingPoints.length ? ['## Talking points', ...d.talkingPoints.map((t, i) => (i + 1) + '. ' + t), ''] : []),
       ...(d.assumptions.length ? ['## Assumptions', ...d.assumptions.map((a) => '- ' + a)] : []),
     ].join('\n');

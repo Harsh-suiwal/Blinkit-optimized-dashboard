@@ -27,6 +27,7 @@ import {
   StrategyInputs,
   StrategyScorecard,
   StrategySource,
+  StrategyQuota,
   SalesMonth,
   SalesView,
   SalesMonthComparison,
@@ -219,9 +220,10 @@ export class ApiService {
   }
 
   // ---- Strategy tab (paste inside the ApiService class, e.g. after brandOverview) ----
-  strategyScorecard(brand: string, product = '') {
+  strategyScorecard(brand: string, product = '', report = '') {
     const p = product ? `&product=${encodeURIComponent(product)}` : '';
-    return this.get<StrategyScorecard>(`/api/strategy/scorecard?brand=${encodeURIComponent(brand)}${p}`);
+    const r = report ? `&report=${encodeURIComponent(report)}` : '';
+    return this.get<StrategyScorecard>(`/api/strategy/scorecard?brand=${encodeURIComponent(brand)}${p}${r}`);
   }
 
   saveStrategyInputs(brand: string, inputs: StrategyInputs) {
@@ -229,11 +231,17 @@ export class ApiService {
   }
 
   generateStrategy(brand: string, body: { product: string; source: StrategySource; modules: string[] }) {
-    return this.post<{ ok: boolean; note?: string }>('/api/strategy/generate', { brand, ...body });
+    return this.post<{ ok: boolean; saved?: boolean; reportId?: string; note?: string }>('/api/strategy/generate', { brand, ...body });
   }
 
-  clearStrategy(brand: string) {
-    return this.post<{ ok: boolean }>('/api/strategy/clear', { brand });
+  /** Without reportId: cancels a running Generate. With it: also deletes that one saved report (or discards the draft). */
+  clearStrategy(brand: string, reportId = '') {
+    return this.post<{ ok: boolean }>('/api/strategy/clear', { brand, reportId });
+  }
+
+  /** Free requests left today (OpenRouter). available is false when the key cannot report it. */
+  strategyQuota(brand: string) {
+    return this.get<StrategyQuota>(`/api/strategy/quota?brand=${encodeURIComponent(brand)}`);
   }
 
   salesMonths(brand?: string) {
