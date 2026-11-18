@@ -310,6 +310,7 @@ export class StrategyPageComponent {
     const brand = this.brand();
     if (!brand || this.generating()) return;
     const id = ++this.runId;
+    const before = this.quota()?.remaining; // the count before this run, to see when it changes
     this.generating.set(true);
     this.say('Writing the strategy. This takes up to two minutes.');
     // Safety net: if nothing comes back, free the page so it never stays frozen.
@@ -324,7 +325,6 @@ export class StrategyPageComponent {
       if (id !== this.runId) return;
       this.reportId.set(res.saved && res.reportId ? res.reportId : 'draft');
       await this.load(brand, this.product());
-      void this.refreshQuota(brand);
       if (!res.saved) this.say(res.note || 'The AI did not answer.', 'error');
       else this.say(res.note ? 'Saved as a new report. ' + res.note : 'Saved as a new report.', 'success');
     } catch (err) {
@@ -332,6 +332,7 @@ export class StrategyPageComponent {
       this.say(err instanceof Error ? err.message : 'Could not write the strategy.', 'error');
     } finally {
       clearTimeout(guard);
+      void this.refreshQuotaAfterGenerate(brand, before);
       if (id === this.runId) this.generating.set(false);
     }
   }
@@ -367,7 +368,15 @@ export class StrategyPageComponent {
     this.reportId.set(id);
     await this.load(this.brand(), this.product());
   }
-
+    /** After a Generate the count can lag on OpenRouter's side: ask every 5 seconds (up to 1 minute) until it changes. */
+  private async refreshQuotaAfterGenerate(brand: string, before?: number) {
+    for (let i = 0; i < 12; i++) {
+      await this.refreshQuota(brand);
+      const now = this.quota()?.remaining;
+      if (before === undefined || now === undefined || now !== before) return;
+      await new Promise((resolve) => setTimeout(resolve, 5000));
+    }
+  }
   /** Free requests left today. Hidden when the server cannot read it. */
   async refreshQuota(brand: string) {
     if (!brand) return;

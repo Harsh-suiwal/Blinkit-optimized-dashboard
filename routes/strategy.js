@@ -425,7 +425,7 @@ function createStrategyRouter({ getBrandData }) {
   router.get('/quota', wrap(async (req, res) => {
     const key = process.env.OPENROUTER_API_KEY;
     if (!key) return res.json({ available: false });
-    if (quotaCache && Date.now() - quotaCache.at < 15000) return res.json(quotaCache.body);
+    if (quotaCache && Date.now() - quotaCache.at < 4000) return res.json(quotaCache.body);
     let body = { available: false };
     try {
       const r = await fetch('https://openrouter.ai/api/v1/key', { headers: { authorization: 'Bearer ' + key }, signal: AbortSignal.timeout(8000) });
@@ -529,6 +529,7 @@ function createStrategyRouter({ getBrandData }) {
       res.json({ ok: true, saved: true, reportId: report.id, note: filled.length ? 'Saved. ' + filled.length + ' section(s) the AI skipped use the built-in text.' : '' });
     } finally {
       if (runs.get(lock) === run) runs.delete(lock);
+      quotaCache = null; // a Generate just used a request, so the next quota lookup must be fresh
     }
   }));
 
