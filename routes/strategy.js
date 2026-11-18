@@ -1,20 +1,19 @@
 /**
  * Strategy tab. Mounted at /api/strategy.
- *   GET  /scorecard?brand=[&product=][&report=<id|draft>]  pills, top 3 actions, rows, saved inputs, saved reports. No AI, instant.
+ *   GET  /scorecard?brand=[&product=][&report=<id|draft>]  pills, top 3 actions, the hardcoded base plan (strategy/basePlan.js) with this brand's ticks and dashboard facts, saved inputs, saved reports. No AI, instant.
  *   PUT  /inputs {brand, inputs}                      manual inputs the reports do not contain.
  *   POST /generate {brand, product, source, modules}  asks the AI; a good answer is SAVED AS A NEW REPORT, never over an old one.
  *   POST /clear {brand[, reportId]}                   cancels a running Generate; with reportId also deletes that one report.
+ *   PUT  /progress {brand, ticks}                     which base-plan items and monthly gates are ticked (saved per brand).
  *   GET  /quota                                       free requests left today (OpenRouter), when the key reports it.
  * Three separate places, nothing overwrites anything:
  *   reports (kv, saved)   every successful AI report, newest first, capped at REPORT_CAP.
  *   failed  (kv, saved)   one entry per failed Generate (reason, models tried, start of the bad answer), capped at FAILED_CAP.
  *   draft   (memory only) the built-in report shown when the AI fails. Never saved, gone on restart.
- * Colours and numbers come from parser/strategyScorecard.js. The AI only writes the words, using strategy/playbook.md.
+ * Colours and numbers come from parser/strategyScorecard.js. The base plan is hand-written in strategy/basePlan.js. The AI is an optional extra: it only adds brand-specific words.
  * Brand access is enforced before this router by middleware/access.js (brandGuard).
  */
 const express = require('express');
-const fs = require('fs');
-const path = require('path');
 const kv = require('../store/kv');
 const { computeScorecard } = require('../parser/strategyScorecard');
 const { listPeriods, selectRows, aggregateTotals } = require('../parser/campaignStore');
@@ -22,19 +21,10 @@ const { listPeriods, selectRows, aggregateTotals } = require('../parser/campaign
 const KEY = 'strategyTab'; // kv: { [brand lower-case]: { inputs, reports: [...], failed: [...] } }
 const REPORT_CAP = 30;
 const FAILED_CAP = 20;
-const PLAYBOOK_PATH = path.join(__dirname, '..', 'strategy', 'playbook.md');
-const MODULES = {
-  A1: 'Festive & seasonal calendar', A2: 'Trend / viral response', A3: 'Creator seeding', A4: 'Multi-platform expansion',
-  A5: 'Packs, combos, gift sets', A6: 'Competitor conquesting', A7: 'Banners, brand store, video', A8: 'Off-platform demand',
-  A9: 'Price & promo tests', A10: 'New product launch test',
-};
-const MODULE_NEEDS = { // playbook Part 5 prerequisites
-  A1: 'Needs stock planning working first.', A2: 'Needs a ready listing, a stock buffer and a fast approval path.',
-  A3: 'Needs reviews at 4 stars or more and a fixed brand look.', A4: 'Needs the base green on Blinkit for 2+ months.',
-  A5: 'Needs a clear hero SKU and known margin.', A6: 'Needs a strong listing and reviews.',
-  A7: 'Needs a fixed brand look and budget beyond search.', A8: 'Needs stock in the target cities.',
-  A9: 'Needs a floor price set.', A10: 'Needs a stable hero. Launch in 1-2 cities first.',
-};
+const { PILLARS, PLAN, MODULES: MODULE_DEFS, allTickIds, planAsText } = require('../strategy/basePlan');
+const MODULES = Object.fromEntries(Object.entries(MODULE_DEFS).map(([id, m]) => [id, m.name]));
+const MODULE_NEEDS = Object.fromEntries(Object.entries(MODULE_DEFS).map(([id, m]) => [id, 'Needs: ' + m.needs.map((n) => n.text).join(' ')]));
+const TICK_IDS = new Set(allTickIds());
 const SOURCES = new Set(['raw', 'dashboard', 'both']);
 const INPUT_KEYS = ['compliance', 'title', 'description', 'imageCount', 'firstImageHasText', 'mrp', 'price', 'rating', 'reviewCount', 'cities', 'adBudget'];
 const MAX_PAYLOAD_CHARS = 45000; // free models have small limits; drop the heaviest data first
@@ -95,7 +85,7 @@ function autoInputsFor(data, hero) {
 function normalize(raw) {
   const s = raw || {};
   const reports = Array.isArray(s.reports) ? s.reports : (s.last ? [{ id: 'r0', model: '', ...s.last }] : []);
-  return { inputs: s.inputs || {}, reports, failed: Array.isArray(s.failed) ? s.failed : [] };
+  return { inputs: s.inputs || {}, reports, failed: Array.isArray(s.failed) ? s.failed : [], ticks: s.ticks && typeof s.ticks === 'object' ? s.ticks : {} };
 }
 
 /** Total sales Blinkit credits to ads, per campaign month (periodKey looks like YYYY-MM). */
@@ -108,6 +98,55 @@ function adSalesByMonthFor(store, brand) {
       if (rows.length) out[p.periodKey] = Number(aggregateTotals(rows).sales) || 0;
     }
   } catch (err) { console.error('strategy: could not read ad sales per month:', err.message); }
+  return out;
+}
+
+
+const PILLAR_PILL = { p0: null, p2: 'listing', p3: 'stock', p4: 'hero', p5: 'ads', p7: 'listing', p8: 'margin', p9: 'trend' };
+const inrText = (n) => '₹' + Math.round(Number(n)).toLocaleString('en-IN');
+
+/** This brand's own numbers for one pillar, read from the dashboard. A fact the dashboard does not have is left out. */
+function brandFacts(card, data, inputs) {
+  const pill = Object.fromEntries(card.pills.map((p) => [p.key, p]));
+  const has = (v) => v !== undefined && v !== null && v !== '';
+  const out = {};
+  const sales = data && data.overview && data.overview.sales;
+  if (inputs.compliance) out.compliance = 'Compliance: ' + (inputs.compliance === 'confirmed' ? 'confirmed by the brand' : 'doubt or violation, stop ads');
+  if (has(inputs.cities)) out.cities = 'Top cities by sales: ' + inputs.cities;
+  if (sales && sales.topProducts && sales.topProducts.length) out.topProducts = 'Top products: ' + sales.topProducts.slice(0, 4).map((p) => `${p.productName} (${p.sharePct}%)`).join(', ');
+  if (pill.listing && pill.listing.value) out.listing = 'Rating and reviews: ' + pill.listing.value;
+  if (has(inputs.price)) out.price = 'Selling price: ' + inrText(inputs.price) + (has(inputs.mrp) ? ' (MRP ' + inrText(inputs.mrp) + ')' : '');
+  if (has(inputs.adBudget)) out.adBudget = 'Monthly ad budget: ' + inrText(inputs.adBudget);
+  for (const k of ['stock', 'hero', 'ads', 'organic', 'margin', 'trend']) if (pill[k] && pill[k].status !== 'na') out[k] = pill[k].note;
+  return out;
+}
+
+/** The base plan as the page shows it: pillars with this brand's facts and health colour, the 6 months, the add-ons with readiness. */
+function planFor(card, data, inputs, ticks) {
+  const facts = brandFacts(card, data, inputs);
+  const pill = Object.fromEntries(card.pills.map((p) => [p.key, p]));
+  const pillars = PILLARS.map((p) => ({
+    id: p.id, title: p.title, why: p.why, musts: p.musts, stop: p.stop || '',
+    status: PILLAR_PILL[p.id] && pill[PILLAR_PILL[p.id]] ? pill[PILLAR_PILL[p.id]].status : 'n',
+    facts: p.from.map((k) => facts[k]).filter(Boolean),
+  }));
+  const modules = Object.entries(MODULE_DEFS).map(([id, m]) => {
+    const needs = m.needs.map((n) => {
+      let ok = null; // null = the app cannot tell, you judge it
+      if (n.pill && pill[n.pill]) ok = pill[n.pill].status === 'g' ? true : pill[n.pill].status === 'na' ? null : false;
+      else if (n.tick) ok = Boolean(ticks[n.tick]);
+      return { text: n.text, ok };
+    });
+    const ready = needs.some((n) => n.ok === false) ? false : needs.every((n) => n.ok === true) ? true : null;
+    return { id, name: m.name, use: m.use, needs, ready };
+  });
+  return { pillars, months: PLAN, modules };
+}
+
+/** Keeps only tick ids the plan knows. */
+function cleanTicks(raw) {
+  const out = {};
+  for (const id of Object.keys(raw && typeof raw === 'object' ? raw : {})) if (TICK_IDS.has(id) && raw[id] === true) out[id] = true;
   return out;
 }
 
@@ -351,8 +390,11 @@ function createStrategyRouter({ getBrandData }) {
     if (want === 'draft' && draft) selected = draft;
     else selected = saved.reports.find((r) => r.id === want) || saved.reports[0] || null;
     const products = Array.from(new Set((data.stockRows || []).map((r) => r.productName))).sort();
+    const builtinTalk = !selected || !(selected.talkingPoints || []).length;
     res.json({
       brand, products, hero: card.hero, pills: card.pills, actions: card.actions, missing: card.missing,
+      plan: planFor(card, data, { ...auto, ...(saved.inputs || {}) }, saved.ticks), ticks: saved.ticks,
+      talkingBuiltin: builtinTalk,
       rows: composeRows(card, selected), inputs: saved.inputs || {}, auto,
       modules: MODULES,
       reports: saved.reports.map((r) => ({ id: r.id, at: r.at, product: r.product || '', source: r.source, model: r.model || '', filled: (r.filled || []).length })),
@@ -361,7 +403,7 @@ function createStrategyRouter({ getBrandData }) {
       failed: saved.failed.slice(0, 5).map((f) => ({ at: f.at, model: f.model || '', reason: f.reason || '', sample: f.sample || '' })),
       failedCount: saved.failed.length,
       last: selected ? { at: selected.at, source: selected.source, product: selected.product || '', modules: selected.moduleIds || [], model: selected.model || '', builtin: selected.id === 'draft' } : null,
-      talkingPoints: (selected && selected.talkingPoints) || [],
+      talkingPoints: builtinTalk ? fallbackReport(card, []).talkingPoints : selected.talkingPoints,
       moduleRows: Object.entries((selected && selected.modules) || {}).map(([id, v]) => ({ id, title: MODULES[id] || id, summary: (v && v.summary) || '', points: ((v && v.points) || []).map(String) })),
       assumptions: (selected && selected.assumptions) || [],
     });
@@ -370,6 +412,12 @@ function createStrategyRouter({ getBrandData }) {
   router.put('/inputs', wrap(async (req, res) => {
     const brand = needBrand(req, res); if (!brand) return;
     await save(brand, { inputs: cleanInputs(req.body && req.body.inputs) });
+    res.json({ ok: true });
+  }));
+
+  router.put('/progress', wrap(async (req, res) => {
+    const brand = needBrand(req, res); if (!brand) return;
+    await save(brand, { ticks: cleanTicks(req.body && req.body.ticks) });
     res.json({ ok: true });
   }));
 
@@ -417,10 +465,7 @@ function createStrategyRouter({ getBrandData }) {
     runs.set(lock, run);
     try {
       const { data, saved, card, canSeeProfit } = scoreFor(brand, product, req);
-      let playbook;
-      try { playbook = fs.readFileSync(PLAYBOOK_PATH, 'utf8'); } catch {
-        const e = new Error('strategy/playbook.md is missing. Create the strategy folder and put the playbook there.'); e.status = 503; throw e;
-      }
+      const playbook = planAsText(); // the hand-written base plan, not a file that can go missing
       const facts = {
         brand, product: product || '(all products, hero = ' + card.hero + ')', dataSource: source,
         scorecard: card.pills.map((p) => ({ area: p.name, status: p.status, value: p.value, note: p.note, facts: p.facts })),

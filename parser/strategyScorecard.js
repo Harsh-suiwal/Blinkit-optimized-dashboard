@@ -1,4 +1,5 @@
 // Strategy tab: the Health Scorecard (playbook Part 3) as pure functions. No kv, no Supabase, no AI.
+// Margin and break-even ROAS read the SAME numbers as the Profit tab (buildProfitView, via profitFromView), typed COGS included.
 // The server passes in the brand's data; this returns the 7 coloured pills, the top 3 actions and the
 // text of each row. Colours and numbers are NEVER chosen by the AI. Each pill carries the same four things the row
 // shows: value (the headline number), note (what it means now), rule (what makes it green/amber/red), fix (what to do).
@@ -186,11 +187,40 @@ function evalMargin(profit, canSeeProfit) {
   let note = `${m.label}: profit ${inr(m.profit)} after ads and every cost entered, which is ${m.marginPct}% of net sales.`;
   if (m.status === 'incomplete') note += ` Counts ${m.matchedRevenuePct}% of sales; some products have no costs entered.`;
   if (m.partial) note += ' The month is still partial.';
+  if (m.adMissing) note += ' No campaign upload for this month, so ad spend counts as 0 and margin looks higher than it is.';
   const value = `${m.marginPct}%`;
   const fix = 'Raise price or cut COGS, fees or ad spend until margin after ads is above zero.';
   if (m.marginPct < 0) return pill('margin', 'r', value, note, rule, fix, facts);
   if (m.marginPct <= MARGIN_FLAT_PCT) return pill('margin', 'a', value, note, rule, fix, facts);
   return pill('margin', 'g', value, note, rule, '', facts);
+}
+
+
+/**
+ * Turns buildProfitView's month table (the same numbers the Profit tab shows, typed COGS included) into the
+ * shape the Margin and Ads pills read: { months: [{ monthKey, label, partial, netSales, profit, adSpend, marginPct,
+ * matchedRevenuePct, adMissing, status }], totals: { netSales, profit, adSpend } }. netSales counts only products with COGS.
+ */
+function profitFromView(view) {
+  if (!view || !Array.isArray(view.rows)) return null;
+  const months = view.rows.map((r) => {
+    const counted = (Number(r.net) || 0) - (Number(r.leftOut) || 0);
+    const costed = counted > 0 && r.marginPct !== null && r.marginPct !== undefined;
+    const gross = Number(r.gross) || 0;
+    const matched = gross > 0 ? r1(((gross - (Number(r.leftOutGross) || 0)) / gross) * 100) : 0;
+    return {
+      monthKey: r.key, label: r.label, partial: Boolean(r.partial), netSales: counted, profit: Number(r.profit) || 0,
+      adSpend: Number(r.ads) || 0, marginPct: costed ? r.marginPct : null, matchedRevenuePct: matched, adMissing: Boolean(r.adMissing),
+      status: !costed ? 'no-costs' : matched < 99.5 ? 'incomplete' : 'ok',
+    };
+  });
+  const used = months.filter((m) => m.status !== 'no-costs');
+  const totals = {
+    netSales: used.reduce((s, m) => s + m.netSales, 0),
+    profit: used.reduce((s, m) => s + m.profit, 0),
+    adSpend: used.reduce((s, m) => s + m.adSpend, 0),
+  };
+  return { months, totals };
 }
 
 const ACTIONS = {
@@ -242,4 +272,4 @@ function computeScorecard({ overview, stockRows, profit, monthInfo, inputs, prod
   };
 }
 
-module.exports = { computeScorecard, FIX_ORDER };
+module.exports = { computeScorecard, profitFromView, FIX_ORDER };

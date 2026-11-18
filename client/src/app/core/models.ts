@@ -731,7 +731,13 @@ export interface StrategyRow { id: string; title: string; status: StrategyStatus
 export interface StrategyReportInfo { id: string; at: string; product: string; source: StrategySource; model: string; filled: number; }
 export interface StrategyFailure { at: string; model: string; reason: string; sample: string; }
 export interface StrategyQuota { available: boolean; remaining?: number; limit?: number; used?: number; }
+export interface StrategyPillar { id: string; title: string; why: string; musts: string[]; stop: string; status: StrategyStatus; facts: string[]; }
+export interface StrategyMonth { id: string; title: string; focus: string; actions: string[]; gate: string; }
+export interface StrategyModule { id: string; name: string; use: string; needs: { text: string; ok: boolean | null }[]; ready: boolean | null; }
 export interface StrategyScorecard {
+  plan: { pillars: StrategyPillar[]; months: StrategyMonth[]; modules: StrategyModule[] };
+  ticks: Record<string, boolean>;
+  talkingBuiltin: boolean;
   brand: string;
   products: string[];
   hero: string;

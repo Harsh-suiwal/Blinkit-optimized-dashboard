@@ -1,19 +1,19 @@
-import { NgTemplateOutlet } from '@angular/common';
-import { Component, HostListener, computed, effect, inject, signal, untracked } from '@angular/core';
+import { Component, computed, effect, inject, signal, untracked } from '@angular/core';
 import { Router } from '@angular/router';
 import { ApiService } from '../core/api.service';
 import { AuthService } from '../core/auth.service';
-import { StrategyAction, StrategyInputs, StrategyPill, StrategyQuota, StrategyReportInfo, StrategyRow, StrategyScorecard, StrategySource, StrategyStatus } from '../core/models';
+import { StrategyAction, StrategyInputs, StrategyPill, StrategyQuota, StrategyReportInfo, StrategyScorecard, StrategySource, StrategyStatus } from '../core/models';
 import { UiStateService } from '../core/ui-state.service';
 
 const WORD: Record<StrategyStatus, string> = { g: 'OK', a: 'Watch', r: 'Fix', na: 'No data', n: '' };
-// Which accordion row a health pill opens.
-// Row ids now equal pill keys, so a pill opens its own row.
+// Which base-plan pillar a health pill belongs to (clicking a pill opens that pillar).
+const PILL_PILLAR: Record<string, string> = { stock: 'p3', listing: 'p2', hero: 'p4', ads: 'p5', organic: 'p5', margin: 'p8', trend: 'p9' };
 
 /**
- * Strategy for the brand picked in the sidebar. The colours and numbers come from the server's scorecard
- * (parser/strategyScorecard.js); the AI only writes the words (Generate). Layout: top bar, health strip,
- * top 3 actions, accordion of the base strategy, optional modules, inputs panel. Talking points is a second view.
+ * Strategy for the brand picked in the sidebar. Top to bottom: where you stand (health pills, computed by
+ * parser/strategyScorecard.js), do this first, the 6-month plan with gates, the base checklist, optional add-ons,
+ * talking points, and a collapsed optional AI box. The base plan is hand-written in strategy/basePlan.js and the
+ * ticks are saved per brand. The AI only adds brand-specific words and never changes colours, numbers or the plan.
  */
 @Component({
   selector: 'app-strategy-page',
@@ -31,97 +31,138 @@ const WORD: Record<StrategyStatus, string> = { g: 'OK', a: 'Watch', r: 'Fix', na
           <option value="">All products (hero)</option>
           @for (p of d.products; track p) { <option [value]="p">{{ p }}</option> }
         </select>
-        <div class="sheet-tabs" role="tablist" aria-label="Data source">
-          @for (s of sources; track s.id) {
-            <button type="button" role="tab" class="sheet-tab" [class.active]="source() === s.id" [attr.aria-selected]="source() === s.id" (click)="source.set(s.id)">{{ s.label }}</button>
-          }
-        </div>
-        <div class="sheet-tabs" role="tablist" aria-label="View">
-          <button type="button" role="tab" class="sheet-tab" [class.active]="view() === 'report'" [attr.aria-selected]="view() === 'report'" (click)="view.set('report')">Report</button>
-          <button type="button" role="tab" class="sheet-tab" [class.active]="view() === 'talking'" [attr.aria-selected]="view() === 'talking'" (click)="view.set('talking')">Talking points</button>
-        </div>
-        <button type="button" class="upload-btn" [disabled]="generating()" (click)="generate()">{{ generating() ? 'Writing…' : 'Generate' }}</button>
-        @if (generating()) {
-          <button type="button" class="secondary-btn" (click)="cancelGenerate()">Cancel</button>
-        }
-        @if (d.reports.length || d.hasDraft) {
-          <select class="strat-select" aria-label="Saved report" [value]="d.selectedId" (change)="pickReport($any($event.target).value)">
-            @if (d.hasDraft) { <option value="draft">Built-in draft (not saved)</option> }
-            @for (r of d.reports; track r.id) { <option [value]="r.id">{{ reportLabel(r) }}</option> }
-          </select>
-          @if (!generating() && d.selectedId) {
-            <button type="button" class="secondary-btn" (click)="deleteReport()">{{ d.selectedId === 'draft' ? 'Discard draft' : 'Delete this report' }}</button>
-          }
-        }
-        <span class="muted strat-last">{{ d.last ? (d.last.builtin ? 'Built-in draft, not written by the AI' : 'Written: ' + lastLabel()) : 'No report yet' }}</span>
-        @if (quota(); as q) {
-          @if (q.available) { <span class="muted strat-last">Requests left today: <b>{{ q.remaining }}/{{ q.limit }}</b></span> }
-        }
         <span class="muted strat-last">Hero: <b>{{ d.hero || '—' }}</b></span>
+        <span class="strat-grow"></span>
+        @if (d.missing.length) { <button type="button" class="strat-chip" (click)="inputsOpen.set(true)">{{ d.missing.length }} {{ d.missing.length === 1 ? 'input' : 'inputs' }} needed</button> }
+        @else { <button type="button" class="secondary-btn" (click)="inputsOpen.set(true)">Inputs</button> }
+        @if (auth.can('download')) { <button type="button" class="secondary-btn" (click)="download()">Download report</button> }
       </section>
 
-      @if (view() === 'report') {
-        <section class="strat-strip" aria-label="Health strip">
-          @for (p of d.pills; track p.key) {
-            <button type="button" class="strat-pill" [class]="'strat-pill strat-' + p.status" [attr.title]="p.note" (click)="openFor(p.key)">
-              <i aria-hidden="true"></i><b>{{ p.name }}</b><span>{{ pillText(p) }}</span>
-            </button>
+      <h2 class="strat-h">Where you stand</h2>
+      <section class="strat-strip" aria-label="Health strip">
+        @for (p of d.pills; track p.key) {
+          <button type="button" class="strat-pill" [class]="'strat-pill strat-' + p.status" [attr.title]="p.note" (click)="openFor(p.key)">
+            <i aria-hidden="true"></i><b>{{ p.name }}</b><span>{{ pillText(p) }}</span>
+          </button>
+        }
+      </section>
+
+      <h2 class="strat-h">Do this first</h2>
+      <section class="strat-actions">
+        @for (a of d.actions; track a.area) {
+          @if (showAction(a)) {
+            <article class="strat-card" [style.cursor]="actionPage(a) ? 'pointer' : null" [attr.role]="actionPage(a) ? 'link' : null" [attr.tabindex]="actionPage(a) ? 0 : null" (click)="goAction(a)" (keydown.enter)="goAction(a)">
+              <h3>{{ a.title }}</h3>
+              <p><b>Why:</b> {{ a.why }}</p>
+              <p><b>Result:</b> {{ a.result }}</p>
+              @if (actionPage(a)) { <span class="muted">Open the problem →</span> }
+            </article>
           }
-        </section>
+        } @empty { <article class="strat-card"><h3>No urgent fixes</h3><p>Nothing is red or amber right now.</p></article> }
+      </section>
 
-        <section>
-          <h2 class="strat-h">Do this first</h2>
-          <div class="strat-actions">
-            @for (a of d.actions; track a.area) {
-              @if (showAction(a)) {
-                <article class="strat-card" [style.cursor]="actionPage(a) ? 'pointer' : null" [attr.role]="actionPage(a) ? 'link' : null" [attr.tabindex]="actionPage(a) ? 0 : null" (click)="goAction(a)" (keydown.enter)="goAction(a)">
-                  <h3>{{ a.title }}</h3>
-                  <p><b>Why:</b> {{ a.why }}</p>
-                  <p><b>Result:</b> {{ a.result }}</p>
-                  @if (actionPage(a)) { <span class="muted">Open the problem →</span> }
-                </article>
-              }
-            } @empty { <article class="strat-card"><h3>No urgent fixes</h3><p>Nothing is red or amber right now.</p></article> }
-          </div>
-        </section>
+      <h2 class="strat-h">6-month plan <span class="muted">· {{ planLine() }}</span></h2>
+      <section class="strat-months">
+        @for (m of d.plan.months; track m.id; let i = $index) {
+          <article class="strat-month" [class.current]="i === currentMonth()" [class.done]="ticks()['g.' + m.id]" [class.later]="i > currentMonth()">
+            <h3>{{ m.id }} · {{ m.title }}</h3>
+            <p class="muted">{{ m.focus }}</p>
+            <ul>@for (a of m.actions; track a) { <li>{{ a }}</li> }</ul>
+            <label class="strat-check strat-gate"><input type="checkbox" [checked]="!!ticks()['g.' + m.id]" (change)="toggleTick('g.' + m.id)"><span><b>Gate:</b> {{ m.gate }}</span></label>
+          </article>
+        }
+      </section>
+      <p class="muted strat-note">Do not start the next month until the gate is ticked.</p>
 
-        <section class="strat-acc">
-          @for (r of d.rows; track r.id) { <ng-container [ngTemplateOutlet]="rowTpl" [ngTemplateOutletContext]="{ r: r }" /> }
-          @for (m of moduleRows(); track m.id) { <ng-container [ngTemplateOutlet]="rowTpl" [ngTemplateOutletContext]="{ r: m }" /> }
-        </section>
-
-        <section class="strat-foot">
-          <div class="strat-pop-host">
-            <button type="button" class="secondary-btn" [attr.aria-expanded]="menu() === 'modules'" (click)="toggleMenu('modules')">+ Add module</button>
-            @if (menu() === 'modules') {
-              <div class="feeder-menu" role="group" aria-label="Advanced modules">
-                @for (m of moduleList(); track m.id) {
-                  <label class="feeder-option"><input type="checkbox" [checked]="modulesOn().includes(m.id)" (change)="toggleModule(m.id)"><span>{{ m.name }}</span></label>
+      <h2 class="strat-h">Base checklist <span class="muted">· {{ doneCount() }} of {{ totalCount() }} done</span></h2>
+      <section class="strat-acc">
+        @for (p of d.plan.pillars; track p.id) {
+          <div class="strat-row" [id]="'strat-' + p.id">
+            <button type="button" class="strat-row-btn" [attr.aria-expanded]="openId() === p.id" (click)="toggleRow(p.id)">
+              <span class="strat-dot" [class]="'strat-dot strat-' + (p.status || 'n')"></span>
+              <span class="strat-row-title">{{ p.title }}</span>
+              <span class="strat-row-sum">{{ pillarDone(p.id, p.musts.length) }} of {{ p.musts.length }} done · {{ p.why }}</span>
+              <span class="muted">{{ openId() === p.id ? 'Close' : 'Open' }}</span>
+            </button>
+            @if (openId() === p.id) {
+              <div class="strat-row-body">
+                @if (p.facts.length) { <ul class="strat-facts">@for (f of p.facts; track f) { <li>{{ f }}</li> }</ul> }
+                @for (pl of pillsOf(p.id); track pl.key) {
+                  @if (pl.rule) { <p class="muted"><b>Rule:</b> {{ pl.rule }}</p> }
+                  @if (pl.fix && pl.status !== 'g') { <p><b>Fix:</b> {{ pl.fix }}</p> }
                 }
+                @for (m of p.musts; track $index) {
+                  <label class="strat-check"><input type="checkbox" [checked]="!!ticks()[p.id + '.' + ($index + 1)]" (change)="toggleTick(p.id + '.' + ($index + 1))"><span>{{ m }}</span></label>
+                }
+                @if (p.stop) { <p class="strat-stop"><b>Stop:</b> {{ p.stop }}</p> }
               </div>
             }
           </div>
-          <span class="strat-grow"></span>
-          @if (d.missing.length) { <button type="button" class="strat-chip" (click)="inputsOpen.set(true)">{{ d.missing.length }} {{ d.missing.length === 1 ? 'input' : 'inputs' }} needed</button> }
-          @else { <button type="button" class="secondary-btn" (click)="inputsOpen.set(true)">Inputs</button> }
-          @if (auth.can('download')) { <button type="button" class="secondary-btn" (click)="download()">Download report</button> }
-        </section>
+        }
+      </section>
+
+      <h2 class="strat-h">Optional add-ons</h2>
+      <p class="muted strat-note">Switch these on only when the base is ready. The app checks what it can; the rest is your call.</p>
+      <section class="strat-mods">
+        @for (m of d.plan.modules; track m.id) {
+          <article class="strat-card">
+            <h3>{{ m.id }} · {{ m.name }} <span class="strat-badge" [class.ok]="m.ready === true" [class.no]="m.ready === false">{{ m.ready === true ? 'Ready' : m.ready === false ? 'Not yet' : 'Check yourself' }}</span></h3>
+            <p><b>Use when:</b> {{ m.use }}</p>
+            <ul class="strat-needs">@for (n of m.needs; track n.text) { <li>{{ n.ok === true ? '✓' : n.ok === false ? '✗' : '?' }} {{ n.text }}</li> }</ul>
+          </article>
+        }
+      </section>
+
+      <section class="strat-card strat-talk">
+        <div class="strat-talk-head"><h2>Talking points</h2><button type="button" class="secondary-btn" [disabled]="!d.talkingPoints.length" (click)="copyPoints()">Copy</button></div>
+        <p class="muted">{{ d.talkingBuiltin ? 'Built from your numbers and the base plan.' : 'Written by the AI from your last report.' }}</p>
+        @if (d.talkingPoints.length) { <ol>@for (t of d.talkingPoints; track $index) { <li>{{ t }}</li> }</ol> }
+      </section>
+
+      <details class="strat-assume strat-ai">
+        <summary>AI assistant (optional)</summary>
+        <p class="muted">Adds brand-specific wording only. The plan, colours and numbers above never change. Free models can be wrong, so read it before you use it.</p>
+        <div class="strat-bar">
+          <div class="sheet-tabs" role="tablist" aria-label="Data source">
+            @for (s of sources; track s.id) {
+              <button type="button" role="tab" class="sheet-tab" [class.active]="source() === s.id" [attr.aria-selected]="source() === s.id" (click)="source.set(s.id)">{{ s.label }}</button>
+            }
+          </div>
+          <button type="button" class="upload-btn" [disabled]="generating()" (click)="generate()">{{ generating() ? 'Writing…' : 'Generate' }}</button>
+          @if (generating()) { <button type="button" class="secondary-btn" (click)="cancelGenerate()">Cancel</button> }
+          @if (quota(); as q) { @if (q.available) { <span class="muted strat-last">Requests left today: <b>{{ q.remaining }}/{{ q.limit }}</b></span> } }
+        </div>
+        <div class="strat-bar">
+          @for (m of moduleList(); track m.id) {
+            <label class="feeder-option"><input type="checkbox" [checked]="modulesOn().includes(m.id)" (change)="toggleModule(m.id)"><span>{{ m.id }}</span></label>
+          }
+        </div>
+        @if (d.reports.length || d.hasDraft) {
+          <div class="strat-bar">
+            <select class="strat-select" aria-label="Saved report" [value]="d.selectedId" (change)="pickReport($any($event.target).value)">
+              @if (d.hasDraft) { <option value="draft">Built-in draft (not saved)</option> }
+              @for (r of d.reports; track r.id) { <option [value]="r.id">{{ reportLabel(r) }}</option> }
+            </select>
+            @if (!generating() && d.selectedId) {
+              <button type="button" class="secondary-btn" (click)="deleteReport()">{{ d.selectedId === 'draft' ? 'Discard draft' : 'Delete this report' }}</button>
+            }
+            <span class="muted strat-last">{{ d.last ? (d.last.builtin ? 'Built-in draft, not written by the AI' : 'Written: ' + lastLabel()) : '' }}</span>
+          </div>
+        }
+        @for (n of aiNotes(); track n.id) {
+          <h3 class="strat-h">{{ n.title }}</h3>
+          <p class="muted">{{ n.summary }}</p>
+          <ul>@for (pt of n.points; track pt) { <li>{{ pt }}</li> }</ul>
+        }
         @if (d.assumptions.length) {
-          <details class="strat-assume"><summary>Assumptions ({{ d.assumptions.length }})</summary><ul>@for (a of d.assumptions; track a) { <li>{{ a }}</li> }</ul></details>
+          <h3 class="strat-h">Assumptions ({{ d.assumptions.length }})</h3>
+          <ul>@for (a of d.assumptions; track a) { <li>{{ a }}</li> }</ul>
         }
         @if (d.failedCount) {
-          <details class="strat-assume">
-            <summary>Failed attempts ({{ d.failedCount }})</summary>
-            <ul>@for (f of d.failed; track f.at) { <li>{{ when(f.at) }} · {{ f.model || 'no model' }} · {{ f.reason }}@if (f.sample) { <br><span class="muted">{{ f.sample }}</span> }</li> }</ul>
-          </details>
+          <h3 class="strat-h">Failed attempts ({{ d.failedCount }})</h3>
+          <ul>@for (f of d.failed; track f.at) { <li>{{ when(f.at) }} · {{ f.model || 'no model' }} · {{ f.reason }}@if (f.sample) { <br><span class="muted">{{ f.sample }}</span> }</li> }</ul>
         }
-      } @else {
-        <section class="strat-card strat-talk">
-          <div class="strat-talk-head"><h2>Talking points</h2><button type="button" class="secondary-btn" [disabled]="!d.talkingPoints.length" (click)="copyPoints()">Copy</button></div>
-          @if (d.talkingPoints.length) { <ol>@for (t of d.talkingPoints; track $index) { <li>{{ t }}</li> }</ol> }
-          @else { <p class="muted">Press Generate to write 8 to 12 points for the client meeting.</p> }
-        </section>
-      }
+      </details>
 
       @if (inputsOpen()) {
         <aside class="strat-side strat-pop-host" role="dialog" aria-label="Inputs needed">
@@ -152,28 +193,7 @@ const WORD: Record<StrategyStatus, string> = { g: 'OK', a: 'Watch', r: 'Fix', na
     } @else if (loading()) {
       <p class="muted">Loading…</p>
     }
-
-    <ng-template #rowTpl let-r="r">
-      <div class="strat-row" [id]="'strat-' + r.id">
-        <button type="button" class="strat-row-btn" [attr.aria-expanded]="openId() === r.id" (click)="toggleRow(r.id)">
-          <span class="strat-dot" [class]="'strat-dot strat-' + (r.status || 'n')"></span>
-          <span class="strat-row-title">{{ r.title }}@if (r.value) { <b> · {{ r.value }}</b> }</span>
-          <span class="strat-row-sum">{{ r.summary }}</span>
-          <span class="muted">{{ openId() === r.id ? 'Close' : 'Open' }}</span>
-        </button>
-        @if (openId() === r.id) {
-          <div class="strat-row-body">
-            @if (r.rule) { <p class="muted"><b>Rule:</b> {{ r.rule }}</p> }
-            @if (r.fix && r.status !== 'g') { <p><b>Fix:</b> {{ r.fix }}</p> }
-            @if (r.points?.length) { <ul>@for (p of r.points; track p) { <li>{{ p }}</li> }</ul> }
-            @else { <p class="muted">Press Generate to add the written advice.</p> }
-            @if (r.link) { <span class="muted">{{ r.link }}</span> }
-          </div>
-        }
-      </div>
-    </ng-template>
   `,
-  imports: [NgTemplateOutlet],
 })
 export class StrategyPageComponent {
   private readonly api = inject(ApiService);
@@ -192,7 +212,7 @@ export class StrategyPageComponent {
   readonly source = signal<StrategySource>('dashboard');
   readonly product = signal('');
   readonly openId = signal<string | null>(null);
-  readonly menu = signal<'modules' | null>(null);
+  readonly ticks = signal<Record<string, boolean>>({});
   readonly modulesOn = signal<string[]>([]);
   readonly inputsOpen = signal(false);
   readonly showCompliance = signal(false);
@@ -219,14 +239,30 @@ export class StrategyPageComponent {
   ];
 
   readonly moduleList = computed(() => Object.entries(this.data()?.modules ?? {}).map(([id, name]) => ({ id, name })));
-  readonly moduleRows = computed(() => {
+  /** AI-written notes for the AI box: only rows and add-ons that have points. */
+  readonly aiNotes = computed(() => {
     const d = this.data();
     if (!d) return [];
-    const made = new Map(d.moduleRows.map((m) => [m.id, m]));
-    return this.modulesOn().slice().sort((a, b) => Number(a.slice(1)) - Number(b.slice(1))).map((id) => {
-      const m = made.get(id);
-      return { id, title: d.modules[id] ?? id, status: 'n' as StrategyStatus, value: '', rule: '', fix: '', summary: m?.summary || 'Generate to fill this module', points: m?.points ?? [], link: '' };
-    });
+    const rows = d.rows.filter((r) => r.points.length).map((r) => ({ id: r.id, title: r.title, summary: r.summary, points: r.points }));
+    const mods = d.moduleRows.filter((m) => m.points.length).map((m) => ({ id: m.id, title: m.id + ' · ' + (d.modules[m.id] ?? m.title), summary: m.summary, points: m.points }));
+    return [...rows, ...mods];
+  });
+  readonly totalCount = computed(() => (this.data()?.plan.pillars ?? []).reduce((n, p) => n + p.musts.length, 0));
+  readonly doneCount = computed(() => {
+    const t = this.ticks();
+    return (this.data()?.plan.pillars ?? []).reduce((n, p) => n + p.musts.filter((_, i) => t[p.id + '.' + (i + 1)]).length, 0);
+  });
+  /** First month whose gate is not ticked yet; 6 when all gates are done. */
+  readonly currentMonth = computed(() => {
+    const months = this.data()?.plan.months ?? [];
+    const t = this.ticks();
+    const i = months.findIndex((m) => !t['g.' + m.id]);
+    return i < 0 ? months.length : i;
+  });
+  readonly planLine = computed(() => {
+    const months = this.data()?.plan.months ?? [];
+    const cur = this.currentMonth();
+    return cur >= months.length ? 'all 6 gates passed' : 'now in ' + months[cur].id + ' ' + months[cur].title + ', ' + cur + ' of ' + months.length + ' gates passed';
   });
 
   constructor() {
@@ -261,6 +297,7 @@ export class StrategyPageComponent {
       this.form.set({ ...d.inputs });
       this.auto.set(d.auto ?? {});
       this.reportId.set(d.selectedId);
+      this.ticks.set({ ...d.ticks });
       if (!this.modulesOn().length && d.last?.modules.length) this.modulesOn.set(d.last.modules);
       this.say('');
     } catch (err) {
@@ -391,11 +428,32 @@ export class StrategyPageComponent {
   }
 
   openFor(pillKey: string) {
-    const id = pillKey;
+    const id = PILL_PILLAR[pillKey];
+    if (!id) return;
     this.openId.set(id);
     setTimeout(() => document.getElementById('strat-' + id)?.scrollIntoView({ behavior: 'smooth', block: 'center' }));
   }
-  toggleMenu(m: 'modules') { this.menu.set(this.menu() === m ? null : m); }
+
+  pillsOf(pillarId: string): StrategyPill[] { return (this.data()?.pills ?? []).filter((p) => PILL_PILLAR[p.key] === pillarId); }
+  pillarDone(pillarId: string, total: number): number {
+    const t = this.ticks();
+    let n = 0;
+    for (let i = 1; i <= total; i++) if (t[pillarId + '.' + i]) n++;
+    return n;
+  }
+
+  /** Ticks save per brand. The screen changes at once; a failed save puts it back and says so. */
+  async toggleTick(id: string) {
+    const brand = this.brand();
+    if (!brand) return;
+    const before = this.ticks();
+    const next = { ...before };
+    if (next[id]) delete next[id]; else next[id] = true;
+    this.ticks.set(next);
+    try { await this.api.saveStrategyTicks(brand, next); }
+    catch (err) { this.ticks.set(before); this.say(err instanceof Error ? err.message : 'Could not save the tick.', 'error'); }
+  }
+
   toggleModule(id: string) {
     const on = this.modulesOn();
     this.modulesOn.set(on.includes(id) ? on.filter((x) => x !== id) : [...on, id]);
@@ -409,13 +467,19 @@ export class StrategyPageComponent {
   download() {
     const d = this.data();
     if (!d) return;
-    const rows: StrategyRow[] = [...d.rows, ...this.moduleRows() as StrategyRow[]];
+    const t = this.ticks();
+    const box = (on: boolean) => (on ? '[x] ' : '[ ] ');
     const md = [
       '# Strategy: ' + d.brand, '',
-      '## Health', ...d.pills.map((p) => '- ' + p.name + ' (' + WORD[p.status] + (p.value ? ', ' + p.value : '') + '): ' + p.note), '',
+      '## Where you stand', ...d.pills.map((p) => '- ' + p.name + ' (' + WORD[p.status] + (p.value ? ', ' + p.value : '') + '): ' + p.note), '',
       '## Do this first', ...d.actions.map((a) => '- **' + a.title + '**. Why: ' + a.why + ' Result: ' + a.result), '',
-      ...rows.flatMap((r) => ['## ' + r.title + (r.value ? ' (' + r.value + ')' : ''), r.summary, ...(r.rule ? ['Rule: ' + r.rule] : []), ...(r.fix && r.status !== 'g' ? ['Fix: ' + r.fix] : []), ...r.points.map((p) => '- ' + p), '']),
-      ...(d.talkingPoints.length ? ['## Talking points', ...d.talkingPoints.map((t, i) => (i + 1) + '. ' + t), ''] : []),
+      '## 6-month plan (' + this.planLine() + ')',
+      ...d.plan.months.flatMap((m) => ['### ' + m.id + ' ' + m.title + ' (' + m.focus + ')', ...m.actions.map((a) => '- ' + a), box(!!t['g.' + m.id]) + 'Gate: ' + m.gate, '']),
+      '## Base checklist (' + this.doneCount() + ' of ' + this.totalCount() + ' done)',
+      ...d.plan.pillars.flatMap((p) => ['### ' + p.title, p.why, ...p.facts.map((f) => '- ' + f), ...p.musts.map((m, i) => box(!!t[p.id + '.' + (i + 1)]) + m), ...(p.stop ? ['Stop: ' + p.stop] : []), '']),
+      '## Optional add-ons', ...d.plan.modules.map((m) => '- ' + m.id + ' ' + m.name + ': ' + (m.ready === true ? 'ready' : m.ready === false ? 'not yet' : 'check yourself')), '',
+      ...(d.talkingPoints.length ? ['## Talking points', ...d.talkingPoints.map((x, i) => (i + 1) + '. ' + x), ''] : []),
+      ...this.aiNotes().flatMap((n) => ['## AI note: ' + n.title, n.summary, ...n.points.map((x) => '- ' + x), '']),
       ...(d.assumptions.length ? ['## Assumptions', ...d.assumptions.map((a) => '- ' + a)] : []),
     ].join('\n');
     const url = URL.createObjectURL(new Blob([md], { type: 'text/markdown' }));
@@ -423,14 +487,4 @@ export class StrategyPageComponent {
     a.href = url; a.download = d.brand.replace(/\W+/g, '-') + '-strategy.md'; a.click();
     URL.revokeObjectURL(url);
   }
-
-  // Menus never stick: one click outside, Esc, a scroll or a resize closes them (house rule, see AGENTS.md).
-  @HostListener('document:click', ['$event'])
-  onDocClick(e: Event) {
-    if (this.menu() && !(e.target as HTMLElement).closest('.strat-pop-host')) this.menu.set(null);
-  }
-  @HostListener('document:keydown.escape')
-  @HostListener('window:resize')
-  @HostListener('window:scroll')
-  closeMenus() { this.menu.set(null); }
 }

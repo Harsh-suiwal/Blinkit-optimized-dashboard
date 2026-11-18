@@ -69,6 +69,7 @@ const { getBrandCosts, saveBrandProducts, setOtherCost, setProductField, setProf
 const { buildUploadsOverview } = require('./parser/uploadsOverview');
 const { buildBrandProfit } = require('./parser/brandProfit');
 const { buildProfitView } = require('./parser/profitView');
+const { profitFromView } = require('./parser/strategyScorecard');
 const { buildProductMonthDetail } = require('./parser/productMonthDetail');
 const { buildBrandReport } = require('./parser/brandReport');
 
@@ -230,8 +231,12 @@ function strategyBrandData(brand, { includeProfit }) {
   });
   const monthInfo = listMonths(brand, PROFIT_PLATFORM);
   const slots = slotsFor(brand, PROFIT_PLATFORM);
+  // Same maths as the Profit tab (typed COGS, GST, fees included), one row per month, ads counted in.
   const profit = includeProfit
-    ? buildBrandProfit({ brand, monthInfo, slots, costs: getBrandCosts(brand), adSpendByMonth: adSpendByMonthFor(brand) })
+    ? profitFromView(buildProfitView({
+      brand, slots, monthInfo, costs: getBrandCosts(brand), adSpendByMonth: adSpendByMonthFor(brand),
+      groupBy: 'month', months: monthInfo.map((m) => m.monthKey).slice(-12), includeAds: true,
+    }))
     : null;
   const rawMonthly = slots.slice(-6).map((s) => ({
     month: s.monthKey,
@@ -1752,4 +1757,4 @@ function start() {
 
 // Tests import this file (module.exports) without starting the server.
 if (require.main === module) start();
-module.exports = app;
+module.exports = app;

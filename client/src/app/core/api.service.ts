@@ -230,6 +230,10 @@ export class ApiService {
     return this.call(this.http.put<{ ok: boolean }>('/api/strategy/inputs', { brand, inputs }), '/api/strategy/inputs');
   }
 
+  saveStrategyTicks(brand: string, ticks: Record<string, boolean>) {
+    return this.call(this.http.put<{ ok: boolean }>('/api/strategy/progress', { brand, ticks }), '/api/strategy/progress');
+  }
+
   generateStrategy(brand: string, body: { product: string; source: StrategySource; modules: string[] }) {
     return this.post<{ ok: boolean; saved?: boolean; reportId?: string; note?: string }>('/api/strategy/generate', { brand, ...body });
   }
@@ -437,4 +441,4 @@ export class ApiService {
       throw new Error(message || 'The request failed.');
     }
   }
-}
+}
