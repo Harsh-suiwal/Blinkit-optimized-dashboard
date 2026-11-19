@@ -38,8 +38,8 @@ const DEFAULT_PERM_META: PermMetaItem[] = [
     <header class="topbar">
       <div class="topbar-left">
         <div>
-          <h1>Users &amp; Permissions</h1>
-          <span class="muted">Admins only. Changes apply on each user's next click.</span>
+          <h1>User Access &amp; Permissions</h1>
+          <span class="muted">Access control &mdash; restricted to administrators. Updates take effect on each user's next action.</span>
         </div>
       </div>
     </header>
@@ -51,21 +51,21 @@ const DEFAULT_PERM_META: PermMetaItem[] = [
         <div class="perm-header">
           <div>
             <h3>Role permissions</h3>
-            <p class="muted">Add custom roles or toggle what each role can access. Upload requires All brands; Admin always keeps Manage users.</p>
+            <p class="muted">Create bespoke roles and fine-tune access for each one. Upload requires All brands; Admin always retains Manage users.</p>
           </div>
           <div class="perm-actions">
             @if (hasPermChanges()) {
-              <span class="perm-dirty-badge">Unsaved changes</span>
+              <span class="perm-dirty-badge">Pending changes</span>
             }
             <button type="button" class="secondary-btn" (click)="discardPerms()" [disabled]="busy() || !hasPermChanges()">Discard</button>
-            <button type="button" class="secondary-btn" (click)="resetPerms()" [disabled]="busy()">Reset defaults</button>
-            <button type="button" class="secondary-btn perm-save-btn" (click)="savePerms()" [disabled]="busy() || !hasPermChanges()">Save permissions</button>
+            <button type="button" class="secondary-btn" (click)="resetPerms()" [disabled]="busy()">Restore defaults</button>
+            <button type="button" class="secondary-btn perm-save-btn" (click)="savePerms()" [disabled]="busy() || !hasPermChanges()">Save changes</button>
           </div>
         </div>
 
         <div class="profile-row perm-add-role">
           <input type="text" [(ngModel)]="newRoleLabel" placeholder="AI Explorer" (keyup.enter)="addRole()" />
-          <button type="button" class="secondary-btn" (click)="addRole()" [disabled]="busy() || !newRoleLabel.trim()">Add role</button>
+          <button type="button" class="secondary-btn" (click)="addRole()" [disabled]="busy() || !newRoleLabel.trim()">Create role</button>
         </div>
 
         @if (roleKeys().length) {
@@ -81,7 +81,7 @@ const DEFAULT_PERM_META: PermMetaItem[] = [
                         <button
                           type="button"
                           class="delete-btn perm-role-delete"
-                          title="Delete custom role (only if no user has it)"
+                          title="Delete role — available only when no user is assigned to it"
                           [disabled]="busy()"
                           (click)="deleteRole(roleKey)"
                         >×</button>
@@ -126,14 +126,14 @@ const DEFAULT_PERM_META: PermMetaItem[] = [
 
       <div class="overview-list profile-card">
         <h3>Brands</h3>
-        <p class="muted">Add a brand here before any data is uploaded, then tick it for a user.</p>
+        <p class="muted">Register a brand before any data is uploaded, then grant access to individual users.</p>
         <div class="profile-row">
           <input type="text" [(ngModel)]="newBrand" placeholder="Brand name" />
           <button type="button" class="secondary-btn" (click)="addBrand()" [disabled]="busy()">Add brand</button>
         </div>
         <div class="users-brands">
           @for (b of brands(); track b) {
-            <span>{{ b }} <button type="button" class="delete-btn" title="Remove (only if it has no data and no user has it)" (click)="removeBrand(b)">×</button></span>
+            <span>{{ b }} <button type="button" class="delete-btn" title="Remove — available only when no data or users are linked to this brand" (click)="removeBrand(b)">×</button></span>
           }
         </div>
       </div>
@@ -142,7 +142,7 @@ const DEFAULT_PERM_META: PermMetaItem[] = [
         <h3>Add user</h3>
         <div class="profile-row"><span class="profile-label">Email</span><input type="email" [(ngModel)]="newUser.email" /></div>
         <div class="profile-row"><span class="profile-label">Name</span><input type="text" [(ngModel)]="newUser.name" /></div>
-        <div class="profile-row"><span class="profile-label">Password</span><input type="password" [(ngModel)]="newUser.password" placeholder="At least 8 characters" /></div>
+        <div class="profile-row"><span class="profile-label">Password</span><input type="password" [(ngModel)]="newUser.password" placeholder="Minimum 8 characters" /></div>
         <div class="profile-row">
           <span class="profile-label">Role</span>
           <select [(ngModel)]="newUser.role">
@@ -160,11 +160,11 @@ const DEFAULT_PERM_META: PermMetaItem[] = [
             @for (b of brands(); track b) {
               <label class="brand-chip"><input type="checkbox" [checked]="newUser.brands.includes(b)" (change)="toggle(newUser.brands, b, $any($event.target).checked)" /> {{ b }}</label>
             }
-            @if (!brands().length) { <span class="muted">No brands uploaded yet.</span> }
+            @if (!brands().length) { <span class="muted">No brands available yet.</span> }
           </div>
         </div>
         <div class="profile-row"><span class="profile-label">Active</span><input type="checkbox" [(ngModel)]="newUser.active" /></div>
-        <button type="button" class="secondary-btn" (click)="create()" [disabled]="busy()">Add user</button>
+        <button type="button" class="secondary-btn" (click)="create()" [disabled]="busy()">Create user</button>
       </div>
 
       <div class="overview-list profile-card">
@@ -193,13 +193,13 @@ const DEFAULT_PERM_META: PermMetaItem[] = [
                 </div>
               </div>
               <div class="profile-row"><span class="profile-label">Active</span><input type="checkbox" [(ngModel)]="editDraft.active" /></div>
-              <div class="profile-row"><span class="profile-label">New password</span><input type="password" [(ngModel)]="passwordDraft" placeholder="Leave empty to keep" /></div>
+              <div class="profile-row"><span class="profile-label">New password</span><input type="password" [(ngModel)]="passwordDraft" placeholder="Leave blank to keep the current password" /></div>
               <button type="button" class="secondary-btn" (click)="saveEdit(u)" [disabled]="busy()">Save</button>
               <button type="button" class="secondary-btn" (click)="cancelEdit()">Cancel</button>
             } @else {
               <strong>{{ u.name || u.email }}</strong>
               <span class="muted">{{ u.email }} · {{ roleLabel(u.role) }} · {{ u.active ? 'Active' : 'Deactivated' }}</span>
-              <span class="muted">Brands: {{ u.brands.length ? u.brands.join(', ') : 'none' }}</span>
+              <span class="muted">Brands: {{ u.brands.length ? u.brands.join(', ') : 'None assigned' }}</span>
               <button type="button" class="secondary-btn" (click)="startEdit(u)">Edit</button>
             }
           </div>
@@ -344,8 +344,8 @@ export class UsersPageComponent implements OnInit {
   }
 
   permLockReason(roleKey: string, key: PermKey): string {
-    if (roleKey === 'admin' && key === 'manageUsers') return 'Admin must always keep Manage users permission.';
-    if (key === 'upload' && !this.permValue(roleKey, 'allBrands')) return 'Requires All brands to be enabled.';
+    if (roleKey === 'admin' && key === 'manageUsers') return 'Administrators always retain Manage users access.';
+    if (key === 'upload' && !this.permValue(roleKey, 'allBrands')) return 'Requires All brands to be enabled first.';
     return '';
   }
 
@@ -371,7 +371,7 @@ export class UsersPageComponent implements OnInit {
       if (res.builtInRoles) this.builtInRoles.set(res.builtInRoles);
       this.setPermsState(res.roles);
       this.newRoleLabel = '';
-      this.message.set(`Added role "${res.label}". Toggle its permissions and click Save permissions.`);
+      this.message.set(`Role "${res.label}" created. Configure its permissions, then click Save changes.`);
     });
   }
 
@@ -383,7 +383,7 @@ export class UsersPageComponent implements OnInit {
       if (res.roleLabels) this.roleLabels.set(res.roleLabels);
       if (res.roleOptions) this.roles.set(res.roleOptions);
       this.setPermsState(res.roles);
-      this.message.set(`Removed role "${this.roleLabel(roleKey)}".`);
+      this.message.set(`Role "${this.roleLabel(roleKey)}" deleted.`);
     });
   }
 
@@ -402,7 +402,7 @@ export class UsersPageComponent implements OnInit {
       if (res.roleLabels) this.roleLabels.set(res.roleLabels);
       if (res.roleOptions) this.roles.set(res.roleOptions);
       this.setPermsState(res.roles);
-      this.message.set('Role permissions saved. Changes apply on each user\'s next click.');
+      this.message.set('Permissions saved. Changes take effect on each user\'s next action.');
     });
   }
 
@@ -414,7 +414,7 @@ export class UsersPageComponent implements OnInit {
       if (res.roleLabels) this.roleLabels.set(res.roleLabels);
       if (res.roleOptions) this.roles.set(res.roleOptions);
       this.setPermsState(res.roles);
-      this.message.set('Built-in role permissions reset to defaults.');
+      this.message.set('Built-in roles restored to their default permissions.');
     });
   }
 
@@ -434,7 +434,7 @@ export class UsersPageComponent implements OnInit {
       const result = await this.api.addBrand(this.newBrand);
       this.brands.set(result.brands);
       this.newBrand = '';
-      this.message.set('Brand added. You can tick it for a user now.');
+      this.message.set('Brand added. Access can now be granted to users.');
     });
   }
 
@@ -442,7 +442,7 @@ export class UsersPageComponent implements OnInit {
     await this.run(async () => {
       const result = await this.api.removeBrand(name);
       this.brands.set(result.brands);
-      this.message.set(`Removed ${name}.`);
+      this.message.set(`Brand "${name}" deleted.`);
     });
   }
 
@@ -471,7 +471,7 @@ export class UsersPageComponent implements OnInit {
       await this.api.createUser({ ...this.newUser });
       this.newUser = { email: '', name: '', password: '', role: 'ecom_executive', brands: [], active: true };
       await this.load();
-      this.message.set('User added.');
+      this.message.set('User created successfully.');
     });
   }
 
@@ -492,7 +492,7 @@ export class UsersPageComponent implements OnInit {
       if (this.passwordDraft) await this.api.setUserPassword(u.id, this.passwordDraft);
       this.cancelEdit();
       await this.load();
-      this.message.set('Saved. Sessions were ended if the user was deactivated or the password changed.');
+      this.message.set('Saved. Sessions were revoked if the account was deactivated or the password was updated.');
     });
   }
 
