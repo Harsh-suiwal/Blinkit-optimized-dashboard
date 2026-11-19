@@ -318,7 +318,7 @@ function loadLatest() {
   return { ...latest, rows: decorateRows(latest.rows || []), brandUploads };
 }
 
-// --- Upload (admin only) --------------------------------------------------
+// --- Upload (upload permission, all brands only) ---------------------------
 
 app.post('/api/upload', requirePerm('upload'), uploadReport, mutating(async (req, res) => {
   if (!req.file) {
@@ -954,7 +954,7 @@ app.get('/api/uploads-overview', requirePerm('upload'), (req, res) => {
   }));
 });
 
-// --- Profit (admin only: it shows what a brand really earns) -------------------
+// --- Profit (profit permission: it shows what a brand really earns) ----------------
 // Costs come from an uploaded cost sheet (one row per product) plus an "other costs" amount per
 // month; sales come from the monthly sales store; ad spend from the campaign uploads. ?brand= is required.
 const PROFIT_PLATFORM = 'blinkit';
@@ -1131,7 +1131,7 @@ app.get('/api/product-month-detail', requireAuth, (req, res) => {
 
 // --- Reports (the client report: one brand, a few months, everything the slides need) ---------
 // ?brand= is required, ?months=2026-09,2026-10 optional (default: the latest months with data).
-// ?profit=1 adds the profit figures, and only for an admin (anyone else simply gets no profit section).
+// ?profit=1 adds profit figures only when the account has the profit permission.
 app.get('/api/brand-report', requireAuth, (req, res) => {
   const brand = typeof req.query.brand === 'string' ? req.query.brand.trim() : '';
   if (!brand) return res.status(400).json({ error: 'brand is required.' });

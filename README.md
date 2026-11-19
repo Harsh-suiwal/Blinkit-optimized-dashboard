@@ -1,470 +1,529 @@
-# 📊 Blinkit Optimized Dashboard (v6)
+# Blinkit Optimized Dashboard
 
-A full-stack analytics dashboard for **Blinkit** sellers to track inventory health, city-level sales performance, and advertising campaign performance (ROAS) — all from a single authenticated interface.
+A brand-first analytics dashboard for **Blinkit** sellers and the agencies that run their accounts. Upload Blinkit's Excel reports and get stock health, sales by city, month-by-month trends, advertising performance, profit, client-ready reports, and a brand strategy scorecard, all behind a role-based login.
 
-Built with **Node.js / Express** on the backend and **Angular 20** on the frontend, backed by **Supabase** (PostgreSQL) for user authentication, role management, and persistent key-value report storage.
-
----
-
-## What's New in v6
-
-- **Supabase KV Store Persistence:** All report data (`latest`, `history`, `salesLatest`, `salesHistory`, `campaignData`, `brandAliases`, `uploadHashes`) is saved in Supabase PostgreSQL (`kv_store`), persisting cleanly across server reboots and ephemeral hosts like Render.
-- **Brand-First Multi-Brand Architecture:** Global and per-tab brand selection across Inventory, Sales, and Campaign analysis.
-- **Accurate Incoming Inventory:** Corrected the incoming stock calculation to read "Incoming scheduled inventory" directly, resolving a 2× doubling bug.
-- **Responsive Inventory Cards:** KPI summary metrics dynamically compute from active filter signals, preventing metric freezes on brand switching; includes automated 401 redirect to `/login` if sessions expire.
-- **Sales Feeder City Totals:** Added an aggregated "City totals" summary table in the Feeder view summarizing revenue, units, orders, and AOV across all products per mapped city.
-- **Campaign Unknown Brand Resolution:** Dry-run detects campaigns with "Unknown" brands and prompts administrators to assign a default brand before upload; previews replaced campaigns and flags skipped rows.
+- **Backend:** Node.js 18+ / Express 4
+- **Frontend:** Angular 20 (standalone components, signals)
+- **Storage:** Supabase (PostgreSQL): user logins plus all report data in one key-value table
+- **Hosting:** built for a single Render web service
 
 ---
 
-## Table of Contents
+## Contents
 
-- [Features](#features)
-- [Tech Stack](#tech-stack)
+- [What it does](#what-it-does)
+- [Roles and permissions](#roles-and-permissions)
 - [Architecture](#architecture)
-- [Prerequisites](#prerequisites)
-- [Getting Started](#getting-started)
-  - [1. Clone the Repository](#1-clone-the-repository)
-  - [2. Set Up Supabase](#2-set-up-supabase)
-  - [3. Configure Environment Variables](#3-configure-environment-variables)
-  - [4. Install Dependencies](#4-install-dependencies)
-  - [5. Seed the Admin User](#5-seed-the-admin-user)
-  - [6. Run the Application](#6-run-the-application)
-- [Project Structure](#project-structure)
-- [How It Works](#how-it-works)
-  - [Inventory Tracking](#inventory-tracking)
-  - [Sales Performance](#sales-performance)
-  - [Campaign Analysis](#campaign-analysis)
-  - [The 45 / 60-Day Columns](#the-45--60-day-columns)
-- [API Reference](#api-reference)
-  - [Authentication](#authentication)
-  - [Inventory](#inventory)
-  - [Sales Performance](#sales-performance-1)
-  - [Campaign Analysis](#campaign-analysis-1)
-  - [Cross-Tab Lookups](#cross-tab-lookups)
-  - [Export](#export)
-- [Frontend (Angular)](#frontend-angular)
-- [Feeder City Mapping](#feeder-city-mapping)
-- [Configuration](#configuration)
+- [Quick start](#quick-start)
+- [Environment variables](#environment-variables)
 - [Scripts](#scripts)
-- [If Blinkit Changes a Column Name](#if-blinkit-changes-a-column-name)
+- [Deploying to Render](#deploying-to-render)
+- [Project structure](#project-structure)
+- [How the data works](#how-the-data-works)
+- [Business rules](#business-rules)
+- [API reference](#api-reference)
+- [Testing](#testing)
+- [Security notes](#security-notes)
+- [Limits to know about](#limits-to-know-about)
+- [Maintenance](#maintenance)
 - [License](#license)
 
 ---
 
-## Features
+## What it does
 
-| Module | Capabilities |
-|---|---|
-| **Inventory** | Upload Blinkit "Stock On Hand" `.xlsx` reports → parsed product-warehouse grid with stock status (OK / Low / Out), units sold across 7/15/30/45/60-day windows, incoming inventory, search, sort, delete + undo |
-| **Sales Performance** | Upload order-level sales `.xlsx` → city-level aggregation with revenue, units, order count, avg order value, best-selling product per city, performance tiers, trend comparison vs previous upload, per-product & per-brand breakdowns |
-| **Campaign Analysis** | Upload advertising campaign `.xlsx` → multi-period campaign table with ad spend, impressions, ATC, qty sold, sales, ROAS, new users, a daily trend chart, performance tiers, period selector |
-| **Authentication** | Session-based login with bcrypt-hashed passwords stored in Supabase, role-based access (`admin` / `viewer`), admin-only uploads & deletes |
-| **Export** | Download individual or combined multi-sheet `.xlsx` workbooks covering any/all of the three modules |
-| **Undo / Restore** | Every delete operation returns the data needed for Ctrl+Z restoration — including trend-history snapshots for sales |
-| **Feeder Scoping** | Sales can be scoped to Blinkit feeder-warehouse regions (Mumbai, Bengaluru, Faridabad, etc.) for city-level drill-downs |
+Everything is organised around one **brand**. Pick a brand in the sidebar and every page shows only that brand.
+
+| Page | Route | What it gives you |
+|---|---|---|
+| **Overview** | `/app/overview` | Headline cards (revenue, orders, units in stock, return on ad spend), revenue by month, top cities, top products, best sellers in stock. A month picker re-cuts sales and ads for any month on record. |
+| **Sales** | `/app/sales-performance` | Three tabs. *City wise*: revenue, units, orders, AOV, best product, tiers, trend vs the previous upload, feeder-warehouse scoping. *Product wise*: per-product totals with a city breakdown. *Month by month*: pick one or several products and compare months, with wins, a revenue chart, a city table, and profit before ads. |
+| **Stock** | `/app/inventory` | Product x warehouse grid with a status per row (see [Stock status](#stock-status)), 7/15/30/45/60-day units sold, incoming stock, days of stock, surge flags, search, sort, totals. |
+| **Advertising** | `/app/campaign-analysis` | Spend, impressions, add to cart, quantity sold, sales, ROAS and new users. Daily trend chart, campaign table with direct/indirect toggles, brand performance table, campaign detail with targeting values. |
+| **Trends** | `/app/monthly-comparison` | Compare up to 12 months of sales for a brand. |
+| **Profit** | `/app/profit` | Net profit or loss by month, product or city, from a cost sheet plus typed costs, with ad spend shared out. Needs the `profit` permission. |
+| **Strategy** | `/app/strategy` | A hand-written 10-pillar brand plan with must-do ticks, an M1 to M6 roadmap with gates, and add-ons. Health pills and top actions come from the brand's own numbers. An optional AI box writes brand-specific wording. |
+| **Reports** | `/app/reports` | A 16:9 client report for one brand (pick months and sections), exported to PDF through the browser's print dialog. |
+| **Uploads** | `/app/uploads` | One place to upload every report type, see what exists per brand, undo the last upload of a type, and delete a whole brand. Needs the `upload` permission. |
+| **Users** | `/app/users` | Create users, set roles and passwords, tick which brands each user can see, deactivate accounts. Needs the `manageUsers` permission. |
+| **Profile** | `/app/profile` | Account details and the Pro / Glass look switch (saved per browser). |
+
+Also included:
+
+- **Presentation mode** (`Present` on Overview): fullscreen, brand-only, no admin controls, no downloads, no per-product profit. Meant for client meetings. It is a display mode, not access control; for client-facing screens log in with an account that lacks the `profit` permission.
+- **Undo everywhere:** every delete returns what is needed to restore it, and the latest upload of each report type can be undone from the Uploads page.
+- **Duplicate-upload guard:** a file already processed today is skipped (override with `?force=1`).
+- **Excel exports** for stock, sales, advertising, and a combined full report.
+- **Sessions that survive restarts**, stored in Supabase.
+- **Planned, shown as "Coming soon":** the platform tabs (All, Zepto, Flipkart Minutes).
 
 ---
 
-## Tech Stack
+## Roles and permissions
 
-| Layer | Technology |
-|---|---|
-| **Backend** | Node.js, Express 4, `express-session`, `multer`, `xlsx`, `bcrypt` |
-| **Frontend** | Angular 20 (standalone components, signals, `HttpClient`) |
-| **Database** | Supabase (PostgreSQL) — login users plus all report data (table `kv_store`, one JSON document per key) |
-| **Parsers** | Custom Excel parsers (`xlsx` library) with configurable column mapping |
-| **Dev Tools** | `nodemon`, `concurrently`, TypeScript 5.9 |
+All permissions live in one table: [`config/permissions.js`](config/permissions.js). The server and the Angular app both read it, so changing a value there is the only edit needed.
+
+| Role | Brands | Profit | Upload | Delete | Download | Manage users |
+|---|:-:|:-:|:-:|:-:|:-:|:-:|
+| `admin` | all | yes | yes | yes | yes | yes |
+| `moderator` | all | yes | yes | no | yes | no |
+| `ecom_manager` | ticked only | yes | no | no | yes | no |
+| `ecom_executive` | ticked only | no | no | no | yes | no |
+
+> The values in `config/permissions.js` are **placeholders until the team confirms them**. Review that file before giving accounts to real users. A role name that is not in the table gets no access at all.
+
+How access is enforced:
+
+- Every `/api` call loads the user's role, brands and active flag from storage (not from the session cookie), so a change by an admin applies on the user's next click. A deactivated user gets `401`.
+- Users without the all-brands permission must name one of their own brands on every request. Any other brand, real or invented, returns the same `404 Not found.`, and JSON responses are scrubbed so other brand names never leave the server.
+- Uploading also requires the all-brands permission.
+- The last active admin cannot be demoted or deactivated. Resetting a password or deactivating a user ends their sessions immediately.
 
 ---
 
 ## Architecture
 
 ```
-┌──────────────────────────────────────────────────────────┐
-│                      Browser                             │
-│                                                          │
-│  /login  (static HTML)     /app/*  (Angular 20 SPA)      │
-│          │                         │                     │
-└──────────┼─────────────────────────┼─────────────────────┘
-           │                         │
-           ▼                         ▼
-┌──────────────────────────────────────────────────────────┐
-│                   Express Server (:3000)                  │
-│                                                          │
-│  Session Auth ──► /api/login, /api/logout, /api/me       │
-│                                                          │
-│  requireAuth ──► GET /api/products, /api/city-performance│
-│                  GET /api/campaign-analysis, /api/export  │
-│                                                          │
-│  requireAdmin ─► POST /api/upload, /api/sales-upload     │
-│                  POST /api/campaign-upload                │
-│                  DELETE operations                        │
-│                                                          │
-│  Parsers: parseReport, parseSales, parseCampaign         │
-│  History: snapshotHistory, salesHistory, campaignStore    │
-└─────────────────────┬────────────────────────────────────┘
-                      │
-         ┌────────────┼────────────┐
-         ▼            ▼            ▼
-   ┌──────────┐ ┌──────────┐ ┌──────────┐
-   │ Supabase │ │ kv_store │ │ uploads/ │
-   │ (users)  │ │ (report) │ │  (temp)  │
-   └──────────┘ └──────────┘ └──────────┘
+Browser
+  /login  (static HTML)            /app/*  (Angular 20 SPA)
+        |                                 |
+        v                                 v
++--------------------------------------------------------------+
+|                    Express server (:3000)                    |
+|                                                              |
+|  /health, /api/login|logout|me          (public)             |
+|  auth gate -> loadAccount -> brandGuard -> requirePerm(...)  |
+|                                                              |
+|  routes/users.js      routes/strategy.js      server.js      |
+|  parser/*  (pure Excel parsing and number crunching)         |
+|  store/kv.js  (in-memory copy, write-through to Supabase)    |
++------------------------------+-------------------------------+
+                               |
+                               v
+                  Supabase (PostgreSQL)
+                  admin_users  : logins, roles (bcrypt hashes)
+                  kv_store     : every report, setting and session
 ```
 
+Design points:
+
+- **Parsing lives in `parser/`**, not in `server.js`. Most parser modules are pure functions that read nothing themselves, which is what makes them testable offline.
+- **`store/kv.js` is the only code that touches `kv_store`.** It loads every row into memory at startup, serves reads from memory, and writes to Supabase first, updating memory only after the write succeeds.
+- **Data-changing routes run one at a time** (`mutating()` wrapper with a lock), await every write, and return `500` if a save fails.
+- **The login page is static HTML** on purpose, outside Angular, for a fast first load.
+
 ---
 
-## Prerequisites
+## Quick start
 
-- **Node.js** ≥ 18
-- **npm** ≥ 9
-- A **Supabase** project (free tier works)
+### Prerequisites
 
----
+- Node.js 18 or newer, npm 9 or newer
+- A free [Supabase](https://supabase.com) project
 
-## Getting Started
-
-### 1. Clone the Repository
+### 1. Clone
 
 ```bash
 git clone https://github.com/Harsh-suiwal/Blinkit-optimized-dashboard.git
 cd Blinkit-optimized-dashboard
 ```
 
-### 2. Set Up Supabase
+### 2. Create the database tables
 
-1. Create a free project at [supabase.com](https://supabase.com).
-2. Open the **SQL Editor** and run the contents of [`db/schema.sql`](db/schema.sql) to create the required tables (`admin_users` for logins and `kv_store` for report data; the other tables in the file are currently unused).
-3. Copy your **Project URL** and **service_role key** from **Settings → API**.
+In the Supabase **SQL Editor**, run [`db/schema.sql`](db/schema.sql). The tables the app uses are `admin_users` (logins) and `kv_store` (everything else). The file also creates `inventory_products`, `snapshot_history` and `upload_meta`, which nothing reads or writes; you can skip or drop them.
 
-### 3. Configure Environment Variables
+Then copy the **Project URL** and the **service_role key** from **Settings > API**.
+
+### 3. Configure
 
 ```bash
 cp .env.example .env
 ```
 
-Edit `.env` with your values:
+Fill in the values (see [Environment variables](#environment-variables)). Never commit `.env`.
 
-```env
-# Supabase project credentials
-SUPABASE_URL=https://your-project.supabase.co
-SUPABASE_SERVICE_KEY=eyJhbGciOi...
-
-# Session secret (any random string)
-SESSION_SECRET=your-random-secret-here
-
-# First admin user (used by: npm run seed)
-ADMIN_EMAIL=admin@example.com
-ADMIN_PASSWORD=your-secure-password
-
-# Server port
-PORT=3000
-```
-
-### 4. Install Dependencies
+### 4. Install
 
 ```bash
 npm install
-cd client && npm install && cd ..
+npm --prefix client install
 ```
 
-### 5. Seed the Admin User
+### 5. Create the first admin
 
 ```bash
 npm run seed
 ```
 
-This creates (or updates) the first admin account in Supabase using the `ADMIN_EMAIL` and `ADMIN_PASSWORD` from `.env`.
+This creates or updates the admin in `admin_users` from `ADMIN_EMAIL` and `ADMIN_PASSWORD`. Both variables are required; the seed exits without writing an account when either is missing. Change the password after the first login.
 
-**Optional: import existing local data.** If you have report data from an older version in `data/*.json`, upload it once:
+### 6. Run
+
+Development (Express with auto-reload plus the Angular dev server):
 
 ```bash
-node scripts/migrate-json-to-kv.js --dry-run   # list keys and sizes, write nothing
-node scripts/migrate-json-to-kv.js             # upload (refuses if kv_store has rows; add --force to overwrite)
+npm run dev
 ```
 
-`node scripts/kv-smoke.js` checks that the server can write, read and delete in `kv_store`.
+Production build, then start:
 
-### 6. Run the Application
-
-**Production (build Angular, then start Express):**
 ```bash
 npm run build
 npm start
 ```
 
-**Development (Express with auto-reload + Angular dev server):**
+Open <http://localhost:3000>, log in, and you land on `/app/overview`.
+
+### Optional: import data from an old version
+
+If you have `data/*.json` files from before the Supabase move:
+
 ```bash
-npm run dev
+node scripts/migrate-json-to-kv.js --dry-run   # list keys and sizes, write nothing
+node scripts/migrate-json-to-kv.js             # upload (refuses if kv_store already has rows)
+node scripts/migrate-json-to-kv.js --force     # overwrite
 ```
 
-Open **http://localhost:3000** → log in with your admin credentials → you'll be redirected to the Angular dashboard at `/app/`.
+`node scripts/kv-smoke.js` checks the server can write, read and delete in `kv_store`.
 
 ---
 
-## Project Structure
+## Environment variables
 
-```
-blinkit-dashboard/
-├── server.js                   Express app — routes, upload handling, API endpoints
-├── package.json                Server dependencies & scripts
-├── .env.example                Environment variable template
-│
-├── client/                     Angular 20 frontend (standalone components)
-│   ├── package.json            Angular dependencies
-│   ├── angular.json            Angular CLI configuration
-│   ├── tsconfig.json           TypeScript config
-│   ├── src/
-│   │   ├── index.html          SPA entry point
-│   │   ├── main.ts             Angular bootstrap
-│   │   ├── styles.css           Global styles
-│   │   ├── asset/              Static assets (icons)
-│   │   └── app/
-│   │       ├── app.ts          Root component
-│   │       ├── app.routes.ts   Route definitions
-│   │       ├── app.config.ts   App configuration (providers)
-│   │       ├── core/           Services, guards, models, utilities
-│   │       │   ├── api.service.ts      HTTP client for all /api/* calls
-│   │       │   ├── auth.guard.ts       Route guard (redirects to /login)
-│   │       │   ├── auth.service.ts     Session state management
-│   │       │   ├── feeder-map.ts       Blinkit warehouse → city mapping
-│   │       │   ├── formatters.ts       Number/currency formatting utilities
-│   │       │   ├── models.ts           TypeScript interfaces for all data
-│   │       │   └── ui-state.service.ts Global UI state (sidebar, theme)
-│   │       ├── layout/
-│   │       │   └── app-shell.component.ts   Sidebar + header + router outlet
-│   │       ├── pages/
-│   │       │   ├── inventory-page.component.ts    Inventory dashboard tab
-│   │       │   ├── sales-page.component.ts        Sales performance tab
-│   │       │   └── campaign-page.component.ts     Campaign analysis tab
-│   │       └── shared/
-│   │           └── brand-mark.component.ts        Logo/brand mark component
-│   └── public/
-│       ├── Kali-dragon-icon.svg
-│       └── favicon.ico
-│
-├── db/                         Database utilities
-│   ├── schema.sql              Supabase table definitions (run manually)
-│   ├── supabase.js             Supabase client (service-role key)
-│   └── seed-admin.js           One-time admin user seeder
-│
-├── middleware/
-│   └── auth.js                 requireAuth & requireAdmin middleware
-│
-├── routes/
-│   └── auth.js                 /api/login, /api/logout, /api/me
-│
-├── parser/                     Excel file parsers
-│   ├── parseReport.js          Inventory report parser (Stock On Hand)
-│   ├── parseSales.js           Sales/order report parser + aggregation
-│   ├── parseCampaign.js        Campaign report parser + tier assignment
-│   ├── columnMap.js            Raw Blinkit column names → internal names
-│   ├── snapshotHistory.js      Append-only inventory snapshot log + 45/60-day calc
-│   ├── salesHistory.js         City-level sales trend history
-│   └── campaignStore.js        Multi-period campaign data store
-│
-├── public/                     Static login page (the dashboard itself is the Angular app)
-│   ├── login.html              Login page
-│   ├── login.js                Login form handler
-│   └── style.css               Shared stylesheet (used by login)
-│
-├── store/kv.js                 Report data persistence (Supabase kv_store + in-memory cache)
-├── data/                       Legacy local JSON, only read by scripts/migrate-json-to-kv.js (gitignored)
-│   └── .gitkeep
-│
-└── uploads/                    Temporary file storage (auto-cleaned)
-```
+Defined in `.env.example`. Names only here; never put real values in the README.
 
----
+| Variable | Required | Default | Purpose |
+|---|:-:|---|---|
+| `SUPABASE_URL` | yes | | Supabase project URL |
+| `SUPABASE_SERVICE_KEY` | yes | | Supabase **service-role** key. Server only; never expose it to a browser. |
+| `SESSION_SECRET` | yes in production | random per run | Signs session cookies. The server refuses to start in production without it. Changing it logs everyone out. |
+| `ADMIN_EMAIL` | for `npm run seed` | | First admin's email |
+| `ADMIN_PASSWORD` | for `npm run seed` | | First admin's password |
+| `PORT` | no | `3000` | Server port |
+| `NODE_ENV` | set on the host | | `production` turns on secure (HTTPS-only) cookies, so serve the app over HTTPS |
+| `TZ` | no | `Asia/Kolkata` | Business timezone used to date uploads (IANA name) |
+| `OPENROUTER_API_KEY` | no | | Key for the optional AI box on the Strategy tab. Without any AI key the scorecard and plan still work. |
+| `ANTHROPIC_API_KEY` | no | | Alternative AI key, used when no OpenRouter key is set |
+| `STRATEGY_MODEL` / `STRATEGY_MODELS` | no | | Model id (or comma-separated list, tried in turn) for the AI box |
 
-## How It Works
-
-> **Data storage:** all report data (inventory, sales, campaigns, history, brand aliases, upload hashes) is stored in the Supabase table `kv_store`, so it survives redeploys on hosts with an ephemeral disk such as Render. The server loads every key into memory at startup and refuses to start if it can't. Run a single server instance only: each instance has its own in-memory copy.
-
-### Inventory Tracking
-
-1. **Upload** a Blinkit "Stock On Hand" `.xlsx` report from the Inventory tab.
-2. The server parses it via `parser/parseReport.js`, using the column map in `parser/columnMap.js` to translate raw Blinkit column headers to internal field names.
-3. Each upload is logged as a dated snapshot in the `history` key via `parser/snapshotHistory.js`. This history enables the 45-day and 60-day sold calculations.
-4. The processed data is saved in the `latest` key and served to the dashboard via `/api/products`.
-5. Products are flagged as **Out** (stock = 0), **Low** (stock ≤ threshold), or **OK**.
-
-### Sales Performance
-
-1. **Upload** an order-level sales `.xlsx` report from the Sales tab.
-2. `parser/parseSales.js` extracts individual order rows and aggregates them:
-   - **By city**: revenue, units, order count, avg order value, best-selling product.
-   - **By product**: revenue, units, with per-city breakdown for product-focus view.
-3. City snapshots are stored in `parser/salesHistory.js` to compute **revenue change %** versus the previous upload.
-4. Cities are assigned **performance tiers** (top / low) based on revenue distribution.
-5. **Feeder scoping** groups cities by Blinkit warehouse region (see [Feeder City Mapping](#feeder-city-mapping)).
-
-### Campaign Analysis
-
-1. **Upload** a campaign performance `.xlsx` report from the Campaign tab.
-2. `parser/parseCampaign.js` detects **period blocks** within the sheet (e.g., "June 2025", "July 2025") and extracts campaign rows for each.
-3. Campaigns are stored per-period in `parser/campaignStore.js`, enabling **multi-period comparison** via a dropdown.
-4. Key metrics: Ad Spend, Impressions, ATC (Add to Cart), Qty Sold, Sales, ROAS, New Users. (Advertising ROI was removed in Nov 2026: it only subtracted ad spend, so it repeated ROAS and looked like profit. Real profit and its ROI are on the Profit tab.)
-5. Campaigns are assigned **performance tiers** based on ROAS.
-
-### The 45 / 60-Day Columns
-
-Blinkit's own reports only provide 7, 15, and 30-day sold windows. The 45 and 60-day figures are **computed from your upload history**:
-
-- Upload the inventory report regularly (daily is ideal, weekly is workable).
-- Once an upload exists from ~30 days before the latest one, the 45 and 60-day columns compute automatically for that product-warehouse pair.
-- Until then, they display **"Insufficient data"** — this is intentional, not a bug.
-- The tolerance window for finding a matching historical upload is configurable via `ANCHOR_TOLERANCE_DAYS` in `parser/snapshotHistory.js` (default: 5 days).
-
----
-
-## API Reference
-
-All API routes are prefixed with `/api/`. Requests require a valid session cookie unless noted otherwise.
-
-### Authentication
-
-| Method | Endpoint | Auth | Description |
-|--------|----------|------|-------------|
-| `POST` | `/api/login` | Public | Log in with `{ email, password }` |
-| `POST` | `/api/logout` | Any | Destroy session |
-| `GET` | `/api/me` | Any | Return current user info |
-
-### Inventory
-
-| Method | Endpoint | Auth | Description |
-|--------|----------|------|-------------|
-| `POST` | `/api/upload` | Admin | Upload inventory `.xlsx` (multipart `report` field) |
-| `GET` | `/api/products` | Any | Get all product rows from the latest upload |
-| `GET` | `/api/summary` | Any | Inventory summary stats (total stock, sold, low count) |
-| `DELETE` | `/api/products?productName=...&warehouseName=...` | Admin | Remove one product-warehouse row |
-| `POST` | `/api/products/restore` | Admin | Undo a product delete `{ row, index }` |
-
-### Sales Performance
-
-| Method | Endpoint | Auth | Description |
-|--------|----------|------|-------------|
-| `POST` | `/api/sales-upload` | Admin | Upload sales `.xlsx` (multipart `report` field) |
-| `GET` | `/api/city-performance` | Any | City-level aggregated sales data |
-| `GET` | `/api/sales-summary` | Any | Sales summary stats |
-| `GET` | `/api/product-sales?product=...` | Any | Single product's sales + city breakdown |
-| `GET` | `/api/product-city-sales` | Any | All products with per-city breakdowns |
-| `GET` | `/api/brand-sales?brand=...` | Any | Single brand's aggregated city sales |
-| `DELETE` | `/api/city-performance/:city` | Admin | Remove a city + its history |
-| `POST` | `/api/city-performance/restore` | Admin | Undo a city delete (includes history snapshots) |
-| `DELETE` | `/api/sales-history` | Admin | Wipe all sales data + trend history |
-
-### Campaign Analysis
-
-| Method | Endpoint | Auth | Description |
-|--------|----------|------|-------------|
-| `POST` | `/api/campaign-upload` | Admin | Upload campaign `.xlsx` (multipart `report` field) |
-| `GET` | `/api/campaign-analysis?periodKey=...` | Any | Campaign rows for a period (defaults to latest) |
-| `GET` | `/api/campaign-summary?periodKey=...` | Any | Campaign summary stats for a period |
-| `DELETE` | `/api/campaign-analysis` | Admin | Remove one campaign `{ periodKey, storeIndex }` |
-| `POST` | `/api/campaign-analysis/restore` | Admin | Undo a campaign delete |
-
-### Cross-Tab Lookups
-
-| Method | Endpoint | Auth | Description |
-|--------|----------|------|-------------|
-| `GET` | `/api/product-names` | Any | All distinct product names across inventory + sales |
-| `GET` | `/api/brand-names` | Any | All distinct brand names across all data |
-
-### Export
-
-| Method | Endpoint | Auth | Description |
-|--------|----------|------|-------------|
-| `GET` | `/api/export` | Any | Download inventory as `.xlsx` |
-| `GET` | `/api/export-sales?brand=...` | Any | Download sales by city as `.xlsx` (`brand` optional) |
-| `GET` | `/api/export-campaign?periodKey=...` | Any | Download campaign data as `.xlsx` |
-| `GET` | `/api/export-all?periodKey=...` | Any | Download combined workbook (all available sheets) |
-
----
-
-## Frontend (Angular)
-
-The authenticated dashboard is an **Angular 20** single-page application served at `/app/`.
-
-| Route | Component | Description |
-|-------|-----------|-------------|
-| `/app/inventory` | `InventoryPageComponent` | Inventory dashboard (default) |
-| `/app/sales-performance` | `SalesPageComponent` | Sales performance analytics |
-| `/app/campaign-analysis` | `CampaignPageComponent` | Campaign (ROAS) analysis |
-
-**Key architectural decisions:**
-
-- **Standalone components** — no NgModules, each component declares its own imports.
-- **Signals** for reactive state management (`UiStateService`).
-- **`ApiService`** wraps all `HttpClient` calls with typed generics and error normalization.
-- **`AuthGuard`** checks `/api/me` before activating routes; redirects to `/login` on 401.
-- **`AppShellComponent`** provides the sidebar navigation, header, and `<router-outlet>`.
-- The login page is deliberately a **static HTML page** (`public/login.html`) outside Angular, for fast initial load.
-
----
-
-## Feeder City Mapping
-
-Blinkit operates through feeder warehouses that service groups of cities. The `feeder-map.ts` file maps each feeder to its serviced cities:
-
-| Feeder | Cities |
-|--------|--------|
-| **Mumbai** | Mumbai, Nashik, Surat, Vadodara |
-| **Ahmedabad** | Ahmedabad, Vadodara, Rajkot |
-| **Lucknow** | Kanpur, Gorakhpur, Varanasi, Lucknow, Prayagraj |
-| **Rajpura** | Chandigarh, Zirakpur, Panchkula, Kharar, Dehradun, Mohali, Jalandhar, Ludhiana |
-| **Bengaluru** | Bengaluru, Mysore, Chennai |
-| **Faridabad** | Faridabad, Haldwani, Udaipur, Agra, Delhi, Gurgaon, Meerut, Ghaziabad, Chandigarh, Amritsar |
-| **Kolkata** | Kolkata, Ranchi, Patna |
-| **Pune** | Pune, Goa |
-| **Kundli** | Delhi, Meerut, Gurgaon, Ghaziabad, Rohtak, Faridabad, Agra, Sonipat |
-| **Hyderabad** | Hyderabad, Visakhapatnam |
-| **Nagpur** | Nagpur, Bhopal, Indore, Raipur |
-| **Jaipur** | Jaipur, Jodhpur |
-
-This mapping enables feeder-scoped views in the Sales Performance tab.
-
----
-
-## Configuration
-
-| Setting | Location | Default | Description |
-|---------|----------|---------|-------------|
-| `LOW_STOCK_THRESHOLD` | `.env` | `10` | Stock count at or below which a product is flagged "Low" |
-| `ANCHOR_TOLERANCE_DAYS` | `parser/snapshotHistory.js` | `5` | Days of slack when looking for a ~30-day-old upload to anchor 45/60-day calculations |
-| `PORT` | `.env` | `3000` | Server listening port |
-| `SESSION_SECRET` | `.env` | — | Express session signing secret (required when `NODE_ENV=production`) |
-| `NODE_ENV` | environment | — | Set to `production` on the host (Render): enables secure session cookies, so it must be served over HTTPS |
-| `SUPABASE_URL` | `.env` | — | Supabase project URL |
-| `SUPABASE_SERVICE_KEY` | `.env` | — | Supabase service-role key (never expose to browser) |
-| `ADMIN_EMAIL` | `.env` | — | Email for the seeded admin account |
-| `ADMIN_PASSWORD` | `.env` | — | Password for the seeded admin account |
+`LOW_STOCK_THRESHOLD` and `PRODUCT_PROFIT_ADMIN_ONLY` from older versions are **no longer used** (and are safe to delete from `.env`). Stock status is now days-of-cover based (see [Stock status](#stock-status)), and profit visibility comes from the role's `profit` permission.
 
 ---
 
 ## Scripts
 
-| Command | Description |
-|---------|-------------|
-| `npm start` | Start Express using the existing client build (fails with a hint if there is none; run `npm run build` first) |
-| `npm run deploy` | Start Express using the existing build (fails with a hint if there is none) |
-| `npm run dev` | Start Express (nodemon) + Angular dev server (concurrently) |
-| `npm run serve` | Start Express only (no client build) |
-| `npm run build` | Install client deps and build the Angular client (does not start Express) |
-| `npm run build:client` | Build Angular client only |
-| `npm run dev:client` | Start Angular dev server only |
-| `npm run install:client` | Clean-install client dependencies |
-| `npm run seed` | Create/update the admin user in Supabase |
+| Command | What it does |
+|---|---|
+| `npm run dev` | Express (nodemon) and the Angular dev server together |
+| `npm run build` | Clean-install root deps (no dev) and client deps, then build the Angular client. Does **not** start the server. |
+| `npm start` | Check that a client build exists, then start Express. Fails with a hint if it does not. |
+| `npm run deploy` | Same as `npm start` |
+| `npm run serve` | Start Express only, no build check |
+| `npm run render-build` | Render's build step (same as `build`) |
+| `npm run seed` | Create or update the admin user |
+| `npm run build:client` / `dev:client` / `install:client` | Client-only build, dev server, clean install |
 
 ---
 
-## If Blinkit Changes a Column Name
+## Deploying to Render
 
-Update **`parser/columnMap.js`** only — this is the single source of truth for mapping raw Blinkit Excel column headers to the internal field names used throughout the application. Nothing else needs to change.
+1. Create a **Web Service** from the repo.
+2. **Build command:** `npm run build`
+3. **Start command:** `npm start` (or `node server.js`)
+4. Set the environment variables above, including `NODE_ENV=production`, `SESSION_SECRET`, `SUPABASE_URL`, `SUPABASE_SERVICE_KEY`.
+5. Run `npm run seed` once (locally, pointed at the same Supabase project) to create the first admin.
+6. **Run exactly one instance.** Each instance keeps its own in-memory copy of the data.
+7. On the free tier, point an uptime monitor (for example UptimeRobot, every 10 minutes) at `GET /health` so the service stays awake. It returns `{ "ok": true }` with no login and no data.
+
+Render's disk is ephemeral and that is fine: nothing that must survive a deploy is stored on disk. Reports, settings and sessions all live in Supabase, so redeploys and restarts do not lose data or log users out (as long as `SESSION_SECRET` stays the same).
+
+---
+
+## Project structure
+
+```
+server.js                 Express app: upload handling and most API routes
+config/permissions.js     Role permission table (single source of truth)
+middleware/               auth.js (requireAuth), access.js (account load, brand guard, requirePerm)
+routes/                   auth.js, users.js, strategy.js
+db/                       schema.sql, supabase.js, seed-admin.js
+store/                    kv.js, sessionStore.js, accounts.js, brandRegistry.js, uploadUndo.js
+parser/                   Excel parsers and report maths (see below)
+strategy/                 basePlan.js (the hand-written plan), playbook.md
+scripts/                  require-build.js, migrate-json-to-kv.js, and the *-smoke.js tests
+public/                   login.html, login.js, style.css (static login page and shared styles)
+docs/                     kv-migration-plan.md (history of the Supabase move)
+client/                   Angular 20 app
+  src/app/core/           api.service (all HTTP), guards, auth, models, formatters, feeder-map, report-render
+  src/app/layout/         app-shell (sidebar, header, router outlet)
+  src/app/pages/          one component per page
+  src/app/shared/         brand filter, brand mark, clear-data dialog
+data/                     Legacy JSON, read only by the migration script (gitignored)
+uploads/                  Temporary upload files (auto-cleaned, gitignored)
+```
+
+Key parser modules:
+
+| File | Job |
+|---|---|
+| `columnMap.js` | Raw Blinkit header to internal field name. The **only** place raw headers appear. |
+| `brandResolver.js` | The **only** place that decides a row's brand |
+| `parseReport.js`, `parseSales.js`, `parseCampaign.js`, `parseBrandCosts.js` | File parsers for stock, sales, advertising, cost sheets |
+| `snapshotHistory.js`, `salesHistory.js`, `salesMonthly.js`, `campaignStore.js`, `brandCosts.js` | Stored history and per-brand data |
+| `stockStatus.js` | Stock status rules |
+| `profitView.js`, `brandProfit.js` | Profit maths |
+| `brandOverview.js`, `brandReport.js`, `strategyScorecard.js` | Pure builders for Overview, Reports, Strategy |
+| `uploadGuard.js` | Duplicate-upload detection by file hash |
+
+---
+
+## How the data works
+
+### Storage
+
+All report data is stored in the Supabase table `kv_store` (`key` text, `value` jsonb), one JSON document per key. Keys in use:
+
+`latest`, `history`, `salesLatest`, `salesByProduct`, `salesHistory`, `salesMonthly`, `campaignData`, `brandCosts`, `brandAliases`, `brandRegistry`, `uploadHashes`, `userProfiles`, `strategyTab`, `uploadUndo:<kind>`, `session:<sid>`.
+
+Why a key-value store: Blinkit's export columns keep changing, so the app keeps flexible JSON documents instead of fixed relational tables. The table has row-level security on with no policies, so only the server's service-role key can read or write it.
+
+Startup order: `kv.init()` loads every row, then the server listens. If the load fails the process exits; it never starts with an empty store.
+
+### Uploads
+
+Upload any `.xls` or `.xlsx` up to 25 MB as multipart field `report`.
+
+| Report | Replaces on re-upload |
+|---|---|
+| Stock | Only the brands inside the file |
+| Sales | Only the brands inside the file; also files the file's months into monthly sales |
+| Monthly sales | Only that (brand, month) |
+| Advertising | By (period, sheet type, brand), only for brands present in the file |
+| Cost sheet | The brand's products (typed costs are kept) |
+
+If a row has no brand, the file name is used; failing that, `Unknown`. Advertising files with campaigns whose brand cannot be worked out trigger a dry run and a one-by-one brand-assignment queue before anything is saved.
+
+---
+
+## Business rules
+
+These are deliberate. Do not "fix" them without checking with the team.
+
+### Stock status
+
+Per product and warehouse: `sales per day = units sold in 30 days / 30`, `days of stock = stock / sales per day`.
+
+| Status | Meaning |
+|---|---|
+| Healthy | At least 60 days of stock |
+| Covered by Incoming | Below the healthy line, but incoming stock covers it |
+| Reorder Now | Below 60 days; place an order |
+| Reorder Urgently | Below the 15-day lead time; runs out before a new order arrives |
+| Awaiting Incoming | No stock, incoming stock on the way |
+| Out of Stock | No stock |
+| No Recent Sales | Nothing sold recently |
+
+Thresholds (`HEALTHY_DAYS` 60, `LEAD_TIME_DAYS` 15, surge settings) are in `parser/stockStatus.js`. A surge (last 7 days well above what the earlier weeks predict) is flagged but does not change status by default.
+
+### The 45 / 60-day columns
+
+Blinkit only reports 7, 15 and 30-day windows. 45 and 60-day figures are computed at upload time from your own upload history, which needs an upload about 30 days before the latest one (within `ANCHOR_TOLERANCE_DAYS`, 5, in `parser/snapshotHistory.js`). Until then the columns show "n/a" / "Insufficient data". That is intended. Clearing the stock history resets this clock.
+
+### Sales and months
+
+- City revenue change % compares against the same brand's previous upload. City tiers (top / low) come from the revenue distribution.
+- Monthly sales file each order under its order-date month. A month is **partial** when the orders do not span the 1st to the last day. Partial months are never compared, and a zero base is never used for a percentage.
+- Feeder scoping maps Blinkit warehouse regions to cities in `client/src/app/core/feeder-map.ts` (Mumbai, Ahmedabad, Lucknow, Rajpura, Bengaluru, Faridabad, Kolkata, Pune, Kundli, Hyderabad, Nagpur, Jaipur). A city can appear under several feeders (Delhi, Vadodara, Chandigarh). That is expected.
+
+### Advertising
+
+- Blinkit's export is one row per day x campaign x targeting value, in two sheet types (Product Boosting, Product Recommendation), detected from headers, never the sheet name.
+- Aggregation happens at query time. ROAS and CPM are recomputed from sums, never averaged.
+- There is **no Advertising ROI**, on purpose: it only repeated ROAS and read like profit. The Profit tab's ROI (profit / costs) is a different figure.
+
+### Profit
+
+- Net sales = gross revenue / (1 + GST %), using the cost sheet's Tax %.
+- Costs = units x COGS + commission + inward + fulfilment + storage + ad spend + other expenses. Profit = net sales - costs. Margin = profit / net sales. ROI = profit / costs.
+- A value typed on the Profit tab beats the uploaded cost sheet, which beats the defaults (GST 18%, commission 0%, inward 5, fulfilment 50, storage 30 rupees per unit).
+- Ad spend and other expenses are brand-wide and shared across a month's priced products by gross sales. Products without COGS are shown in sales but left out of profit.
+- Per-product profit elsewhere is labelled **profit before ads** and is shown only to users with the `profit` permission.
+- Rows are rounded so they add up to the total, and every grouping gives the same total.
+
+### Brands
+
+Resolved server-side only, in this order: explicit column, alias, name parse, then `Unknown`. Aliases affect future uploads only.
+
+---
+
+## API reference
+
+All routes are under `/api`, return JSON, and need a session cookie unless marked public. Access is shown as the permission required: **Any** means any logged-in user. Uploads are multipart with the file in field `report`. Mutating routes return `500` if saving fails; parse problems return `400`.
+
+### Auth and health
+
+| Method | Endpoint | Access | Description |
+|---|---|---|---|
+| `GET` | `/health` | Public | Uptime ping |
+| `POST` | `/api/login` | Public | `{ email, password }`. Limited to 10 failed attempts per IP per 15 minutes. |
+| `POST` | `/api/logout` | Any | End the session |
+| `GET` | `/api/me` | Any | Current user, role, permissions, brands |
+
+### Stock
+
+| Method | Endpoint | Access | Description |
+|---|---|---|---|
+| `POST` | `/api/upload` | upload | Upload a stock report |
+| `GET` | `/api/products`, `/api/summary` | Any | Rows and summary for the latest upload (`?brand=`) |
+| `DELETE` | `/api/products?productName&warehouseName` | deleteData | Remove one row |
+| `POST` | `/api/products/restore` | deleteData | Undo a row delete |
+| `DELETE` | `/api/inventory-data?brand&history=1` | deleteData | Clear stock data; `history=1` also resets the 45/60-day history |
+
+### Sales
+
+| Method | Endpoint | Access | Description |
+|---|---|---|---|
+| `POST` | `/api/sales-upload` | upload | Upload a sales report (also files its months) |
+| `GET` | `/api/city-performance`, `/api/sales-summary`, `/api/product-sales`, `/api/product-city-sales`, `/api/brand-sales` | Any | City, product and brand views |
+| `DELETE` | `/api/city-performance/:city` | deleteData | Remove a city (all brands) |
+| `POST` | `/api/city-performance/restore` | deleteData | Undo, including trend history |
+| `DELETE` | `/api/sales-history?brand` | deleteData | Clear sales and trend history |
+
+### Monthly sales and product by month
+
+| Method | Endpoint | Access | Description |
+|---|---|---|---|
+| `POST` | `/api/sales-month-upload` | upload | Add months only |
+| `GET` | `/api/sales-months`, `/api/sales-month-compare?months=YYYY-MM,...` | Any | List and compare (max 12 months) |
+| `GET` / `POST` | `/api/product-month-detail` | Any | One product (GET) or several added together (POST `{ brand, products }`) |
+| `DELETE` / `POST` | `/api/sales-month`, `/api/sales-month/restore` | deleteData | Remove and restore a month |
+
+### Advertising
+
+Query options: `periodKey`, `brand`, `sheetType` (`PRODUCT_BOOSTING` or `PRODUCT_RECOMMENDATION`, omit for both).
+
+| Method | Endpoint | Access | Description |
+|---|---|---|---|
+| `POST` | `/api/campaign-upload` | upload | Upload. `?dryRun=1` returns the plan, unresolved campaigns and skipped rows first. Optional `campaignBrands` and `defaultBrand` assign brands. |
+| `GET` | `/api/campaign-analysis`, `/api/campaign-summary`, `/api/campaign-brands`, `/api/campaign-detail` | Any | Campaigns, totals, brands, one campaign's targeting and daily data |
+| `DELETE` | `/api/campaign-analysis`, `/api/campaign-data?brand` | deleteData | Remove a campaign, or all campaign data |
+| `POST` | `/api/campaign-analysis/restore` | deleteData | Undo with the returned `undoToken` (held in server memory; lost on restart) |
+
+### Overview, reports, lookups
+
+| Method | Endpoint | Access | Description |
+|---|---|---|---|
+| `GET` | `/api/brand-overview?brand[&month=YYYY-MM]` | Any | Overview data |
+| `GET` | `/api/brand-report?brand&months&profit=1` | Any | Client report data. Profit is included only if the user has the profit permission. |
+| `GET` | `/api/product-names`, `/api/brand-names` | Any | Lookups |
+| `POST` | `/api/brand-alias` | upload | Teach the brand resolver `{ raw, canonical }` |
+| `DELETE` | `/api/brand?brand[&typed=1]` | deleteData | Delete a whole brand's data (`typed=1` also removes hand-typed profit inputs) |
+
+### Profit
+
+`?brand=` is required on all of these.
+
+| Method | Endpoint | Access | Description |
+|---|---|---|---|
+| `GET` | `/api/profit-view?brand&groupBy&months&products&cities&includeAds` | profit | Net profit by month, product or city |
+| `GET` | `/api/brand-profit` | profit | Brand profit from the uploaded sheet |
+| `POST` | `/api/brand-costs-upload` | upload | Upload a cost sheet |
+| `POST` | `/api/profit-product-cost`, `/api/profit-settings`, `/api/brand-other-costs` | profit | Typed COGS, GST, commission, fees, monthly other expenses |
+
+### Uploads panel
+
+| Method | Endpoint | Access | Description |
+|---|---|---|---|
+| `GET` | `/api/uploads-overview` | upload | What is uploaded per brand, plus the undo list |
+| `POST` | `/api/uploads/undo` | upload | `{ kind }`: `inventory`, `sales`, `salesMonthly`, `campaign`, `costs` |
+
+### Strategy
+
+| Method | Endpoint | Access | Description |
+|---|---|---|---|
+| `GET` | `/api/strategy/scorecard?brand[&product][&report]` | Any | Health pills, top actions, plan with this brand's facts |
+| `PUT` | `/api/strategy/progress`, `/api/strategy/inputs` | Any | Save checklist ticks and manual inputs per brand |
+| `POST` | `/api/strategy/generate`, `/api/strategy/clear` | Any | Optional AI wording; cancel or delete a draft or report |
+| `GET` | `/api/strategy/quota` | Any | Remaining free AI requests today, when the key reports it |
+
+### Users
+
+All need `manageUsers`.
+
+| Method | Endpoint | Description |
+|---|---|---|
+| `GET` / `POST` | `/api/users` | List or create users |
+| `PATCH` | `/api/users/:id` | Change name, role, brands, active flag |
+| `POST` | `/api/users/:id/password` | Set or reset a password |
+| `POST` / `DELETE` | `/api/users/brands` | Add or remove a brand name that has no data yet |
+
+### Exports
+
+All need `download`; `export-all` also needs all-brands access.
+
+| Method | Endpoint | Description |
+|---|---|---|
+| `GET` | `/api/export`, `/api/export-sales`, `/api/export-campaign` | One module as `.xlsx` (`?brand=` where it applies) |
+| `GET` | `/api/export-all` | Combined multi-sheet workbook |
+
+---
+
+## Testing
+
+The smoke tests run offline: no server and no database needed. Install dependencies first, then run any of them:
+
+```bash
+node scripts/access-smoke.js        # roles, brand scoping, permissions
+node scripts/session-smoke.js       # session store
+node scripts/overview-smoke.js      # brand overview builder
+node scripts/profit-smoke.js        # profit maths
+node scripts/profit-view-smoke.js   # profit view groupings and checks
+node scripts/report-smoke.js        # client report builder
+node scripts/strategy-smoke.js      # strategy scorecard
+node scripts/uploads-smoke.js       # uploads overview and undo
+```
+
+`node scripts/kv-smoke.js` is different: it talks to your real Supabase project (writes and deletes a `__test__` key), so it needs a valid `.env`.
+
+The Express routes themselves are not covered by these tests. Parser changes should also be checked with a real Blinkit export before release.
+
+---
+
+## Security notes
+
+- Passwords are bcrypt-hashed (12 rounds) and never sent back to the browser.
+- Sessions use `httpOnly`, `sameSite=lax` cookies, `secure` in production, and a 24-hour lifetime.
+- Failed logins are rate limited per IP. The limiter is in memory and resets on restart.
+- The Supabase service-role key bypasses row-level security. Keep it server-side only and out of git (`.env` is gitignored).
+- `kv_store` has row-level security on with no policies, so nothing but the server can reach it.
+- Uploads are limited to `.xls` / `.xlsx` and 25 MB.
+- Report HTML on the Reports page is built with every value escaped; keep it that way if you edit `report-render.ts`.
+- `npm run seed` requires `ADMIN_EMAIL` and `ADMIN_PASSWORD` and does not print the password.
+
+---
+
+## Limits to know about
+
+- **Single server instance only.** Data is cached in memory per process.
+- Each save rewrites the whole JSON document for its key, and the contents cannot be queried with SQL. Fine at this scale; revisit if data grows large.
+- Advertising undo tokens live in server memory and are lost on restart. The Uploads page's "Undo the last upload" is stored in Supabase and survives restarts, but only covers the latest upload of each report type.
+- The login rate limiter is per process and resets on restart.
+- Platform tabs (All, Zepto, Flipkart Minutes) are placeholders.
+
+---
+
+## Maintenance
+
+- **Blinkit renamed a column:** edit `parser/columnMap.js` only.
+- **Change what a role can do:** edit `config/permissions.js` only.
+- **Change the strategy plan:** edit `strategy/basePlan.js`. Nothing is generated; the AI box only adds brand-specific wording.
+- **Change stock thresholds:** edit `STOCK_SETTINGS` in `parser/stockStatus.js`.
+- **New environment variable:** add it to `.env.example` and the table above.
+- **New endpoint:** add it to the API reference above (and `AGENTS.md`).
+- Contributor and AI-assistant conventions, plus the full list of domain rules, are in [`AGENTS.md`](AGENTS.md).
 
 ---
 
 ## License
 
-This project is private and intended for internal use.
+Private. For internal use only.

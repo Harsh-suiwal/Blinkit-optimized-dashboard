@@ -32,7 +32,7 @@ export const routes: Routes = [
       { path: 'strategy', component: StrategyPageComponent },
       // Planned features: each shows a "Coming soon" page until it is built.
       { path: 'reports', component: ReportsPageComponent, canActivate: [notWhilePresentingGuard], data: { title: 'Reports', description: 'Create a client-ready report for one brand: pick the months and sections, then download it as a PDF.' } },
-      { path: 'uploads', component: UploadsPageComponent, canActivate: [notWhilePresentingGuard, permGuard('upload')], data: { title: 'Uploads', description: 'One place to upload every report, see what was uploaded for each brand, and undo an upload. Until then, upload from the Sales, Stock, Advertising and Trends pages.' } },
+      { path: 'uploads', component: UploadsPageComponent, canActivate: [notWhilePresentingGuard, permGuard('upload')], data: { title: 'Uploads', description: 'One place to upload every report, see what was uploaded for each brand, and undo an upload.' } },
       { path: 'present', canActivate: [presentGuard], children: [] },
       { path: 'platforms/all', component: ComingSoonPageComponent, canActivate: [notWhilePresentingGuard], data: { title: 'All platforms', description: 'One combined view of a brand across Blinkit, Zepto and Flipkart Minutes.' } },
       { path: 'platforms/zepto', component: ComingSoonPageComponent, canActivate: [notWhilePresentingGuard], data: { title: 'Zepto', description: "A brand's Zepto sales, stock and advertising, as soon as Zepto reports can be uploaded." } },
