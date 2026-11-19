@@ -11,7 +11,7 @@ const PILL_PILLAR: Record<string, string> = { stock: 'p3', listing: 'p2', hero: 
 
 /**
  * Strategy for the brand picked in the sidebar. Top to bottom: where you stand (health pills, computed by
- * parser/strategyScorecard.js), do this first, the 6-month plan with gates, the base checklist, optional add-ons,
+ * parser/strategyScorecard.js), priority actions, the six-month roadmap with gates, the foundation checklist, optional enhancements,
  * talking points, and a collapsed optional AI box. The base plan is hand-written in strategy/basePlan.js and the
  * ticks are saved per brand. The AI only adds brand-specific words and never changes colours, numbers or the plan.
  */
@@ -19,26 +19,26 @@ const PILL_PILLAR: Record<string, string> = { stock: 'p3', listing: 'p2', hero: 
   selector: 'app-strategy-page',
   template: `
     <header class="topbar">
-      <div class="topbar-left"><div><h1>Strategy</h1><span class="muted">{{ brand() || 'Pick a brand' }}</span></div></div>
+      <div class="topbar-left"><div><h1>Strategy</h1><span class="muted">{{ brand() || 'Select a brand' }}</span></div></div>
     </header>
     <div class="upload-status" [class.success]="statusType() === 'success'" [class.error]="statusType() === 'error'">{{ status() }}</div>
 
     @if (!brand()) {
-      <section class="overview-empty"><h2>Choose a brand</h2><p class="muted">Strategy is written for one brand at a time. Pick a brand in the sidebar.</p></section>
+      <section class="overview-empty"><h2>Select a Brand</h2><p class="muted">Strategy is crafted per brand. Please select one from the sidebar.</p></section>
     } @else if (data(); as d) {
       <section class="strat-bar">
         <select class="strat-select" aria-label="Product" [value]="product()" (change)="product.set($any($event.target).value)">
-          <option value="">All products (hero)</option>
+          <option value="">All Products (Hero)</option>
           @for (p of d.products; track p) { <option [value]="p">{{ p }}</option> }
         </select>
-        <span class="muted strat-last">Hero: <b>{{ d.hero || '—' }}</b></span>
+        <span class="muted strat-last">Hero Product: <b>{{ d.hero || '—' }}</b></span>
         <span class="strat-grow"></span>
-        @if (d.missing.length) { <button type="button" class="strat-chip" (click)="inputsOpen.set(true)">{{ d.missing.length }} {{ d.missing.length === 1 ? 'input' : 'inputs' }} needed</button> }
-        @else { <button type="button" class="secondary-btn" (click)="inputsOpen.set(true)">Inputs</button> }
-        @if (auth.can('download')) { <button type="button" class="secondary-btn" (click)="download()">Download report</button> }
+        @if (d.missing.length) { <button type="button" class="strat-chip" (click)="inputsOpen.set(true)">{{ d.missing.length }} {{ d.missing.length === 1 ? 'Input' : 'Inputs' }} Required</button> }
+        @else { <button type="button" class="secondary-btn" (click)="inputsOpen.set(true)">Input Data</button> }
+        @if (auth.can('download')) { <button type="button" class="secondary-btn" (click)="download()">Export Report</button> }
       </section>
 
-      <h2 class="strat-h">Where you stand</h2>
+      <h2 class="strat-h">Current Position</h2>
       <section class="strat-strip" aria-label="Health strip">
         @for (p of d.pills; track p.key) {
           <button type="button" class="strat-pill" [class]="'strat-pill strat-' + p.status" [attr.title]="p.note" (click)="openFor(p.key)">
@@ -47,34 +47,34 @@ const PILL_PILLAR: Record<string, string> = { stock: 'p3', listing: 'p2', hero: 
         }
       </section>
 
-      <h2 class="strat-h">Do this first</h2>
+      <h2 class="strat-h">Priority Actions</h2>
       <section class="strat-actions">
         @for (a of d.actions; track a.area) {
           @if (showAction(a)) {
             <article class="strat-card" [style.cursor]="actionPage(a) ? 'pointer' : null" [attr.role]="actionPage(a) ? 'link' : null" [attr.tabindex]="actionPage(a) ? 0 : null" (click)="goAction(a)" (keydown.enter)="goAction(a)">
               <h3>{{ a.title }}</h3>
-              <p><b>Why:</b> {{ a.why }}</p>
-              <p><b>Result:</b> {{ a.result }}</p>
-              @if (actionPage(a)) { <span class="muted">Open the problem →</span> }
+              <p><b>Reason:</b> {{ a.why }}</p>
+              <p><b>Expected Outcome:</b> {{ a.result }}</p>
+              @if (actionPage(a)) { <span class="muted">View Details →</span> }
             </article>
           }
-        } @empty { <article class="strat-card"><h3>No urgent fixes</h3><p>Nothing is red or amber right now.</p></article> }
+        } @empty { <article class="strat-card"><h3>No Critical Issues</h3><p>All metrics are currently within acceptable ranges.</p></article> }
       </section>
 
-      <h2 class="strat-h">6-month plan <span class="muted">· {{ planLine() }}</span></h2>
+      <h2 class="strat-h">Six-Month Roadmap <span class="muted">· {{ planLine() }}</span></h2>
       <section class="strat-months">
         @for (m of d.plan.months; track m.id; let i = $index) {
           <article class="strat-month" [class.current]="i === currentMonth()" [class.done]="ticks()['g.' + m.id]" [class.later]="i > currentMonth()">
             <h3>{{ m.id }} · {{ m.title }}</h3>
             <p class="muted">{{ m.focus }}</p>
             <ul>@for (a of m.actions; track a) { <li>{{ a }}</li> }</ul>
-            <label class="strat-check strat-gate"><input type="checkbox" [checked]="!!ticks()['g.' + m.id]" (change)="toggleTick('g.' + m.id)"><span><b>Gate:</b> {{ m.gate }}</span></label>
+            <label class="strat-check strat-gate"><input type="checkbox" [checked]="!!ticks()['g.' + m.id]" (change)="toggleTick('g.' + m.id)"><span><b>Milestone:</b> {{ m.gate }}</span></label>
           </article>
         }
       </section>
-      <p class="muted strat-note">Do not start the next month until the gate is ticked.</p>
+      <p class="muted strat-note">Complete the current milestone before proceeding to the next phase.</p>
 
-      <h2 class="strat-h">Base checklist <span class="muted">· {{ doneCount() }} of {{ totalCount() }} done</span></h2>
+      <h2 class="strat-h">Foundation Checklist <span class="muted">· {{ doneCount() }} of {{ totalCount() }} completed</span></h2>
       <section class="strat-acc">
         @for (p of d.plan.pillars; track p.id) {
           <div class="strat-row" [id]="'strat-' + p.id">
@@ -82,7 +82,7 @@ const PILL_PILLAR: Record<string, string> = { stock: 'p3', listing: 'p2', hero: 
               <span class="strat-dot" [class]="'strat-dot strat-' + (p.status || 'n')"></span>
               <span class="strat-row-title">{{ p.title }}</span>
               <span class="strat-row-sum">{{ pillarDone(p.id, p.musts.length) }} of {{ p.musts.length }} done · {{ p.why }}</span>
-              <span class="muted">{{ openId() === p.id ? 'Close' : 'Open' }}</span>
+              <span class="muted">{{ openId() === p.id ? 'Collapse' : 'Expand' }}</span>
             </button>
             @if (openId() === p.id) {
               <div class="strat-row-body">
@@ -101,12 +101,12 @@ const PILL_PILLAR: Record<string, string> = { stock: 'p3', listing: 'p2', hero: 
         }
       </section>
 
-      <h2 class="strat-h">Optional add-ons</h2>
-      <p class="muted strat-note">Switch these on only when the base is ready. The app checks what it can; the rest is your call.</p>
+      <h2 class="strat-h">Optional Enhancements</h2>
+      <p class="muted strat-note">Enable only after the foundation is complete. Automated checks are provided where possible; the remainder is at your discretion.</p>
       <section class="strat-mods">
         @for (m of d.plan.modules; track m.id) {
           <article class="strat-card">
-            <h3>{{ m.id }} · {{ m.name }} <span class="strat-badge" [class.ok]="m.ready === true" [class.no]="m.ready === false">{{ m.ready === true ? 'Ready' : m.ready === false ? 'Not yet' : 'Check yourself' }}</span></h3>
+            <h3>{{ m.id }} · {{ m.name }} <span class="strat-badge" [class.ok]="m.ready === true" [class.no]="m.ready === false">{{ m.ready === true ? 'Ready' : m.ready === false ? 'Not Ready' : 'Manual Verification Required' }}</span></h3>
             <p><b>Use when:</b> {{ m.use }}</p>
             <ul class="strat-needs">@for (n of m.needs; track n.text) { <li>{{ n.ok === true ? '✓' : n.ok === false ? '✗' : '?' }} {{ n.text }}</li> }</ul>
           </article>
@@ -114,23 +114,23 @@ const PILL_PILLAR: Record<string, string> = { stock: 'p3', listing: 'p2', hero: 
       </section>
 
       <section class="strat-card strat-talk">
-        <div class="strat-talk-head"><h2>Talking points</h2><button type="button" class="secondary-btn" [disabled]="!d.talkingPoints.length" (click)="copyPoints()">Copy</button></div>
-        <p class="muted">{{ d.talkingBuiltin ? 'Built from your numbers and the base plan.' : 'Written by the AI from your last report.' }}</p>
+        <div class="strat-talk-head"><h2>Key Talking Points</h2><button type="button" class="secondary-btn" [disabled]="!d.talkingPoints.length" (click)="copyPoints()">Copy to Clipboard</button></div>
+        <p class="muted">{{ d.talkingBuiltin ? 'Generated from your data and the foundational plan.' : 'AI-generated based on your previous report.' }}</p>
         @if (d.talkingPoints.length) { <ol>@for (t of d.talkingPoints; track $index) { <li>{{ t }}</li> }</ol> }
       </section>
 
       <details class="strat-assume strat-ai">
-        <summary>AI assistant (optional)</summary>
-        <p class="muted">Adds brand-specific wording only. The plan, colours and numbers above never change. Free models can be wrong, so read it before you use it.</p>
+        <summary>AI Assistant (Optional)</summary>
+        <p class="muted">Enhances content with brand-specific language. The strategy, visual indicators, and figures remain unchanged. Please review AI-generated content before use.</p>
         <div class="strat-bar">
           <div class="sheet-tabs" role="tablist" aria-label="Data source">
             @for (s of sources; track s.id) {
               <button type="button" role="tab" class="sheet-tab" [class.active]="source() === s.id" [attr.aria-selected]="source() === s.id" (click)="source.set(s.id)">{{ s.label }}</button>
             }
           </div>
-          <button type="button" class="upload-btn" [disabled]="generating()" (click)="generate()">{{ generating() ? 'Writing…' : 'Generate' }}</button>
+          <button type="button" class="upload-btn" [disabled]="generating()" (click)="generate()">{{ generating() ? 'Generating…' : 'Generate Insights' }}</button>
           @if (generating()) { <button type="button" class="secondary-btn" (click)="cancelGenerate()">Cancel</button> }
-          @if (quota(); as q) { @if (q.available) { <span class="muted strat-last">Requests left today: <b>{{ q.remaining }}/{{ q.limit }}</b></span> } }
+          @if (quota(); as q) { @if (q.available) { <span class="muted strat-last">Daily Requests Remaining: <b>{{ q.remaining }}/{{ q.limit }}</b></span> } }
         </div>
         <div class="strat-bar">
           @for (m of moduleList(); track m.id) {
@@ -140,13 +140,13 @@ const PILL_PILLAR: Record<string, string> = { stock: 'p3', listing: 'p2', hero: 
         @if (d.reports.length || d.hasDraft) {
           <div class="strat-bar">
             <select class="strat-select" aria-label="Saved report" [value]="d.selectedId" (change)="pickReport($any($event.target).value)">
-              @if (d.hasDraft) { <option value="draft">Built-in draft (not saved)</option> }
+              @if (d.hasDraft) { <option value="draft">Draft (Unsaved)</option> }
               @for (r of d.reports; track r.id) { <option [value]="r.id">{{ reportLabel(r) }}</option> }
             </select>
             @if (!generating() && d.selectedId) {
-              <button type="button" class="secondary-btn" (click)="deleteReport()">{{ d.selectedId === 'draft' ? 'Discard draft' : 'Delete this report' }}</button>
+              <button type="button" class="secondary-btn" (click)="deleteReport()">{{ d.selectedId === 'draft' ? 'Discard Draft' : 'Delete Report' }}</button>
             }
-            <span class="muted strat-last">{{ d.last ? (d.last.builtin ? 'Built-in draft, not written by the AI' : 'Written: ' + lastLabel()) : '' }}</span>
+            <span class="muted strat-last">{{ d.last ? (d.last.builtin ? 'Draft — not AI-generated' : 'Generated: ' + lastLabel()) : '' }}</span>
           </div>
         }
         @for (n of aiNotes(); track n.id) {
@@ -159,20 +159,20 @@ const PILL_PILLAR: Record<string, string> = { stock: 'p3', listing: 'p2', hero: 
           <ul>@for (a of d.assumptions; track a) { <li>{{ a }}</li> }</ul>
         }
         @if (d.failedCount) {
-          <h3 class="strat-h">Failed attempts ({{ d.failedCount }})</h3>
+          <h3 class="strat-h">Failed Attempts ({{ d.failedCount }})</h3>
           <ul>@for (f of d.failed; track f.at) { <li>{{ when(f.at) }} · {{ f.model || 'no model' }} · {{ f.reason }}@if (f.sample) { <br><span class="muted">{{ f.sample }}</span> }</li> }</ul>
         }
       </details>
 
       @if (inputsOpen()) {
         <aside class="strat-side strat-pop-host" role="dialog" aria-label="Inputs needed">
-          <div class="strat-side-head"><b>Inputs</b><button type="button" class="secondary-btn" aria-label="Close" (click)="inputsOpen.set(false)">×</button></div>
-          <p class="muted">The reports do not contain these.</p>
-          <label class="feeder-option"><input type="checkbox" [checked]="showCompliance()" (change)="showCompliance.set(!showCompliance())"><span>Show compliance (optional)</span></label>
+          <div class="strat-side-head"><b>Input Data</b><button type="button" class="secondary-btn" aria-label="Close" (click)="inputsOpen.set(false)">×</button></div>
+          <p class="muted">These fields are not included in the uploaded reports.</p>
+          <label class="feeder-option"><input type="checkbox" [checked]="showCompliance()" (change)="showCompliance.set(!showCompliance())"><span>Display Compliance (Optional)</span></label>
           @if (showCompliance()) {
-            <label>Compliance (optional)
+            <label>Compliance Status
               <select [value]="form().compliance || ''" (change)="setField('compliance', $any($event.target).value)">
-                <option value="">Not checked</option><option value="confirmed">Confirmed by the brand</option><option value="doubt">Doubt or violation</option>
+                <option value="">Not Verified</option><option value="confirmed">Brand Confirmed</option><option value="doubt">Flagged — Concern or Violation</option>
               </select>
             </label>
           }
@@ -180,14 +180,14 @@ const PILL_PILLAR: Record<string, string> = { stock: 'p3', listing: 'p2', hero: 
             <label>{{ f.label }}
               <input [type]="f.type" [value]="form()[f.key] ?? ''" [placeholder]="autoText(f.key) || f.hint" (input)="setField(f.key, $any($event.target).value)">
             </label>
-            @if (form()[f.key] !== undefined && auto()[f.key] !== undefined) { <button type="button" class="secondary-btn" (click)="setField(f.key, '')">Use upload value</button> }
+            @if (form()[f.key] !== undefined && auto()[f.key] !== undefined) { <button type="button" class="secondary-btn" (click)="setField(f.key, '')">Use Uploaded Value</button> }
           }
-          <label>First image has text
+          <label>Text on First Image
             <select [value]="form().firstImageHasText === undefined ? '' : String(form().firstImageHasText)" (change)="setField('firstImageHasText', $any($event.target).value)">
               <option value="">Unknown</option><option value="false">No</option><option value="true">Yes</option>
             </select>
           </label>
-          <button type="button" class="upload-btn" (click)="saveInputs()">Save</button>
+          <button type="button" class="upload-btn" (click)="saveInputs()">Save Changes</button>
         </aside>
       }
     } @else if (loading()) {
@@ -224,18 +224,18 @@ export class StrategyPageComponent {
   private runId = 0; // bumps on Cancel/Clear/timeout so a late answer from an old run is ignored
 
   readonly sources: { id: StrategySource; label: string }[] = [
-    { id: 'raw', label: 'Raw sheets' }, { id: 'dashboard', label: 'Dashboard' }, { id: 'both', label: 'Both' },
+    { id: 'raw', label: 'Raw Data' }, { id: 'dashboard', label: 'Dashboard' }, { id: 'both', label: 'Both' },
   ];
   readonly fields: { key: keyof StrategyInputs; label: string; type: string; hint: string }[] = [
-    { key: 'title', label: 'Current title', type: 'text', hint: 'Paste the listing title' },
-    { key: 'description', label: 'Description', type: 'text', hint: 'First line is enough' },
-    { key: 'imageCount', label: 'Number of images', type: 'number', hint: '' },
-    { key: 'mrp', label: 'MRP', type: 'number', hint: '' },
-    { key: 'price', label: 'Selling price', type: 'number', hint: '' },
-    { key: 'rating', label: 'Rating', type: 'number', hint: 'e.g. 4.2' },
-    { key: 'reviewCount', label: 'Review count', type: 'number', hint: '' },
-    { key: 'cities', label: 'Target cities', type: 'text', hint: 'Comma separated' },
-    { key: 'adBudget', label: 'Monthly ad budget', type: 'number', hint: '' },
+    { key: 'title', label: 'Product Title', type: 'text', hint: 'Enter the listing title' },
+    { key: 'description', label: 'Product Description', type: 'text', hint: 'First line only' },
+    { key: 'imageCount', label: 'Image Count', type: 'number', hint: '' },
+    { key: 'mrp', label: 'Maximum Retail Price (MRP)', type: 'number', hint: '' },
+    { key: 'price', label: 'Selling Price', type: 'number', hint: '' },
+    { key: 'rating', label: 'Rating', type: 'number', hint: 'e.g., 4.2' },
+    { key: 'reviewCount', label: 'Review Count', type: 'number', hint: '' },
+    { key: 'cities', label: 'Target Cities', type: 'text', hint: 'Comma-separated' },
+    { key: 'adBudget', label: 'Monthly Advertising Budget', type: 'number', hint: '' },
   ];
 
   readonly moduleList = computed(() => Object.entries(this.data()?.modules ?? {}).map(([id, name]) => ({ id, name })));
@@ -302,7 +302,7 @@ export class StrategyPageComponent {
       this.say('');
     } catch (err) {
       this.data.set(null);
-      this.say(err instanceof Error ? err.message : 'Could not load the strategy.', 'error');
+      this.say(err instanceof Error ? err.message : 'Unable to load strategy data.', 'error');
     } finally { this.loading.set(false); }
   }
 
@@ -312,24 +312,24 @@ export class StrategyPageComponent {
     const id = ++this.runId;
     const before = this.quota()?.remaining; // the count before this run, to see when it changes
     this.generating.set(true);
-    this.say('Writing the strategy. This takes up to two minutes.');
+    this.say('Generating your strategy. This may take up to two minutes.');
     // Safety net: if nothing comes back, free the page so it never stays frozen.
     const guard = setTimeout(() => {
       if (id !== this.runId) return;
       this.runId++;
       this.generating.set(false);
-      this.say('The AI took too long. Press Clear AI report, then Generate.', 'error');
+      this.say('The AI response timed out. Please discard the draft and try again.', 'error');
     }, 150000);
     try {
       const res = await this.api.generateStrategy(brand, { product: this.product(), source: this.source(), modules: this.modulesOn() });
       if (id !== this.runId) return;
       this.reportId.set(res.saved && res.reportId ? res.reportId : 'draft');
       await this.load(brand, this.product());
-      if (!res.saved) this.say(res.note || 'The AI did not answer.', 'error');
+      if (!res.saved) this.say(res.note || 'The AI did not respond.', 'error');
       else this.say(res.note ? 'Saved as a new report. ' + res.note : 'Saved as a new report.', 'success');
     } catch (err) {
       if (id !== this.runId) return;
-      this.say(err instanceof Error ? err.message : 'Could not write the strategy.', 'error');
+      this.say(err instanceof Error ? err.message : 'Unable to generate strategy.', 'error');
     } finally {
       clearTimeout(guard);
       void this.refreshQuotaAfterGenerate(brand, before);
@@ -352,7 +352,7 @@ export class StrategyPageComponent {
     const brand = this.brand();
     const id = this.data()?.selectedId;
     if (!brand || !id || this.generating()) return;
-    const text = id === 'draft' ? 'Discard the built-in draft?' : 'Delete this saved report for ' + brand + '? Your other reports and typed inputs stay. This cannot be undone.';
+    const text = id === 'draft' ? 'Discard the current draft?' : 'Delete this saved report for ' + brand + '? Other reports and input data will remain. This action cannot be undone.';
     if (!window.confirm(text)) return;
     try {
       await this.api.clearStrategy(brand, id);
@@ -360,7 +360,7 @@ export class StrategyPageComponent {
       await this.load(brand, this.product());
       this.say('Deleted.', 'success');
     } catch (err) {
-      this.say(err instanceof Error ? err.message : 'Could not delete.', 'error');
+      this.say(err instanceof Error ? err.message : 'Unable to delete.', 'error');
     }
   }
 
@@ -405,13 +405,13 @@ export class StrategyPageComponent {
       await this.api.saveStrategyInputs(brand, this.form());
       this.inputsOpen.set(false);
       await this.load(brand, this.product());
-      this.say('Inputs saved.', 'success');
-    } catch (err) { this.say(err instanceof Error ? err.message : 'Could not save.', 'error'); }
+      this.say('Changes saved.', 'success');
+    } catch (err) { this.say(err instanceof Error ? err.message : 'Unable to save.', 'error'); }
   }
 
   toggleRow(id: string) { this.openId.set(this.openId() === id ? null : id); }
 
-  /** Where each "Do this first" card leads. Listing opens the Inputs panel (its fields are the problem). */
+  /** Where each "Priority Actions" card leads. Listing opens the Input Data panel (its fields are the problem). */
   private readonly ACTION_PAGE: Record<string, string> = {
     stock: '/inventory', ads: '/campaign-analysis', margin: '/profit', listing: 'inputs',
   };
@@ -460,7 +460,7 @@ export class StrategyPageComponent {
     if (next[id]) delete next[id]; else next[id] = true;
     this.ticks.set(next);
     try { await this.api.saveStrategyTicks(brand, next); }
-    catch (err) { this.ticks.set(before); this.say(err instanceof Error ? err.message : 'Could not save the tick.', 'error'); }
+    catch (err) { this.ticks.set(before); this.say(err instanceof Error ? err.message : 'Unable to save progress.', 'error'); }
   }
 
   toggleModule(id: string) {
@@ -470,7 +470,7 @@ export class StrategyPageComponent {
 
   copyPoints() {
     const list = (this.data()?.talkingPoints ?? []).map((t, i) => (i + 1) + '. ' + t).join('\n');
-    void navigator.clipboard.writeText(list).then(() => this.say('Copied.', 'success'));
+    void navigator.clipboard.writeText(list).then(() => this.say('Copied to clipboard.', 'success'));
   }
 
   download() {
@@ -479,15 +479,15 @@ export class StrategyPageComponent {
     const t = this.ticks();
     const box = (on: boolean) => (on ? '[x] ' : '[ ] ');
     const md = [
-      '# Strategy: ' + d.brand, '',
-      '## Where you stand', ...d.pills.map((p) => '- ' + p.name + ' (' + WORD[p.status] + (p.value ? ', ' + p.value : '') + '): ' + p.note), '',
-      '## Do this first', ...d.actions.map((a) => '- **' + a.title + '**. Why: ' + a.why + ' Result: ' + a.result), '',
-      '## 6-month plan (' + this.planLine() + ')',
+      '# Strategy Report: ' + d.brand, '',
+      '## Current Position', ...d.pills.map((p) => '- ' + p.name + ' (' + WORD[p.status] + (p.value ? ', ' + p.value : '') + '): ' + p.note), '',
+      '## Priority Actions', ...d.actions.map((a) => '- **' + a.title + '**. Why: ' + a.why + ' Result: ' + a.result), '',
+      '## Six-Month Roadmap (' + this.planLine() + ')',
       ...d.plan.months.flatMap((m) => ['### ' + m.id + ' ' + m.title + ' (' + m.focus + ')', ...m.actions.map((a) => '- ' + a), box(!!t['g.' + m.id]) + 'Gate: ' + m.gate, '']),
-      '## Base checklist (' + this.doneCount() + ' of ' + this.totalCount() + ' done)',
+      '## Foundation Checklist (' + this.doneCount() + ' of ' + this.totalCount() + ' completed)',
       ...d.plan.pillars.flatMap((p) => ['### ' + p.title, p.why, ...p.facts.map((f) => '- ' + f), ...p.musts.map((m, i) => box(!!t[p.id + '.' + (i + 1)]) + m), ...(p.stop ? ['Stop: ' + p.stop] : []), '']),
-      '## Optional add-ons', ...d.plan.modules.map((m) => '- ' + m.id + ' ' + m.name + ': ' + (m.ready === true ? 'ready' : m.ready === false ? 'not yet' : 'check yourself')), '',
-      ...(d.talkingPoints.length ? ['## Talking points', ...d.talkingPoints.map((x, i) => (i + 1) + '. ' + x), ''] : []),
+      '## Optional Enhancements', ...d.plan.modules.map((m) => '- ' + m.id + ' ' + m.name + ': ' + (m.ready === true ? 'ready' : m.ready === false ? 'not yet' : 'check yourself')), '',
+      ...(d.talkingPoints.length ? ['## Key Talking Points', ...d.talkingPoints.map((x, i) => (i + 1) + '. ' + x), ''] : []),
       ...this.aiNotes().flatMap((n) => ['## AI note: ' + n.title, n.summary, ...n.points.map((x) => '- ' + x), '']),
       ...(d.assumptions.length ? ['## Assumptions', ...d.assumptions.map((a) => '- ' + a)] : []),
     ].join('\n');

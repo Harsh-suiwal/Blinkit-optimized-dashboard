@@ -10,78 +10,78 @@ type InputGroup = 'price' | 'availability' | 'decisions';
 
 /**
  * Reports: a client-ready, slide-style report for the brand picked in the sidebar, drawn with real charts.
- * "Download PDF" opens the browser's print window (choose "Save as PDF"). The optional facts the app cannot
- * know are typed here; every group can be switched off, and the matching slide or tile then disappears.
+ * "Export as PDF" opens the browser's print dialog (select "Save as PDF"). Optional details not automatically
+ * sourced may be entered here; each group can be disabled, and the corresponding section will be omitted.
  */
 @Component({
   selector: 'app-reports-page',
   template: `
     <header class="topbar report-controls">
-      <div class="topbar-left"><div><h1>Reports</h1><span class="muted">{{ brand() || 'Pick a brand' }}</span></div></div>
+      <div class="topbar-left"><div><h1>Brand Reports</h1><span class="muted">{{ brand() || 'Select a brand' }}</span></div></div>
       @if (data()) {
-        <div class="topbar-right"><button type="button" class="upload-btn" (click)="print()">Download PDF</button></div>
+        <div class="topbar-right"><button type="button" class="upload-btn" (click)="print()">Export as PDF</button></div>
       }
     </header>
 
     @if (!brand()) {
-      <section class="overview-empty report-controls"><h2>Choose a brand</h2><p class="muted">A report covers one brand at a time. Pick a brand in the sidebar.</p></section>
+      <section class="overview-empty report-controls"><h2>Select a Brand</h2><p class="muted">Each report is dedicated to a single brand. Please select one from the sidebar.</p></section>
     } @else {
       <div class="report-layout">
         <aside class="report-panel report-controls" aria-label="Report settings">
           @if (data(); as d) {
             <div class="rp-block">
-              <div class="rp-head">Months</div>
+              <div class="rp-head">Reporting Period</div>
               <div class="month-chips" role="group" aria-label="Months in the report">
                 @for (m of d.availableMonths; track m.monthKey) {
-                  <button type="button" class="month-chip" [class.active]="d.selectedMonths.includes(m.monthKey)" [attr.aria-pressed]="d.selectedMonths.includes(m.monthKey)" (click)="toggleMonth(m.monthKey)" [title]="m.hasSales && m.hasAds ? 'Sales and advertising' : m.hasSales ? 'Sales only' : 'Advertising only'">{{ m.label }}</button>
+                  <button type="button" class="month-chip" [class.active]="d.selectedMonths.includes(m.monthKey)" [attr.aria-pressed]="d.selectedMonths.includes(m.monthKey)" (click)="toggleMonth(m.monthKey)" [title]="m.hasSales && m.hasAds ? 'Sales & Advertising' : m.hasSales ? 'Sales only' : 'Advertising only'">{{ m.label }}</button>
                 }
               </div>
             </div>
 
             @if (isAdmin()) {
               <div class="rp-block">
-                <label class="rp-check"><input type="checkbox" [checked]="includeProfit()" (change)="includeProfit.set(checked($event))"> <b>Include profit and cost figures</b></label>
-                <p class="muted rp-help">Adds a Profit and ROI slide and uses your cost sheet for break-even ROAS. Leave it off for a report that goes to the client.</p>
+                <label class="rp-check"><input type="checkbox" [checked]="includeProfit()" (change)="includeProfit.set(checked($event))"> <b>Include Profit & Cost Analysis</b></label>
+                <p class="muted rp-help">Adds a Profit & ROI section and references your cost sheet for break-even ROAS. Disable for client-facing reports.</p>
               </div>
             }
 
             <div class="rp-block">
-              <div class="rp-head">Slides</div>
+              <div class="rp-head">Report Sections</div>
               @for (s of sectionList; track s.key) {
-                <label class="rp-check" [class.disabled]="!can()[s.key]"><input type="checkbox" [disabled]="!can()[s.key]" [checked]="can()[s.key] && isOn(s.key)" (change)="setSection(s.key, checked($event))"> {{ s.label }}@if (!can()[s.key]) { <span class="muted"> (no data)</span> }</label>
+                <label class="rp-check" [class.disabled]="!can()[s.key]"><input type="checkbox" [disabled]="!can()[s.key]" [checked]="can()[s.key] && isOn(s.key)" (change)="setSection(s.key, checked($event))"> {{ s.label }}@if (!can()[s.key]) { <span class="muted"> — no data</span> }</label>
               }
             </div>
 
             <div class="rp-block">
-              <div class="rp-head">Optional details <span class="muted">(leave empty or switch off to skip)</span></div>
+              <div class="rp-head">Optional Details <span class="muted">— leave blank or disable to omit</span></div>
 
               <details class="rp-group">
-                <summary>Price range</summary>
-                <label class="rp-check"><input type="checkbox" [checked]="use().price" (change)="setUse('price', checked($event))"> Use it in the report</label>
-                <input class="rp-input" type="text" placeholder="For example ₹137–₹140" aria-label="Stated selling-price range" [value]="inputs().priceRange" (input)="setPrice($event)">
+                <summary>Price Range</summary>
+                <label class="rp-check"><input type="checkbox" [checked]="use().price" (change)="setUse('price', checked($event))"> Include in report</label>
+                <input class="rp-input" type="text" placeholder="e.g. ₹137–₹140" aria-label="Stated selling-price range" [value]="inputs().priceRange" (input)="setPrice($event)">
               </details>
 
               <details class="rp-group">
-                <summary>Availability and store count</summary>
-                <label class="rp-check"><input type="checkbox" [checked]="use().availability" (change)="setUse('availability', checked($event))"> Use it in the report</label>
-                <p class="muted rp-help">The app does not know availability. Enter it per product to add an Availability slide.</p>
+                <summary>Availability & Store Count</summary>
+                <label class="rp-check"><input type="checkbox" [checked]="use().availability" (change)="setUse('availability', checked($event))"> Include in report</label>
+                <p class="muted rp-help">Availability is not automatically sourced. Enter it per product to include the Availability section.</p>
                 @for (row of inputs().availability; track $index; let i = $index) {
                   <div class="rp-row">
                     <input class="rp-input rp-name" type="text" list="reportProducts" placeholder="Product" aria-label="Product" [value]="row.name" (input)="setAvailability(i, 'name', $event)">
-                    <input class="rp-input" type="number" min="0" max="100" placeholder="Now %" aria-label="Current availability %" [value]="row.current ?? ''" (input)="setAvailability(i, 'current', $event)">
+                    <input class="rp-input" type="number" min="0" max="100" placeholder="Current %" aria-label="Current availability %" [value]="row.current ?? ''" (input)="setAvailability(i, 'current', $event)">
                     <input class="rp-input" type="number" min="0" max="100" placeholder="Target %" aria-label="Target availability %" [value]="row.target ?? ''" (input)="setAvailability(i, 'target', $event)">
-                    <button type="button" class="secondary-btn" (click)="removeAvailability(i)" aria-label="Remove this line">✕</button>
+                    <button type="button" class="secondary-btn" (click)="removeAvailability(i)" aria-label="Remove this entry">✕</button>
                   </div>
                 }
                 <datalist id="reportProducts">@for (name of productNames(); track name) { <option [value]="name"></option> }</datalist>
-                <button type="button" class="secondary-btn" (click)="addAvailability()">Add a product</button>
-                <input class="rp-input" type="number" min="0" placeholder="Dark stores in total (optional)" aria-label="Dark stores in total" [value]="inputs().stores ?? ''" (input)="setStores($event)">
+                <button type="button" class="secondary-btn" (click)="addAvailability()">Add Product</button>
+                <input class="rp-input" type="number" min="0" placeholder="Total Dark Stores (optional)" aria-label="Total dark stores" [value]="inputs().stores ?? ''" (input)="setStores($event)">
               </details>
 
               <details class="rp-group">
                 <summary>Your own “three decisions”</summary>
-                <label class="rp-check"><input type="checkbox" [checked]="use().decisions" (change)="setUse('decisions', checked($event))"> Use them in the report</label>
-                <p class="muted rp-help">Without these the summary shows suggestions worked out from the numbers.</p>
+                <label class="rp-check"><input type="checkbox" [checked]="use().decisions" (change)="setUse('decisions', checked($event))"> Include in report</label>
+                <p class="muted rp-help">When omitted, the summary will display insights derived from the data.</p>
                 @for (text of inputs().decisions; track $index; let i = $index) {
                   <textarea class="rp-input" rows="2" [attr.aria-label]="'Decision ' + (i + 1)" [placeholder]="'Decision ' + (i + 1)" [value]="text" (input)="setDecision(i, $event)"></textarea>
                 }
@@ -89,11 +89,11 @@ type InputGroup = 'price' | 'availability' | 'decisions';
             </div>
 
             <div class="rp-block">
-              <label class="rp-head" for="reportZoom">Preview size</label>
+              <label class="rp-head" for="reportZoom">Preview Scale</label>
               <select id="reportZoom" class="styled-select" [value]="zoom()" (change)="setZoom($event)">
-                <option value="0.45">Small</option><option value="0.6">Medium</option><option value="0.8">Large</option><option value="1">Full size</option>
+                <option value="0.45">Compact</option><option value="0.6">Standard</option><option value="0.8">Large</option><option value="1">Actual Size</option>
               </select>
-              <p class="muted rp-help">Download PDF opens the print window: choose “Save as PDF”. The pages are already landscape with no margins.</p>
+              <p class="muted rp-help">Export as PDF opens your browser's print dialog — select 'Save as PDF'. Pages are pre-formatted in landscape with no margins.</p>
             </div>
           } @else if (loading()) {
             <p class="muted">Loading…</p>
@@ -104,12 +104,12 @@ type InputGroup = 'price' | 'availability' | 'decisions';
           @if (error()) { <p class="muted brand-note">{{ error() }}</p> }
           @if (data(); as d) {
             @if (!d.available.sales && !d.available.ads) {
-              <section class="overview-empty"><h2>Nothing to report yet</h2><p class="muted">Upload this brand's monthly sales (Trends) or advertising report first.</p></section>
+              <section class="overview-empty"><h2>No Data Available</h2><p class="muted">Upload this brand's monthly sales (Trends) or advertising data to begin.</p></section>
             } @else {
               <div class="report-preview" [style.zoom]="zoom()" [innerHTML]="html()"></div>
             }
           } @else if (loading()) {
-            <p class="muted overview-loading">Building the report…</p>
+            <p class="muted overview-loading">Generating your report…</p>
           }
         </section>
       </div>
@@ -224,7 +224,7 @@ export class ReportsPageComponent {
       const result = await this.api.brandReport(brand, months, includeProfit);
       if (id === this.requestId) this.data.set(result);
     } catch (error) {
-      if (id === this.requestId) this.error.set(error instanceof Error ? error.message : 'The request failed.');
+      if (id === this.requestId) this.error.set(error instanceof Error ? error.message : 'Request failed.');
     } finally {
       if (id === this.requestId) this.loading.set(false);
     }

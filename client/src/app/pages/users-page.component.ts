@@ -1,31 +1,139 @@
-// NEW FILE: client/src/app/pages/users-page.component.ts
-import { Component, OnInit, inject, signal } from '@angular/core';
+// client/src/app/pages/users-page.component.ts
+import { Component, OnInit, computed, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { ApiService } from '../core/api.service';
 import { AdminUser, RoleOption } from '../core/models';
 
-/** Admin-only Users page (route /users). Server enforces manageUsers on every call. */
+type PermKey = 'allBrands' | 'profit' | 'upload' | 'deleteData' | 'download' | 'manageUsers';
+type RolePermsMap = Record<string, Record<PermKey, boolean>>;
+
+interface PermMetaItem {
+  key: PermKey;
+  label: string;
+  description: string;
+}
+
+interface PermApiResponse {
+  roles: RolePermsMap;
+  roleLabels?: Record<string, string>;
+  roleOptions?: RoleOption[];
+  builtInRoles?: string[];
+  permMeta?: PermMetaItem[];
+}
+
+const DEFAULT_PERM_META: PermMetaItem[] = [
+  { key: 'allBrands',   label: 'All brands',       description: 'See every brand; when off, restricted to ticked brands only.' },
+  { key: 'profit',      label: 'View profit',      description: 'See profit figures, margins, and cost tabs.' },
+  { key: 'upload',      label: 'Upload reports',   description: 'Upload stock, sales, campaign, and cost files (requires All brands).' },
+  { key: 'deleteData',  label: 'Delete data',      description: 'Delete stored stock, sales, monthly, or campaign data.' },
+  { key: 'download',    label: 'Download exports', description: 'Export Excel workbooks.' },
+  { key: 'manageUsers', label: 'Manage users',     description: 'Access Users page, manage accounts, and edit role permissions.' },
+];
+
+/** Admin-only Users & Permissions page (route /users). Server enforces manageUsers on every call. */
 @Component({
   selector: 'app-users-page',
   imports: [FormsModule],
   template: `
     <header class="topbar">
-      <div class="topbar-left"><div><h1>Users</h1><span class="muted">Admins only. A change applies on the user's next click.</span></div></div>
+      <div class="topbar-left">
+        <div>
+          <h1>User Access &amp; Permissions</h1>
+          <span class="muted">Access control &mdash; restricted to administrators. Updates take effect on each user's next action.</span>
+        </div>
+      </div>
     </header>
     <section class="profile">
       @if (message()) { <p class="muted">{{ message() }}</p> }
       @if (error()) { <p class="muted users-error">{{ error() }}</p> }
 
       <div class="overview-list profile-card">
+        <div class="perm-header">
+          <div>
+            <h3>Role permissions</h3>
+            <p class="muted">Create bespoke roles and fine-tune access for each one. Upload requires All brands; Admin always retains Manage users.</p>
+          </div>
+          <div class="perm-actions">
+            @if (hasPermChanges()) {
+              <span class="perm-dirty-badge">Pending changes</span>
+            }
+            <button type="button" class="secondary-btn" (click)="discardPerms()" [disabled]="busy() || !hasPermChanges()">Discard</button>
+            <button type="button" class="secondary-btn" (click)="resetPerms()" [disabled]="busy()">Restore defaults</button>
+            <button type="button" class="secondary-btn perm-save-btn" (click)="savePerms()" [disabled]="busy() || !hasPermChanges()">Save changes</button>
+          </div>
+        </div>
+
+        <div class="profile-row perm-add-role">
+          <input type="text" [(ngModel)]="newRoleLabel" placeholder="AI Explorer" (keyup.enter)="addRole()" />
+          <button type="button" class="secondary-btn" (click)="addRole()" [disabled]="busy() || !newRoleLabel.trim()">Create role</button>
+        </div>
+
+        @if (roleKeys().length) {
+          <div class="perm-table-wrap">
+            <table class="perm-table">
+              <thead>
+                <tr>
+                  <th>Permission</th>
+                  @for (roleKey of roleKeys(); track roleKey) {
+                    <th class="perm-role-col">
+                      <span>{{ roleLabel(roleKey) }}</span>
+                      @if (!isBuiltInRole(roleKey)) {
+                        <button
+                          type="button"
+                          class="delete-btn perm-role-delete"
+                          title="Delete role — available only when no user is assigned to it"
+                          [disabled]="busy()"
+                          (click)="deleteRole(roleKey)"
+                        >×</button>
+                      }
+                    </th>
+                  }
+                </tr>
+              </thead>
+              <tbody>
+                @for (perm of permMeta(); track perm.key) {
+                  <tr>
+                    <td>
+                      <div class="perm-name">{{ perm.label }}</div>
+                      <div class="muted perm-desc">{{ perm.description }}</div>
+                    </td>
+                    @for (roleKey of roleKeys(); track roleKey) {
+                      <td class="perm-cell">
+                        <label
+                          class="perm-switch"
+                          [class.is-disabled]="isPermLocked(roleKey, perm.key)"
+                          [title]="permLockReason(roleKey, perm.key)"
+                        >
+                          <input
+                            type="checkbox"
+                            [checked]="permValue(roleKey, perm.key)"
+                            [disabled]="busy() || isPermLocked(roleKey, perm.key)"
+                            (change)="togglePerm(roleKey, perm.key, $any($event.target).checked)"
+                          />
+                          <span class="perm-slider"></span>
+                        </label>
+                      </td>
+                    }
+                  </tr>
+                }
+              </tbody>
+            </table>
+          </div>
+        } @else {
+          <p class="muted">Loading role permissions…</p>
+        }
+      </div>
+
+      <div class="overview-list profile-card">
         <h3>Brands</h3>
-        <p class="muted">Add a brand here before any data is uploaded, then tick it for a user.</p>
+        <p class="muted">Register a brand before any data is uploaded, then grant access to individual users.</p>
         <div class="profile-row">
           <input type="text" [(ngModel)]="newBrand" placeholder="Brand name" />
           <button type="button" class="secondary-btn" (click)="addBrand()" [disabled]="busy()">Add brand</button>
         </div>
         <div class="users-brands">
           @for (b of brands(); track b) {
-            <span>{{ b }} <button type="button" class="delete-btn" title="Remove (only if it has no data and no user has it)" (click)="removeBrand(b)">×</button></span>
+            <span>{{ b }} <button type="button" class="delete-btn" title="Remove — available only when no data or users are linked to this brand" (click)="removeBrand(b)">×</button></span>
           }
         </div>
       </div>
@@ -34,7 +142,7 @@ import { AdminUser, RoleOption } from '../core/models';
         <h3>Add user</h3>
         <div class="profile-row"><span class="profile-label">Email</span><input type="email" [(ngModel)]="newUser.email" /></div>
         <div class="profile-row"><span class="profile-label">Name</span><input type="text" [(ngModel)]="newUser.name" /></div>
-        <div class="profile-row"><span class="profile-label">Password</span><input type="password" [(ngModel)]="newUser.password" placeholder="At least 8 characters" /></div>
+        <div class="profile-row"><span class="profile-label">Password</span><input type="password" [(ngModel)]="newUser.password" placeholder="Minimum 8 characters" /></div>
         <div class="profile-row">
           <span class="profile-label">Role</span>
           <select [(ngModel)]="newUser.role">
@@ -52,11 +160,11 @@ import { AdminUser, RoleOption } from '../core/models';
             @for (b of brands(); track b) {
               <label class="brand-chip"><input type="checkbox" [checked]="newUser.brands.includes(b)" (change)="toggle(newUser.brands, b, $any($event.target).checked)" /> {{ b }}</label>
             }
-            @if (!brands().length) { <span class="muted">No brands uploaded yet.</span> }
+            @if (!brands().length) { <span class="muted">No brands available yet.</span> }
           </div>
         </div>
         <div class="profile-row"><span class="profile-label">Active</span><input type="checkbox" [(ngModel)]="newUser.active" /></div>
-        <button type="button" class="secondary-btn" (click)="create()" [disabled]="busy()">Add user</button>
+        <button type="button" class="secondary-btn" (click)="create()" [disabled]="busy()">Create user</button>
       </div>
 
       <div class="overview-list profile-card">
@@ -85,13 +193,13 @@ import { AdminUser, RoleOption } from '../core/models';
                 </div>
               </div>
               <div class="profile-row"><span class="profile-label">Active</span><input type="checkbox" [(ngModel)]="editDraft.active" /></div>
-              <div class="profile-row"><span class="profile-label">New password</span><input type="password" [(ngModel)]="passwordDraft" placeholder="Leave empty to keep" /></div>
+              <div class="profile-row"><span class="profile-label">New password</span><input type="password" [(ngModel)]="passwordDraft" placeholder="Leave blank to keep the current password" /></div>
               <button type="button" class="secondary-btn" (click)="saveEdit(u)" [disabled]="busy()">Save</button>
               <button type="button" class="secondary-btn" (click)="cancelEdit()">Cancel</button>
             } @else {
               <strong>{{ u.name || u.email }}</strong>
               <span class="muted">{{ u.email }} · {{ roleLabel(u.role) }} · {{ u.active ? 'Active' : 'Deactivated' }}</span>
-              <span class="muted">Brands: {{ u.brands.length ? u.brands.join(', ') : 'none' }}</span>
+              <span class="muted">Brands: {{ u.brands.length ? u.brands.join(', ') : 'None assigned' }}</span>
               <button type="button" class="secondary-btn" (click)="startEdit(u)">Edit</button>
             }
           </div>
@@ -109,6 +217,50 @@ import { AdminUser, RoleOption } from '../core/models';
     .brand-chip:hover { background: rgba(127, 127, 127, 0.12); }
     .brand-chip input { cursor: pointer; accent-color: #4f46e5; }
     .brand-chip.select-all { font-weight: 600; border-style: dashed; }
+
+    .perm-header {
+      display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: space-between;
+      gap: 12px; margin-bottom: 12px;
+    }
+    .perm-header h3 { margin: 0 0 4px; }
+    .perm-header p { margin: 0; font-size: 13px; }
+    .perm-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+    .perm-add-role { margin-bottom: 10px; }
+    .perm-dirty-badge {
+      font-size: 12px; font-weight: 600; padding: 3px 8px; border-radius: 999px;
+      background: rgba(79, 70, 229, 0.14); color: #4f46e5;
+    }
+    .perm-save-btn {
+      background: #4f46e5; color: #fff; border-color: #4f46e5;
+    }
+    .perm-save-btn:disabled { opacity: 0.45; cursor: not-allowed; }
+    .perm-table-wrap { overflow-x: auto; }
+    .perm-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+    .perm-table th, .perm-table td {
+      padding: 10px 8px; border-bottom: 1px solid rgba(127, 127, 127, 0.18); text-align: left;
+    }
+    .perm-table th.perm-role-col, .perm-cell { text-align: center; min-width: 110px; }
+    .perm-role-delete { margin-left: 4px; font-size: 14px; vertical-align: middle; }
+    .perm-name { font-weight: 600; }
+    .perm-desc { font-size: 12px; margin-top: 2px; }
+
+    .perm-switch {
+      position: relative; display: inline-block; width: 38px; height: 22px; cursor: pointer;
+    }
+    .perm-switch.is-disabled { opacity: 0.45; cursor: not-allowed; }
+    .perm-switch input { opacity: 0; width: 0; height: 0; position: absolute; }
+    .perm-slider {
+      position: absolute; inset: 0; border-radius: 999px;
+      background: rgba(127, 127, 127, 0.35); transition: background 0.16s ease;
+    }
+    .perm-slider::before {
+      content: ''; position: absolute; left: 3px; top: 3px; width: 16px; height: 16px;
+      border-radius: 50%; background: #fff; transition: transform 0.16s ease;
+      box-shadow: 0 1px 2px rgba(0, 0, 0, 0.25);
+    }
+    .perm-switch input:checked + .perm-slider { background: #4f46e5; }
+    .perm-switch input:checked + .perm-slider::before { transform: translateX(16px); }
+    .perm-switch input:focus-visible + .perm-slider { outline: 2px solid #4f46e5; outline-offset: 2px; }
   `,
 })
 export class UsersPageComponent implements OnInit {
@@ -117,15 +269,30 @@ export class UsersPageComponent implements OnInit {
   readonly users = signal<AdminUser[]>([]);
   readonly roles = signal<RoleOption[]>([]);
   readonly brands = signal<string[]>([]);
+  readonly roleLabels = signal<Record<string, string>>({});
+  readonly builtInRoles = signal<string[]>(['admin', 'moderator', 'ecom_manager', 'ecom_executive']);
+  readonly permMeta = signal<PermMetaItem[]>(DEFAULT_PERM_META);
+  readonly savedPerms = signal<RolePermsMap>({});
+  readonly draftPerms = signal<RolePermsMap>({});
   readonly message = signal('');
   readonly error = signal('');
   readonly busy = signal(false);
   readonly editingId = signal<string | null>(null);
 
+  readonly roleKeys = computed(() => {
+    const fromRoles = this.roles().map((r) => r.value);
+    return fromRoles.length ? fromRoles : Object.keys(this.draftPerms());
+  });
+
+  readonly hasPermChanges = computed(
+    () => JSON.stringify(this.draftPerms()) !== JSON.stringify(this.savedPerms()),
+  );
+
   newUser = { email: '', name: '', password: '', role: 'ecom_executive', brands: [] as string[], active: true };
   editDraft = { name: '', role: '', brands: [] as string[], active: true };
   passwordDraft = '';
   newBrand = '';
+  newRoleLabel = '';
 
   async ngOnInit() {
     await this.load();
@@ -133,13 +300,133 @@ export class UsersPageComponent implements OnInit {
 
   async load() {
     try {
-      const data = await this.api.users();
+      const [data, permRes] = await Promise.all([
+        this.api.users(),
+        this.fetchJson<PermApiResponse>('/api/users/permissions'),
+      ]);
       this.users.set(data.users);
-      this.roles.set(data.roles);
+      this.roles.set(permRes.roleOptions?.length ? permRes.roleOptions : data.roles);
       this.brands.set(data.brands);
+      if (permRes.roleLabels) this.roleLabels.set(permRes.roleLabels);
+      if (permRes.builtInRoles?.length) this.builtInRoles.set(permRes.builtInRoles);
+      if (permRes.permMeta?.length) this.permMeta.set(permRes.permMeta);
+      this.setPermsState(permRes.roles || {});
     } catch (err) {
       this.error.set((err as Error).message);
     }
+  }
+
+  private setPermsState(roles: RolePermsMap) {
+    this.savedPerms.set(this.clonePerms(roles));
+    this.draftPerms.set(this.clonePerms(roles));
+  }
+
+  private clonePerms(roles: RolePermsMap): RolePermsMap {
+    const out: RolePermsMap = {};
+    for (const [role, perms] of Object.entries(roles || {})) {
+      out[role] = { ...perms };
+    }
+    return out;
+  }
+
+  isBuiltInRole(roleKey: string): boolean {
+    return this.builtInRoles().includes(roleKey);
+  }
+
+  permValue(roleKey: string, key: PermKey): boolean {
+    return Boolean(this.draftPerms()[roleKey]?.[key]);
+  }
+
+  isPermLocked(roleKey: string, key: PermKey): boolean {
+    if (roleKey === 'admin' && key === 'manageUsers') return true;
+    if (key === 'upload' && !this.permValue(roleKey, 'allBrands')) return true;
+    return false;
+  }
+
+  permLockReason(roleKey: string, key: PermKey): string {
+    if (roleKey === 'admin' && key === 'manageUsers') return 'Administrators always retain Manage users access.';
+    if (key === 'upload' && !this.permValue(roleKey, 'allBrands')) return 'Requires All brands to be enabled first.';
+    return '';
+  }
+
+  togglePerm(roleKey: string, key: PermKey, on: boolean) {
+    if (this.isPermLocked(roleKey, key)) return;
+    const next = this.clonePerms(this.draftPerms());
+    if (!next[roleKey]) return;
+    next[roleKey][key] = on;
+    if (key === 'allBrands' && !on) next[roleKey].upload = false;
+    this.draftPerms.set(next);
+  }
+
+  async addRole() {
+    const label = this.newRoleLabel.trim();
+    if (!label) return;
+    await this.run(async () => {
+      const res = await this.fetchJson<PermApiResponse & { key: string; label: string }>('/api/users/roles', {
+        method: 'POST',
+        body: JSON.stringify({ label }),
+      });
+      if (res.roleLabels) this.roleLabels.set(res.roleLabels);
+      if (res.roleOptions) this.roles.set(res.roleOptions);
+      if (res.builtInRoles) this.builtInRoles.set(res.builtInRoles);
+      this.setPermsState(res.roles);
+      this.newRoleLabel = '';
+      this.message.set(`Role "${res.label}" created. Configure its permissions, then click Save changes.`);
+    });
+  }
+
+  async deleteRole(roleKey: string) {
+    await this.run(async () => {
+      const res = await this.fetchJson<PermApiResponse>(`/api/users/roles/${encodeURIComponent(roleKey)}`, {
+        method: 'DELETE',
+      });
+      if (res.roleLabels) this.roleLabels.set(res.roleLabels);
+      if (res.roleOptions) this.roles.set(res.roleOptions);
+      this.setPermsState(res.roles);
+      this.message.set(`Role "${this.roleLabel(roleKey)}" deleted.`);
+    });
+  }
+
+  discardPerms() {
+    this.draftPerms.set(this.clonePerms(this.savedPerms()));
+    this.error.set('');
+    this.message.set('');
+  }
+
+  async savePerms() {
+    await this.run(async () => {
+      const res = await this.fetchJson<PermApiResponse>('/api/users/permissions', {
+        method: 'PUT',
+        body: JSON.stringify({ roles: this.draftPerms() }),
+      });
+      if (res.roleLabels) this.roleLabels.set(res.roleLabels);
+      if (res.roleOptions) this.roles.set(res.roleOptions);
+      this.setPermsState(res.roles);
+      this.message.set('Permissions saved. Changes take effect on each user\'s next action.');
+    });
+  }
+
+  async resetPerms() {
+    await this.run(async () => {
+      const res = await this.fetchJson<PermApiResponse>('/api/users/permissions/reset', {
+        method: 'POST',
+      });
+      if (res.roleLabels) this.roleLabels.set(res.roleLabels);
+      if (res.roleOptions) this.roles.set(res.roleOptions);
+      this.setPermsState(res.roles);
+      this.message.set('Built-in roles restored to their default permissions.');
+    });
+  }
+
+  private async fetchJson<T>(url: string, init?: RequestInit): Promise<T> {
+    const res = await fetch(url, {
+      credentials: 'same-origin',
+      headers: { 'Content-Type': 'application/json', ...(init?.headers || {}) },
+      ...init,
+    });
+    const body = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(body.error || `Request failed (${res.status}).`);
+    return body as T;
   }
 
   async addBrand() {
@@ -147,7 +434,7 @@ export class UsersPageComponent implements OnInit {
       const result = await this.api.addBrand(this.newBrand);
       this.brands.set(result.brands);
       this.newBrand = '';
-      this.message.set('Brand added. You can tick it for a user now.');
+      this.message.set('Brand added. Access can now be granted to users.');
     });
   }
 
@@ -155,7 +442,7 @@ export class UsersPageComponent implements OnInit {
     await this.run(async () => {
       const result = await this.api.removeBrand(name);
       this.brands.set(result.brands);
-      this.message.set(`Removed ${name}.`);
+      this.message.set(`Brand "${name}" deleted.`);
     });
   }
 
@@ -176,7 +463,7 @@ export class UsersPageComponent implements OnInit {
   }
 
   roleLabel(value: string) {
-    return this.roles().find((r) => r.value === value)?.label || value;
+    return this.roleLabels()[value] || this.roles().find((r) => r.value === value)?.label || value;
   }
 
   async create() {
@@ -184,7 +471,7 @@ export class UsersPageComponent implements OnInit {
       await this.api.createUser({ ...this.newUser });
       this.newUser = { email: '', name: '', password: '', role: 'ecom_executive', brands: [], active: true };
       await this.load();
-      this.message.set('User added.');
+      this.message.set('User created successfully.');
     });
   }
 
@@ -205,7 +492,7 @@ export class UsersPageComponent implements OnInit {
       if (this.passwordDraft) await this.api.setUserPassword(u.id, this.passwordDraft);
       this.cancelEdit();
       await this.load();
-      this.message.set('Saved. Sessions were ended if the user was deactivated or the password changed.');
+      this.message.set('Saved. Sessions were revoked if the account was deactivated or the password was updated.');
     });
   }
 
