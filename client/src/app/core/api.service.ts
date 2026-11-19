@@ -1,0 +1,444 @@
+import { HttpClient, HttpErrorResponse, HttpResponse } from '@angular/common/http';
+import { Injectable, inject } from '@angular/core';
+import { firstValueFrom, Observable } from 'rxjs';
+import {
+  BrandUpload,
+  CampaignBrandRow,
+  CampaignDailyPoint,
+  CampaignDailyRow,
+  CampaignPeriod,
+  CampaignRow,
+  CampaignSheetFilter,
+  CampaignSheetType,
+  CampaignSummary,
+  CampaignTargetingRow,
+  CampaignUploadPreview,
+  CampaignUploadResult,
+  CityRow,
+  SalesBrandRow,
+  ProductRow,
+  ProductCitySalesRow,
+  ProductSalesRow,
+  SalesSummary,
+  User,
+  AdminUser,
+  UsersResponse,
+  BrandOverview,
+  StrategyInputs,
+  StrategyScorecard,
+  StrategySource,
+  StrategyQuota,
+  SalesMonth,
+  SalesView,
+  SalesMonthComparison,
+  SalesMonthUploadResult,
+  BrandCostsUploadResult,
+  BrandProfit,
+  ProfitProductField,
+  ProfitSettings,
+  ProfitView,
+  ProfitViewQuery,
+  ProductMonthDetail,
+  ProductMonthNames,
+  BrandWipeResult,
+  UploadKind,
+  UploadsOverview,
+  UploadUndoResult,
+  BrandReport,
+} from './models';
+
+@Injectable({ providedIn: 'root' })
+export class ApiService {
+  private readonly http = inject(HttpClient);
+
+  me() {
+    return this.get<{ user: User }>('/api/me');
+  }
+
+  logout() {
+    return this.post<{ ok: boolean }>('/api/logout', {});
+  }
+
+  /** Users (admin only). */
+  users() {
+    return this.get<UsersResponse>('/api/users');
+  }
+
+  createUser(body: { email: string; password: string; name: string; role: string; brands: string[]; active: boolean }) {
+    return this.post<{ user: AdminUser }>('/api/users', body);
+  }
+
+  updateUser(id: string, body: { name?: string; role?: string; brands?: string[]; active?: boolean }) {
+    return this.patch<{ user: AdminUser }>(`/api/users/${encodeURIComponent(id)}`, body);
+  }
+
+  setUserPassword(id: string, password: string) {
+    return this.post<{ ok: boolean }>(`/api/users/${encodeURIComponent(id)}/password`, { password });
+  }
+
+  addBrand(name: string) {
+    return this.post<{ brands: string[] }>('/api/users/brands', { name });
+  }
+
+  removeBrand(name: string) {
+    return this.delete<{ brands: string[] }>(`/api/users/brands?name=${encodeURIComponent(name)}`);
+  }
+
+  products() {
+    return this.get<{ date: string | null; brandUploads?: Record<string, BrandUpload>; rows: ProductRow[] }>('/api/products');
+  }
+
+
+  uploadInventory(file: File) {
+    return this.upload<{ ok: boolean; date: string; rowCount: number; totalRowCount: number; brands: string[] }>('/api/upload', file);
+  }
+
+  /** Clears the stock view of one brand (or all). resetHistory also forgets the upload history behind the 45d / 60d columns. */
+  clearInventory(brand?: string, resetHistory = false) {
+    const query = new URLSearchParams();
+    if (brand) query.set('brand', brand);
+    if (resetHistory) query.set('history', '1');
+    const text = query.toString();
+    return this.delete<{ ok: boolean }>(`/api/inventory-data${text ? `?${text}` : ''}`);
+  }
+
+  /** Wipes one brand from every report (admin only). typed also removes what was typed on the Profit tab (COGS and the like). */
+  wipeBrand(brand: string, typed: boolean) {
+    const query = new URLSearchParams({ brand });
+    if (typed) query.set('typed', '1');
+    return this.delete<BrandWipeResult>(`/api/brand?${query}`);
+  }
+
+  clearCampaignData(brand?: string) {
+    return this.delete<{ ok: boolean }>(`/api/campaign-data${this.brandQuery(brand)}`);
+  }
+
+  deleteProduct(row: ProductRow) {
+    const query = new URLSearchParams({ productName: row.productName, warehouseName: row.warehouseName });
+    return this.delete<{ ok: boolean; removedRow: ProductRow; index: number }>(`/api/products?${query}`);
+  }
+
+  restoreProduct(row: ProductRow, index: number) {
+    return this.post<{ ok: boolean }>('/api/products/restore', { row, index });
+  }
+
+  productNames() {
+    return this.get<{ names: string[] }>('/api/product-names');
+  }
+
+  brandNames() {
+    return this.get<{ brands: string[] }>('/api/brand-names');
+  }
+
+  /** month = YYYY-MM shows that month's report; without it, the latest upload. */
+  cityPerformance(brand?: string, month?: string) {
+    return this.get<{ date: string | null; brandUploads: Record<string, BrandUpload>; cityRows: CityRow[]; brandSummaries: SalesBrandRow[]; view?: SalesView | null }>(`/api/city-performance${this.salesQuery(brand, month)}`);
+  }
+
+  salesSummary(brand?: string) {
+    return this.get<SalesSummary>(`/api/sales-summary${this.brandQuery(brand)}`);
+  }
+
+  productSales(product: string) {
+    return this.get<{ date: string | null; row: ProductSalesRow | null }>(`/api/product-sales?product=${encodeURIComponent(product)}`);
+  }
+
+  productCitySales(brand?: string, month?: string) {
+    return this.get<{ date: string | null; productRows: (ProductSalesRow & { cities: ProductCitySalesRow[] })[] }>(`/api/product-city-sales${this.salesQuery(brand, month)}`);
+  }
+
+  brandSales(brand: string) {
+    return this.get<{ date: string | null; cityRows: CityRow[] }>(`/api/brand-sales?brand=${encodeURIComponent(brand)}`);
+  }
+
+  uploadSales(file: File) {
+    return this.upload<{ ok: boolean; date: string; brands: string[]; cityCount: number; totalCityCount: number; orderRowCount: number }>('/api/sales-upload', file);
+  }
+
+  deleteCity(city: string) {
+    return this.delete<{ ok: boolean; removedRows: CityRow[]; removedHistorySnapshots: unknown[] }>(`/api/city-performance/${encodeURIComponent(city)}`);
+  }
+
+  restoreCity(cityRows: CityRow[], historySnapshots: unknown[]) {
+    return this.post<{ ok: boolean }>('/api/city-performance/restore', { cityRows, historySnapshots });
+  }
+
+  /** Clears one brand's sales data, or everything when no brand is given. */
+  clearSalesHistory(brand?: string) {
+    return this.delete<{ ok: boolean }>(`/api/sales-history${this.brandQuery(brand)}`);
+  }
+
+  campaignData(periodKey?: string, brand?: string, sheetType?: CampaignSheetFilter) {
+    return this.get<{ date: string | null; periods: CampaignPeriod[]; periodKey: string | null; latestPeriodKey: string | null; campaigns: CampaignRow[]; daily: CampaignDailyPoint[]; brandSummaries: CampaignBrandRow[]; allBrands: string[] }>(`/api/campaign-analysis${this.campaignQuery(periodKey, brand, sheetType)}`);
+  }
+
+  campaignSummary(periodKey: string, brand?: string, sheetType?: CampaignSheetFilter) {
+    return this.get<CampaignSummary>(`/api/campaign-summary${this.campaignQuery(periodKey, brand, sheetType)}`);
+  }
+
+  campaignBrands(periodKey?: string, sheetType?: CampaignSheetFilter) {
+    return this.get<{ periodKey: string | null; brands: { brandName: string; adSpend: number; campaignCount: number }[] }>(`/api/campaign-brands${this.campaignQuery(periodKey, undefined, sheetType)}`);
+  }
+
+  campaignDetail(periodKey: string, sheetType: CampaignSheetType, campaignId: string) {
+    const query = new URLSearchParams({ periodKey, sheetType, campaignId });
+    return this.get<{ periodKey: string | null; targeting: CampaignTargetingRow[]; daily: CampaignDailyRow[] }>(`/api/campaign-detail?${query}`);
+  }
+
+  /** Dry run: what an upload would replace, without storing anything. campaignBrands (campaign name -> brand) is applied before planning. */
+  previewCampaignUpload(file: File, campaignBrands: Record<string, string> = {}) {
+    return this.upload<CampaignUploadPreview>('/api/campaign-upload?dryRun=1', file, this.campaignFields(campaignBrands));
+  }
+
+  /** campaignBrands labels campaigns whose brand can't be resolved; sending labels forces past the same-day duplicate guard. */
+  uploadCampaign(file: File, campaignBrands: Record<string, string> = {}) {
+    const labelled = Object.keys(campaignBrands).length > 0;
+    const url = labelled ? '/api/campaign-upload?force=1' : '/api/campaign-upload';
+    return this.upload<CampaignUploadResult>(url, file, this.campaignFields(campaignBrands));
+  }
+
+  private campaignFields(campaignBrands: Record<string, string>): Record<string, string> {
+    return Object.keys(campaignBrands).length ? { campaignBrands: JSON.stringify(campaignBrands) } : {};
+  }
+
+  deleteCampaign(periodKey: string, sheetType: CampaignSheetType, campaignId: string) {
+    return this.delete<{ ok: boolean; removedRows: number; undoToken: string }>('/api/campaign-analysis', { periodKey, sheetType, campaignId });
+  }
+
+  restoreCampaign(undoToken: string) {
+    return this.post<{ ok: boolean; restoredRows: number }>('/api/campaign-analysis/restore', { undoToken });
+  }
+
+  addBrandAlias(raw: string, canonical: string) {
+    return this.post<{ ok: boolean }>('/api/brand-alias', { raw, canonical });
+  }
+
+  /** Everything for one brand on one screen (Brand Overview page). */
+  brandOverview(brand: string, month = '') {
+    const monthQuery = month ? `&month=${encodeURIComponent(month)}` : '';
+    return this.get<BrandOverview>(`/api/brand-overview?brand=${encodeURIComponent(brand)}${monthQuery}`);
+  }
+
+  // ---- Strategy tab (paste inside the ApiService class, e.g. after brandOverview) ----
+  strategyScorecard(brand: string, product = '', report = '') {
+    const p = product ? `&product=${encodeURIComponent(product)}` : '';
+    const r = report ? `&report=${encodeURIComponent(report)}` : '';
+    return this.get<StrategyScorecard>(`/api/strategy/scorecard?brand=${encodeURIComponent(brand)}${p}${r}`);
+  }
+
+  saveStrategyInputs(brand: string, inputs: StrategyInputs) {
+    return this.call(this.http.put<{ ok: boolean }>('/api/strategy/inputs', { brand, inputs }), '/api/strategy/inputs');
+  }
+
+  saveStrategyTicks(brand: string, ticks: Record<string, boolean>) {
+    return this.call(this.http.put<{ ok: boolean }>('/api/strategy/progress', { brand, ticks }), '/api/strategy/progress');
+  }
+
+  generateStrategy(brand: string, body: { product: string; source: StrategySource; modules: string[] }) {
+    return this.post<{ ok: boolean; saved?: boolean; reportId?: string; note?: string }>('/api/strategy/generate', { brand, ...body });
+  }
+
+  /** Without reportId: cancels a running Generate. With it: also deletes that one saved report (or discards the draft). */
+  clearStrategy(brand: string, reportId = '') {
+    return this.post<{ ok: boolean }>('/api/strategy/clear', { brand, reportId });
+  }
+
+  /** Free requests left today (OpenRouter). available is false when the key cannot report it. */
+  strategyQuota(brand: string) {
+    return this.get<StrategyQuota>(`/api/strategy/quota?brand=${encodeURIComponent(brand)}`);
+  }
+
+  salesMonths(brand?: string) {
+    return this.get<{ months: SalesMonth[] }>(`/api/sales-months${this.brandQuery(brand)}`);
+  }
+
+  salesMonthCompare(months: string[], brand?: string) {
+    const query = new URLSearchParams({ months: months.join(',') });
+    if (brand) query.set('brand', brand);
+    return this.get<SalesMonthComparison>(`/api/sales-month-compare?${query}`);
+  }
+
+  /** Adds months to the Monthly Comparison only; the Sales tab's current view is not changed. */
+  uploadSalesMonth(file: File) {
+    return this.upload<SalesMonthUploadResult>('/api/sales-month-upload', file);
+  }
+
+  deleteSalesMonth(brand: string, month: string) {
+    const query = new URLSearchParams({ brand, month });
+    return this.delete<{ ok: boolean; removed: unknown }>(`/api/sales-month?${query}`);
+  }
+
+  restoreSalesMonth(slot: unknown) {
+    return this.post<{ ok: boolean }>('/api/sales-month/restore', { slot });
+  }
+
+  /** Monthly profit / loss and ROI for one brand (admin only). */
+  brandProfit(brand: string) {
+    return this.get<BrandProfit>(`/api/brand-profit?brand=${encodeURIComponent(brand)}`);
+  }
+
+  /** The Profit tab: net profit or loss for the chosen months, products and cities (admin only). */
+  profitView(brand: string, query: ProfitViewQuery) {
+    const params = new URLSearchParams({ brand, groupBy: query.groupBy });
+    if (query.months.length) params.set('months', query.months.join(','));
+    if (query.products) params.set('products', JSON.stringify(query.products));
+    if (query.cities) params.set('cities', JSON.stringify(query.cities));
+    if (!query.includeAds) params.set('includeAds', '0');
+    return this.get<ProfitView>(`/api/profit-view?${params.toString()}`);
+  }
+
+  /** One typed value of one product (COGS, GST % or commission %); null clears it. */
+  setProfitProductCost(brand: string, productName: string, field: ProfitProductField, value: number | null) {
+    return this.post<{ ok: boolean }>('/api/profit-product-cost', { brand, productName, field, value });
+  }
+
+  /** The Profit tab's default GST %, commission % and per-unit inward / fulfilment / storage fees. */
+  setProfitSettings(brand: string, settings: Partial<ProfitSettings>) {
+    return this.post<{ ok: boolean; settings: ProfitSettings }>('/api/profit-settings', { brand, settings });
+  }
+
+  /** Cost sheet (one row per product); replaces the brand's product costs. */
+  uploadBrandCosts(brand: string, file: File) {
+    return this.upload<BrandCostsUploadResult>(`/api/brand-costs-upload?brand=${encodeURIComponent(brand)}`, file);
+  }
+
+  /** One month's other costs in rupees; 0 clears it. */
+  setOtherCost(brand: string, monthKey: string, amount: number) {
+    return this.post<{ ok: boolean }>('/api/brand-other-costs', { brand, monthKey, amount });
+  }
+
+  /** Names of the products that have monthly data for a brand (the Month by month selector). */
+  productMonthNames(brand: string) {
+    return this.get<ProductMonthNames>(`/api/product-month-detail?brand=${encodeURIComponent(brand)}`);
+  }
+
+  /** One product month by month, plus the brand's monthly profit. Profit fields are empty when the server hides them. */
+  productMonthDetail(brand: string, product: string) {
+    const query = new URLSearchParams({ brand, product });
+    return this.get<ProductMonthDetail>(`/api/product-month-detail?${query}`);
+  }
+
+  /** Several ticked products added together, month by month. */
+  productMonthSet(brand: string, products: string[]) {
+    return this.post<ProductMonthDetail>('/api/product-month-detail', { brand, products });
+  }
+
+  /** What is uploaded for each brand, and which uploads can be undone (admin only). */
+  uploadsOverview() {
+    return this.get<UploadsOverview>('/api/uploads-overview');
+  }
+
+  /** Puts the report back as it was before its latest upload (admin only). */
+  undoUpload(kind: UploadKind) {
+    return this.post<UploadUndoResult>('/api/uploads/undo', { kind });
+  }
+
+  /**
+   * Downloads a file through the app. A plain link shows raw JSON when something goes wrong (for
+   * example an expired login); here a failure becomes a readable message.
+   */
+  async download(url: string, fallbackName: string): Promise<void> {
+    let response: HttpResponse<Blob>;
+    try {
+      response = await firstValueFrom(this.http.get(url, { responseType: 'blob', observe: 'response' }));
+    } catch (error) {
+      const httpError = error as HttpErrorResponse;
+      if (httpError.status === 401) window.location.assign('/login');
+      throw new Error(await this.downloadErrorMessage(httpError));
+    }
+    if (!response.body) throw new Error('The download was empty.');
+    const objectUrl = URL.createObjectURL(response.body);
+    const link = document.createElement('a');
+    link.href = objectUrl;
+    link.download = this.fileNameFrom(response.headers.get('Content-Disposition')) || fallbackName;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    setTimeout(() => URL.revokeObjectURL(objectUrl), 1000);
+  }
+
+  /** With responseType 'blob' the server's JSON error arrives as a Blob. */
+  private async downloadErrorMessage(error: HttpErrorResponse): Promise<string> {
+    if (error.error instanceof Blob) {
+      try {
+        const parsed = JSON.parse(await error.error.text());
+        if (parsed && typeof parsed.error === 'string') return parsed.error;
+      } catch { /* not JSON: use the generic message */ }
+    }
+    return error.message || 'The download failed.';
+  }
+
+  private fileNameFrom(header: string | null): string {
+    const match = header ? /filename="?([^";]+)"?/i.exec(header) : null;
+    return match ? match[1] : '';
+  }
+
+  /** Everything the client Report needs for one brand. Profit is included only when asked for, and only for an admin. */
+  brandReport(brand: string, months: string[] = [], includeProfit = false) {
+    const query = new URLSearchParams({ brand });
+    if (months.length) query.set('months', months.join(','));
+    if (includeProfit) query.set('profit', '1');
+    return this.get<BrandReport>(`/api/brand-report?${query}`);
+  }
+
+  private salesQuery(brand?: string, month?: string) {
+    const query = new URLSearchParams();
+    if (brand) query.set('brand', brand);
+    if (month) query.set('month', month);
+    const text = query.toString();
+    return text ? `?${text}` : '';
+  }
+
+  private brandQuery(brand?: string) {
+    return brand ? `?brand=${encodeURIComponent(brand)}` : '';
+  }
+
+  private campaignQuery(periodKey?: string, brand?: string, sheetType?: CampaignSheetFilter) {
+    const query = new URLSearchParams();
+    if (periodKey) query.set('periodKey', periodKey);
+    if (brand) query.set('brand', brand);
+    if (sheetType && sheetType !== 'ALL') query.set('sheetType', sheetType);
+    const text = query.toString();
+    return text ? `?${text}` : '';
+  }
+
+  private async get<T>(url: string): Promise<T> {
+    return this.call(this.http.get<T>(url), url);
+  }
+
+  private async post<T>(url: string, body: unknown): Promise<T> {
+    return this.call(this.http.post<T>(url, body), url);
+  }
+
+  private async patch<T>(url: string, body: unknown): Promise<T> {
+    return this.call(this.http.patch<T>(url, body), url);
+  }
+
+  private async delete<T>(url: string, body?: unknown): Promise<T> {
+    return this.call(this.http.delete<T>(url, body === undefined ? {} : { body }), url);
+  }
+
+  private async upload<T>(url: string, file: File, fields: Record<string, string> = {}): Promise<T> {
+    const body = new FormData();
+    // Text fields before the file, so multer has them when it reads the file part.
+    for (const [name, value] of Object.entries(fields)) body.append(name, value);
+    body.append('report', file);
+    return this.call(this.http.post<T>(url, body), url);
+  }
+
+  private async call<T>(request: Observable<T>, url: string): Promise<T> {
+    try {
+      return await firstValueFrom(request);
+    } catch (error) {
+      const httpError = error as HttpErrorResponse;
+      // Session gone (e.g. the server restarted): back to the login page. /api/me and
+      // /api/login are left to the auth guard / login page to avoid double redirects.
+      const path = url.split('?')[0];
+      if (httpError.status === 401 && path !== '/api/me' && path !== '/api/login') {
+        window.location.assign('/login');
+      }
+      const message = typeof httpError.error?.error === 'string' ? httpError.error.error : httpError.message;
+      throw new Error(message || 'The request failed.');
+    }
+  }
+}

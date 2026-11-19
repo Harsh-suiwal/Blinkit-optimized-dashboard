@@ -1,0 +1,104 @@
+/**
+ * Auth routes – /api/login, /api/logout, /api/me
+ */
+
+const express = require('express');
+const bcrypt = require('bcrypt');
+const rateLimit = require('express-rate-limit');
+const supabase = require('../db/supabase');
+const accounts = require('../store/accounts');
+const { accountFrom, resolveAccount, publicAccount } = require('../middleware/access');
+
+const router = express.Router();
+
+// 10 failed login attempts per IP per 15 minutes (in memory; resets on restart).
+const loginLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 10,
+  standardHeaders: true,
+  legacyHeaders: false,
+  skipSuccessfulRequests: true, // only failed attempts count
+  message: { error: 'Too many login attempts. Try again later.' },
+});
+
+// POST /api/login
+router.post('/login', loginLimiter, async (req, res) => {
+  const { email, password } = req.body || {};
+
+  if (typeof email !== 'string' || typeof password !== 'string' || !email || !password) {
+    return res.status(400).json({ error: 'Email and password are required.' });
+  }
+
+  try {
+    const { data: user, error } = await supabase
+      .from('admin_users')
+      .select('id, email, password, role')
+      .eq('email', email.toLowerCase().trim())
+      .single();
+
+    if (error || !user) {
+      return res.status(401).json({ error: 'Invalid email or password.' });
+    }
+
+    const match = await bcrypt.compare(password, user.password);
+    // A deactivated user gets the same answer as a wrong password.
+    if (!match || !accounts.profileOf(user.id).active) {
+      return res.status(401).json({ error: 'Invalid email or password.' });
+    }
+
+    // New session id on login (prevents session fixation), then store the user.
+    req.session.regenerate((regenErr) => {
+      if (regenErr) {
+        console.error('Session regenerate error:', regenErr);
+        return res.status(500).json({ error: 'Internal server error.' });
+      }
+      req.session.user = {
+        id: user.id,
+        email: user.email,
+        role: user.role,
+      };
+      req.session.save((saveErr) => {
+        if (saveErr) {
+          console.error('Session save error:', saveErr);
+          return res.status(500).json({ error: 'Internal server error.' });
+        }
+        res.json({
+          ok: true,
+          user: publicAccount(accountFrom(user, accounts.profileOf(user.id))),
+        });
+      });
+    });
+  } catch (err) {
+    console.error('Login error:', err);
+    res.status(500).json({ error: 'Internal server error.' });
+  }
+});
+
+// POST /api/logout
+router.post('/logout', (req, res) => {
+  req.session.destroy((err) => {
+    if (err) {
+      return res.status(500).json({ error: 'Logout failed.' });
+    }
+    res.clearCookie('connect.sid');
+    res.json({ ok: true });
+  });
+});
+
+// GET /api/me  — check current session
+router.get('/me', async (req, res) => {
+  if (!req.session || !req.session.user) {
+    return res.status(401).json({ error: 'Not logged in.' });
+  }
+  try {
+    // Read again every time: role, brands and active flag can change while the session lives.
+    const account = await resolveAccount(req.session.user.id);
+    if (!account) return res.status(401).json({ error: 'Not logged in.' });
+    res.json({ user: publicAccount(account) });
+  } catch (err) {
+    console.error('Account lookup failed:', err.message);
+    res.status(500).json({ error: 'Internal server error.' });
+  }
+});
+
+module.exports = router;

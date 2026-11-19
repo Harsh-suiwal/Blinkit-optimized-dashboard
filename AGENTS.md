@@ -1,0 +1,189 @@
+﻿# AGENTS.md — Blinkit Optimized Dashboard
+
+Seller analytics: Inventory, Sales Performance, Campaign performance (ROAS) from uploaded Blinkit `.xlsx` reports. Single login, roles `admin` (upload/delete) / `viewer` (read).
+
+**Stack:** Node18+/Express 4 (`express-session`, `multer`, `xlsx`, `bcrypt`) · Angular 20 (standalone, signals) · Supabase Postgres (users + report data in `kv_store`, see Data persistence).
+
+## Run
+```
+npm install && cd client && npm install && cd ..
+cp .env.example .env   # SUPABASE_URL, SUPABASE_SERVICE_KEY, SESSION_SECRET, ADMIN_EMAIL, ADMIN_PASSWORD, PORT=3000
+npm run seed           # create admin (needs db/schema.sql run in Supabase first)
+node scripts/migrate-json-to-kv.js [--dry-run|--force]   # one-time import of old data/*.json into kv_store
+node scripts/kv-smoke.js                                 # set/get/delete a __test__ key, re-init
+npm run dev            # express(nodemon) + ng serve
+npm run build        # install client deps + build client (does not start express)
+npm start              # require-build check + express (prod); errors if client/dist is missing
+npm run deploy         # same as start (kept for older docs/scripts)
+npm run render-build   # Render build step: root deps (no dev) + client deps + client build; Render start = `node server.js`
+```
+Other: `serve` (express only, no build check), `build:client` (build only, does not start), `dev:client`, `install:client`. App: `localhost:3000` → `/login` (static) → `/app/` (Angular).
+
+## Layout
+```
+server.js              routes, uploads, endpoints
+routes/auth.js         /api/login|logout|me
+middleware/auth.js     requireAuth, requireAdmin
+db/                    schema.sql, supabase.js, seed-admin.js
+store/kv.js            ONLY place that touches kv_store (report data)
+scripts/               require-build.js, migrate-json-to-kv.js, kv-smoke.js, overview-smoke.js (offline: `node scripts/overview-smoke.js`)
+parser/
+  columnMap.js         Blinkit header -> internal field (ONLY place for raw header names)
+  parseReport.js       inventory
+  parseSales.js        sales + city/product aggregation
+  parseCampaign.js     Blinkit ad export (.xls/.xlsx, daily rows) -> { uploads, rows }
+  brandResolver.js     ONLY place that decides a brand (explicit col -> alias -> name parse -> "Unknown")
+  snapshotHistory.js   inventory snapshot log (kv `history`), 45/60d calc
+  salesHistory.js      city trend snapshots
+  campaignStore.js     raw daily rows (kv `campaignData`) + query-time aggregation
+  salesMonthly.js      monthly sales (kv `salesMonthly`): one slot per (brand, order-date month)
+  brandOverview.js     builds GET brand-overview from already brand-filtered data (pure)
+client/src/app/
+  core/    api.service (ALL http), auth.guard, auth.service, feeder-map.ts, formatters.ts, models.ts, product-months.logic.ts, ui-state.service
+  layout/  app-shell.component (sidebar+header+outlet)
+  pages/   brand-overview-page | inventory-page | sales-page | product-months (the Sales "Month by month" tab) | monthly-page | campaign-page (.component.ts)
+  shared/  brand-mark.component, brand-filter.component (brand chip bar)
+public/                static login page only: login.html, login.js, style.css (legacy dashboard files removed)
+data/ (gitignored; legacy JSON, read only by the migration script)   uploads/ (temp, auto-cleaned)
+```
+Routes: `/app/overview` (default), `/app/sales-performance` (Sales), `/app/inventory` (Stock), `/app/campaign-analysis` (Advertising), `/app/monthly-comparison` (Trends). Page and nav names are plain: Overview, Sales, Stock, Advertising, Trends; the sidebar has no logo or title: the brand switcher is the first thing in it (`shared/brand-mark.component.ts` is no longer used in the app).
+
+## API (all `/api/*`; R = any logged-in, A = admin; uploads are multipart field `report`)
+**Inventory:** `POST upload` A · `GET products` R · `GET summary` R · `DELETE products?productName&warehouseName` A · `POST products/restore {row,index}` A
+**Sales:** `POST sales-upload` A · `GET city-performance` · `GET sales-summary` · `GET product-sales?product` · `GET product-city-sales` · `GET brand-sales?brand` (all R) · `DELETE city-performance/:city` A · `POST city-performance/restore` A (incl. history) · `DELETE sales-history` A (wipes all + trends)
+**Campaign** (query: `periodKey`, `brand`, `sheetType`=PRODUCT_BOOSTING|PRODUCT_RECOMMENDATION, omit for both): `POST campaign-upload` A (multipart `report` + optional `campaignBrands` JSON `{campaignName: brand}` to label unresolved campaigns one by one, + optional `defaultBrand` as a one-brand-for-all fallback; `?dryRun=1` returns `plan[]` (one item per period x sheet x brand, incl. `brandName` and `removedCampaigns`), `unresolved[]`, `skippedRows`, `unrecognisedSheets`) · `GET campaign-analysis` (campaigns[] + brandSummaries[]) · `GET campaign-summary` · `GET campaign-brands` · `GET campaign-detail?periodKey&sheetType&campaignId` (targeting + daily) (all R) · `DELETE campaign-analysis {periodKey,sheetType,campaignId}` A returns `undoToken` · `POST campaign-analysis/restore {undoToken}` A (token held in server memory; lost on restart)
+**Monthly sales:** `POST sales-month-upload` A (multipart `report`; only adds months, never changes the Sales tab view; dup guard kind `salesMonthly`) · `GET sales-months?brand` · `GET sales-month-compare?months=YYYY-MM,...&brand` (max 12) (both R) · `DELETE sales-month?brand&month` A returns `removed` slot · `POST sales-month/restore {slot}` A. `POST sales-upload` also files its months.
+**Brand overview:** `GET brand-overview?brand[&month=YYYY-MM]` R (sales, inventory, campaign = brand's latest campaign month, months; a section is null when nothing was uploaded). With `month` (bad format -> 400; without it the response is exactly as before): `sales` is built from that month's monthly slot (totals, topCities, topProducts, plus monthKey, from, to, partial; null when the brand has no data that month), `campaign` is that month's campaign section (null when no campaign rows that month), `inventory` stays the current snapshot and `months` is unchanged. `sales.from`/`to` = order dates covered by the brand's latest sales upload (stored in `salesLatest.brandUploads[brand]` since v7; null for older uploads). Overview cards link to their detail pages; no in-place expansion (kept deliberately simple).
+**Lookups:** `GET product-names`, `GET brand-names` (R; includes campaign and monthly brands) · `POST brand-alias {raw,canonical}` A (teaches brandResolver; saved to kv `brandAliases`)
+**Duplicate guard:** an upload endpoint skips (200 `{duplicate:true,skipped:true}`) a file whose SHA-256 was already processed today for that kind (hashes in kv `uploadHashes`, parser/uploadGuard.js); `?force=1` bypasses it and any delete/clear for that kind forgets the hashes.
+**Export (R):** `GET export`, `export-campaign?periodKey&brand&sheetType` (summary + daily sheets), `export-all?periodKey` → .xlsx
+**Strategy** (R, brand rules as everywhere; rebuilt 18 Nov 2026): the base plan is HAND-WRITTEN in `strategy/basePlan.js` (10 pillars with must-do ticks, the M1 to M6 plan with gates, add-ons A1 to A10 with prerequisites); edit that file to change the strategy, nothing is generated. `GET /api/strategy/scorecard?brand[&product][&report]` (health pills, top 3 actions, `plan` = pillars with this brand's dashboard facts + months + add-ons with ready/not yet/check yourself, `ticks`, built-in talking points; no AI, instant) · `PUT /api/strategy/progress {brand, ticks}` (which checklist items and monthly gates are ticked, saved per brand in kv `strategyTab`, unknown ids dropped) · `PUT /api/strategy/inputs {brand, inputs}` (manual inputs the reports lack) · `POST /api/strategy/generate {brand, product, source: raw|dashboard|both, modules}` (OPTIONAL AI box, collapsed on the page; adds brand-specific wording only, reads the base plan as text from `planAsText()`; needs `OPENROUTER_API_KEY` or `ANTHROPIC_API_KEY`). Pill colours and numbers come from `parser/strategyScorecard.js`, never from the AI. The Margin and Ads (break-even ROAS) pills read the SAME numbers as the Profit tab: `strategyBrandData` in `server.js` runs `buildProfitView` (typed COGS included) and `profitFromView` reshapes its month rows; they no longer use `buildBrandProfit`. Thresholds marked ASSUMPTIONS in `strategyScorecard.js` (hero share, margin flat band, ROAS band) are not from the playbook. Profit-based pills and text are hidden for roles without the `profit` permission. Test: `node scripts/strategy-smoke.js`.
+
+## Domain rules (intentional, don't "fix")
+- Stock: stock status uses the configured lead time, healthy days and surge rules in `parser/stockStatus.js`; it no longer uses `LOW_STOCK_THRESHOLD`.
+- 45/60-day sold are computed from upload history (Blinkit only gives 7/15/30). Needs an upload ~30 days before latest (±`ANCHOR_TOLERANCE_DAYS`=5 in snapshotHistory.js). Otherwise shows "Insufficient data".
+- Sales: city revenue change % vs previous upload; tiers top/low by revenue distribution; metrics = revenue, units, orders, AOV, best product.
+- Monthly sales: each order is filed under the month of its Order Date (YYYY-MM-DD, DD-MM-YYYY or Excel serial; unreadable dates are skipped and counted). Re-upload replaces only that (brand, month). A month is "partial" when its orders don't span the 1st to the last day. With all brands, orders are summed per brand (same as Sales). Change % = first vs last selected month.
+- Campaign: the Blinkit export is one row per day x campaign x targeting value, in two sheets (Product Boosting has Targeting Value/Match Type/Position; Recommendation does not). Sheet type is detected from headers, never the sheet name. Re-upload replaces by (periodKey, sheetType, brandName), and only for the brands present in the file; other brands in the same period/sheet type are untouched. periodKey is derived per row from the DD-MM-YYYY date. Aggregation happens at query time; ROAS/CPM are recomputed from sums, never averaged. There is no Advertising ROI (removed Nov 2026: it was (ad sales - ad spend) / ad spend, which only repeats ROAS and reads like profit); do not add it back. The Profit tab's ROI (profit / costs) is a different figure and stays. The export has no status/duration, so the UI has none. A stored campaignData without a `rows` array (old aggregated format) is treated as empty with a warning.
+- Brands: resolved server-side only; campaigns whose name does not resolve use, in order: `campaignBrands` label (admin picks per campaign in a queue) -> `defaultBrand` -> the upload file name (a multi-brand file named "Oicia..." puts unmatched campaigns under Oicia); aliases only affect future uploads (brandResolver.js); client `brandFor()` just reads `row.brandName`. Unresolvable -> "Unknown" (no first-word guessing). Default aliases live in code; admin additions in kv `brandAliases`.
+- Feeder scoping: `core/feeder-map.ts` maps warehouse regions (Mumbai, Ahmedabad, Lucknow, Rajpura, Bengaluru, Faridabad, Kolkata, Pune, Kundli, Hyderabad, Nagpur, Jaipur) → cities. Cities can appear under several feeders (Delhi, Vadodara, Chandigarh…). Expected.
+
+## Conventions
+- Parsing in `parser/`, not `server.js`. Blinkit renames a column → edit `columnMap.js` only.
+- Writes: `requireAdmin`. Reads: `requireAuth`.
+- Every delete returns what's needed for undo; keep its `restore` endpoint in sync.
+- Angular: standalone only, signals, HTTP only via `ApiService`, types in `models.ts`. Login stays static HTML.
+- Never expose/log `SUPABASE_SERVICE_KEY`; never commit `.env`.
+- New env var → update `.env.example`. New endpoint → update this file.
+
+## Unused tables
+`db/schema.sql` also creates `inventory_products`, `snapshot_history`, `upload_meta`; nothing reads or writes them. Report data is in `kv_store`.
+
+## Done checklist
+`npm run dev` boots and Angular compiles; parser changes tested with a real export (campaign: a real Blinkit campaign export, kept out of git, -> 1168 + 80 rows).
+
+## Inventory storage (per brand)
+- kv `latest` = { rows, brandUploads:{brand:{date,fileName}} }. An upload replaces only the brands in that file; other brands stay. Empty Brand Name -> file name -> "Unknown".
+- kv `history` keeps every upload (entries carry brandName). A same-day re-upload replaces only that item+warehouse; nothing else is ever deleted.
+- 45/60d sold: 45d = sold30(now)+sold15(snapshot ~30d back) or sold15(now)+sold30(snapshot ~15d back), whichever anchor is closest to its ideal date; 60d = sold30(now)+sold30(snapshot ~30d back). Anchors must be within +/-5 days (ANCHOR_TOLERANCE_DAYS). Otherwise "n/a". Computed at upload time.
+
+## Brand-first data model (all tabs)
+- Brand is the primary filter. The sidebar dropdown and each tab chip bar share `ui.focusedBrand`; every tab re-queries with it (server-side `?brand=`).
+- Meeting mode: while a brand is selected, the brand chip bars, the campaign Brand Performance table and the unknown-brand notice are hidden, so no other brand is ever on screen. Switch brands from the sidebar; "All brands" restores everything.
+- Inventory, Sales and Campaign data are all stored per brand and an upload replaces only the brands inside that file. Empty brand in a file -> file name -> "Unknown".
+- Sales: kv `salesLatest` = { brandUploads, cityRows } with one row per (brand, city) and its own trend vs that brand's previous upload (kv `salesHistory` entries carry brandName). `GET city-performance?brand=` combines brand rows per city (orders are summed per brand, so a mixed-brand order counts once per brand) and also returns brandSummaries for the chips. `DELETE city-performance/:city` removes the city for all brands (offered only in the unfiltered view).
+- Clear data always asks which brand (or all): `DELETE inventory-data?brand=` (history kept), `DELETE sales-history?brand=` (removes that brand's trend history), `DELETE campaign-data?brand=` (all months). Shared UI: shared/clear-data-dialog.component.ts.
+
+## Deployment (Render)
+- Build: `npm run build`. Start: `npm run serve`.
+- Render's filesystem is ephemeral. Do not rely on local files for anything that must survive a deploy.
+- Sessions are in memory (everyone is logged out on restart). campaignTrash undo tokens are also in memory.
+
+## Data persistence (after v6)
+- All report data lives in Supabase table `kv_store` (key -> jsonb), accessed ONLY through store/kv.js. No fs reads/writes under data/ outside the one-time migration script.
+- Startup: `kv.init()` loads every row before `listen`; on failure the process exits (never starts empty).
+- `kv.get` returns a clone (mutate freely, then `await kv.set`). `kv.peek` returns the cached object with no copy: READ-ONLY, used for hot read paths (campaign queries, history lookups, aliases, hashes). `set` upserts first and updates the cache only on success; writes per key are serialized.
+- Data-changing routes are wrapped in `mutating()` (server.js): one at a time via `kv.withLock`, every write awaited, 500 if a save fails (upload parse errors stay 400).
+- Write order in multi-write routes: history before the current view, upload hash last (only after the data is saved). City delete removes history first; city restore re-adds history (de-duplicated) before the view.
+- Keys: latest, history, salesLatest, salesByProduct, salesHistory, campaignData, brandAliases, uploadHashes, salesMonthly.
+
+## Look and feel (v7 Pro theme)
+- Two looks, chosen in Profile > Appearance and saved per browser (`localStorage.blinkitLook`, default `pro`): `ui.look` sets `<html data-look="pro|glass">` (also set early in `client/src/index.html` and in `public/login.js`). The end of `public/style.css` has a "Layout" block used by both looks, then the "Pro look" block whose every selector starts with `html[data-look="pro"]`; without it the original glass design applies unchanged. New page layout goes in the Layout block; Pro-only colours and surfaces go in the Pro block. Use the tokens (`--surface`, `--surface-alt`, `--border`, `--text`, `--text-muted`, `--accent`, `--success`, `--danger`), never raw colours. Sentence case for every label and heading.
+- Planned features show a shared "Coming soon" page (`pages/coming-soon-page.component.ts`, title and text from route data): Present and the platform tabs All / Zepto / Flipkart Minutes (`/platforms/...`). When one is built, replace its route's component; keep the button where it is.
+- Overview layout: header with the platform tabs hidden for now (Blinkit only; see `.platform-tabs[hidden]` in `public/style.css` to bring them back), month dropdown ("Latest upload" or any month on record: revenue, orders, top cities, top products and ads then follow that month, a change vs the previous calendar month only when neither is partial; stock stays current and is tagged "Current stock"), Present and Create report; four headline cards (Revenue, Orders, Units in stock, Return on ad spend), each opening its page; a change vs last month only when the latest sales upload is the latest full month; panels: Revenue by month, Top cities, Top products, Best sellers in stock.
+- Single server instance only.
+
+## Review fixes & enhancements (v6)
+- Inventory: incoming inventory calculation reads "Incoming scheduled inventory" only (was double-counted with net).
+- Inventory cards: summary is a computed signal over rows and filters (no card freeze on brand switch); 401 redirects to /login on session expiry.
+- Campaign Analysis: dry-run detects campaigns with "Unknown" brands and prompts the admin with a one-at-a-time brand queue (each campaign labelled separately, or "apply to all remaining") before uploading; the replace warning is then shown per brand; clarifies replaced campaigns and skipped rows.
+- Sales Feeder view: aggregated City totals table per mapped city across all products.
+
+## Profit tab (v7-pro)
+- Files: `parser/parseBrandCosts.js` (cost-sheet parser, pure), `parser/brandCosts.js` (kv `brandCosts`: { brands: [{ brandName, fileName, uploadedAt, products, otherCosts: { 'YYYY-MM': rupees } }] }), `parser/brandProfit.js` (the maths, pure), `scripts/profit-smoke.js` (offline test: `node scripts/profit-smoke.js`), `pages/profit-page.component.ts`.
+- Profit endpoints require the `profit` permission unless the route also performs uploads. `?brand=` is required where applicable: `GET brand-profit?brand` · `POST brand-costs-upload?brand` (multipart `report`, replaces the brand's products, keeps other costs) · `POST brand-other-costs {brand, monthKey, amount}` (0 clears).
+- Cost sheet columns: Product Name, MRP, Selling Price, Tax %, Product COGS, Blinkit Inward / Storage / Fulfilment / Commission Fee (extra columns ignored). Fees are rupees per unit sold; commission fee is converted to a % of Selling Price and applied to the real revenue.
+- Domain rules: net sales = revenue / (1 + tax %) using the cost sheet's Tax % (the sales sheet's "Total Tax" column holds only one GST half, so it is not used). Costs = units x COGS + commission + inward + fulfilment + storage + ad spend + other costs. Profit = net sales - costs; margin = profit / net sales; ROI = profit / costs. Ad spend = the brand's campaign spend (all sheet types) per month; a month with no campaign upload counts as 0 and is marked. Products sold without a cost row are left out and listed; a month with none matched shows no profit. Costs are matched to sales by product name (case, spaces, punctuation ignored). Fees are taken as entered, with no GST added.
+## Profit tab view (v8)
+- The Profit page now shows net profit or loss for any mix of months, products and cities: tabs By month / By product / By city, month chips, product and city checklists, and an "Include ad spend" tick at the top. `GET /api/profit-view?brand&groupBy&months&products&cities&includeAds` (requires `profit`) -> `parser/profitView.js` (pure; reads nothing itself). `months` is a comma list (default: the latest full month); `products` and `cities` are JSON lists of names (left out = all, `[]` = none).
+- Typed inputs require `profit`: `POST profit-product-cost {brand, productName, field: cogs|taxPct|commissionPct, value|null}` and `POST profit-settings {brand, settings: {defaultTaxPct, defaultCommissionPct, inwardFee, fulfilmentFee, storageFee}}` (defaults 18 / 0 / 5 / 50 / 30); monthly other expenses reuse `POST brand-other-costs`. They are stored in kv `brandCosts` under each brand's `manual` key, apart from the uploaded sheet's `products`, which the old `GET brand-profit` and the report still read alone. A cost-sheet upload keeps `manual`. A value typed here beats the uploaded sheet, which beats the defaults. A product with no COGS (blank or 0) is shown in sales but left out of profit and takes no share of ads or other expenses.
+- Maths per product x city x month ("fact"): net = gross / (1 + GST %); COGS = units x COGS; commission = gross x commission %; inward, fulfilment, storage = units x per-unit fee. Ad spend (all sheet types, the tick can leave it out) and other expenses are brand-wide: each month's amount is shared across that month's priced facts by gross sales, always over the whole brand month, so a filter shows a slice of the same profit. Rows are sums of facts; each column's total is rounded to the rupee once and the rows are rounded to add up to it, so rows add to the total, every grouping gives the same total, and totals match `buildBrandProfit` to the rupee.
+- The response carries `checks` (gross vs stored sales and vs the Sales tab, ads and other expenses fully shared out, rows add to the total) which the page shows as ticks. Months stored before city data show as "City not recorded" and are left out while a city is picked. Test: `node scripts/profit-view-smoke.js`.
+
+## Product by month data (Sales > Month by month)
+- Slot shape: each monthly slot product now also carries `cities: [{ city, revenue, units, orderCount }]` (that product's cities in that month; orders = orders that contain the product, the same rule as the product totals). Months stored before this change have no `cities`: they are treated as missing (`cityDataMissing: true`) and get cities only when that month's sales report is uploaded again (re-uploading replaces the (brand, platform, month) slot as before).
+- `GET product-month-detail?brand&product` (requireAuth, brand required). Without `product`: `{ products: [names] }`. With it: `{ brand, product, profitVisible, months[], brandMonths[], brandTotals }`. `months` start at the product's first month with sales; each has revenue, units, orderCount, avgOrderValue, partial, cityDataMissing, topCity, cities[] (with sharePct and avgOrderValue) and `profit` (this product only, before ad spend; null when it has no cost-sheet row). `brandMonths` and `brandTotals` come from the same maths as brand-profit and describe the whole brand, not the product.
+- Per-product profit is always "profit before ads": ad spend is brand/campaign level and is never allocated to a product.
+- Profit visibility on product-by-month comes from `req.account.perms.profit`, not a legacy environment flag.
+- Files: `parser/productMonthDetail.js` (pure builder and `canSeeProductProfit`), `buildProductMonthProfit` in `parser/brandProfit.js` (shares `productFigures` with `buildBrandProfit`), tests in `scripts/profit-smoke.js`.
+
+## Sales page tabs (v7)
+- Tabs: City wise, Product wise, Month by month. City wise with a feeder city picked reads: Feeder city, Product breakdown, City totals, the four KPI cards, the colour legend, then the green/red product table. With no feeder: Feeder city, the four cards, the legend, then the city table.
+- Month by month is its own component, `pages/product-months.component.ts` (mounted by `sales-page.component.ts`, which only owns the tab button, the `view` signal and the header title "Sales by month"). Its pure helpers (wins, change text, tiers, brand totals) are in `core/product-months.logic.ts`. Data: `GET product-month-detail` (see "Product by month data").
+- It needs a brand; without one it shows "Pick a brand to see its products by month". Layout: product selector, month chips, wins strip, one card per month, revenue bar chart, month table, city table for one month (click a month card), and the whole-brand profit strip.
+- Wins are shown only when true: record month, growth vs the previous selected month, growth since the first selected month, a growth streak of 2+ months, new cities, profit per unit up. Percentages are rounded down, partial months are never compared, a zero base is never used, and declines are never listed as wins (they appear as neutral grey text in the cards and table).
+- Per-product profit is labelled "Profit before ads" (ad spend is brand level) and is drawn only when the server says `profitVisible`. Missing data is stated plainly: months stored before cities were recorded say "City split not available for this month. Re-upload that month's sales report."; a product without a cost-sheet row says "No cost sheet row for this product"; a month without an advertising upload says "Ad spend not uploaded".
+
+## Uploads panel (v7, admin only)
+- Page `/uploads` (`pages/uploads-page.component.ts`; the sidebar link was already there): upload cards for Stock, Sales, Monthly sales, Advertising and Cost sheet (the cost sheet needs a brand), a table of what is uploaded for each brand, and an "Undo the last upload" table. The cards call the same endpoints as the Stock, Sales, Trends, Advertising and Profit pages. An advertising file with campaigns that have no brand yet is refused there ("upload it on the Advertising page") because naming them needs that page's one-by-one flow.
+- `GET uploads-overview` A: `{ brands: [{ brand, stock, sales, monthly, advertising, costs }], undo: [...] }` (`parser/uploadsOverview.js`, pure; a section is null when nothing was uploaded). `POST uploads/undo {kind}` A (kind = inventory | sales | salesMonthly | campaign | costs): restores the saved data, forgets the file's duplicate-guard hash, 404 when there is nothing to undo.
+- Undo (`store/uploadUndo.js`): each upload route calls `captureUndo(kind, { fileName, brands })` after the file was checked and before its first write; it saves the previous value of every kv key that report type changes (`inventory`: history, latest; `sales`: salesHistory, salesLatest, salesByProduct, salesMonthly; `salesMonthly`: salesMonthly; `campaign`: campaignData; `costs`: brandCosts) in `uploadUndo:<kind>`. Only the latest upload of each report type can be undone; a newer Sales or Monthly sales upload drops the other's undo (they share `salesMonthly`). Undo restores everything as it was before that upload, including anything removed or edited since. A file skipped as a duplicate saves nothing. New upload routes must call `captureUndo`, and a new kv key written by an upload must be added to `KINDS` there.
+- Tests: `node scripts/uploads-smoke.js`.
+
+## Fixes after the first client feedback (v7)
+- **Sessions survive restarts:** `store/sessionStore.js` is the express-session store (kv keys `session:<sid>` = `{ sess, expires }`; reads from kv's memory copy, only login/logout write; expired sessions are pruned after each save via `kv.keys()`). A restart or Render sleep no longer logs anyone out, as long as `SESSION_SECRET` stays the same (changing it logs everyone out). `GET /health` (no login, no data) is for an uptime monitor (for example UptimeRobot every 10 minutes) so the free Render tier stays awake. Test: `node scripts/session-smoke.js`.
+- **Stock tab:** the four cards and a new Total row follow the search box. While searching with no column sort, a product's warehouse rows are kept together. Pure helpers in `core/inventory-totals.ts`.
+- **Advertising tab (restructured Nov 2026, order follows Blinkit's own dashboard):** cards (Spend, Impressions, Add to Cart, Qty Sold, Sales, ROAS, New Users; always one row), then a daily trend chart with a metric picker and a small Best campaign / Needs attention legend beside it, then the campaign table, then Brand Performance. No funnel, no Direct ROAS column, no ROI. Campaign table: ATC, Qty and Sales show direct + indirect merged; right-click one of those headers for a "Show direct / indirect" tick (per column, tooltip "Open menu"). The left edge header cell (an arrow where "#" used to be, tooltip "Select Ads") shows or hides the tick-box column; the right edge header cell (tooltip "Show more") shows or hides the optional columns Spend / unit and Spend / new user. Both edges behave alike: click toggles, right-click opens a menu with ticks. A menu closes on one outside click if nothing was changed; after a tick was changed it closes only on a double click or Esc. Ticked ads drive the cards, the chart and its legend ("Showing 3 of 15 ads"); nothing ticked means all ads. Hiding the tick-box column clears the ticks unless "Apply" in the selection bar is on. The ticks are also cleared when the list reloads (brand, month or sheet type change, upload, delete). The tick-box column stays in the DOM while hidden (class `col-hidden`) because the table's CSS addresses columns by position. Columns can be resized by dragging the line at the right of a header (double-click resets; widths reset on reload). Data is centred, the campaign name is left-aligned. The header row is pinned, and the tick box, row number and campaign name are pinned on sideways scroll (Brand Performance pins its tick box and brand name). The chart's daily numbers come from `daily` in `/api/campaign-analysis` (one entry per campaign per day, `aggregateDailyByCampaign` in `parser/campaignStore.js`). Styles are the "Advertising page (Nov 2026)" block at the end of `public/style.css`.
+- **Downloads:** "Get Sheet" on Sales, Stock and Advertising goes through `ApiService.download` (a blob request): the file is named from the server's Content-Disposition, a failure shows its message in the page status line, and an expired login goes to the login page. The Sales and Stock sheets are limited to the brand picked in the sidebar (`/api/export-sales?brand=`, and now `/api/export?brand=`). "Full Report" still covers every brand.
+
+## Presentation mode (v7)
+- Entry: the Overview "Present" button (needs a brand picked) or the link `/app/present`; both call `ui.startPresenting()` (`core/present.guard.ts`). Exit: the Exit button in the top bar, Esc (not while typing in a field), or leaving fullscreen. A reload also ends it: `ui.presenting` is never saved.
+- While presenting: the sidebar (brand switcher, every other nav item, Profit, Admin, Profile, Logout) is not rendered. A thin top bar shows the brand name, five tabs (Overview, Sales, Stock, Advertising, Trends) and Exit. Page text is larger (`--present-zoom` in the Layout block of `public/style.css`, active when `<html data-presenting="true">`). The browser goes fullscreen when it allows it (a direct link cannot, since browsers want a click).
+- One admin rule: `AuthService.isAdmin` (admin and not presenting). Every page's `isAdmin()` uses it, so upload, clear, delete and cost-entry controls disappear. Also hidden while presenting: the "Get Sheet" downloads; on Overview the platform tabs, Present and Create report; and all per-product profit on Sales > Month by month (`profitVisible` also needs `!ui.presenting()`).
+- `notWhilePresentingGuard` sends `/profit`, `/profile`, `/reports`, `/uploads` and `/platforms/*` back to the Overview while presenting.
+- This is a display mode, not access control: the API still serves data to any logged-in user. For client-facing screens use a login whose role lacks the `profit` permission.
+
+## Reports page (v7)
+- `/reports` (any logged-in user): a client report for the brand picked in the sidebar, laid out as 16:9 slides with inline SVG charts (no chart library). "Download PDF" = `window.print()`; the page sets `@page` to the slide size with no margins, and the print rules in the Layout block of `public/style.css` hide everything except the slides.
+- Data: `GET /api/brand-report?brand=&months=YYYY-MM,...&profit=1` (requireAuth) -> `parser/brandReport.js` (pure; reads nothing itself). Default months: the latest four with data. `profit=1` is honoured only for accounts with the `profit` permission; anyone else gets `profit: null`. Campaign figures go through `aggregateTotals` / `aggregateByCampaign`, so ROAS is always recomputed from sums.
+- Drawing: `client/src/app/core/report-render.ts` builds the whole report as one HTML string; every value and text is escaped there, which is why the page may show it with `bypassSecurityTrustHtml`. Keep it that way: never insert unescaped text into the report.
+- Optional inputs on the page (price range, availability per product with store count, the three decisions) live only in the browser and are never saved. Each group has a "Use it in the report" switch; empty or switched-off inputs simply remove their slide or tile. Takeaways and suggested decisions are rule-based from the numbers.
+- The "Include profit and cost figures" switch (available only to accounts with `profit`, off by default) adds the Profit and ROI slide and the cost-sheet break-even ROAS. Leave it off for anything that goes to a client.
+- Tests: `node scripts/report-smoke.js`.
+
+## Changes of 14 Nov 2026
+
+- **Delete a whole brand:** `DELETE /api/brand?brand=X` (admin) removes the brand from stock, the 45/60-day stock history, sales, the sales trend history, monthly sales, advertising and the uploaded cost sheet. `&typed=1` also removes what was typed by hand on the Profit tab (COGS, GST %, commission %, settings, monthly other costs: `manual` and `otherCosts` in `brandCosts`). Brand aliases are kept. It also clears every saved "Undo the last upload" and the upload hashes. UI: a "Delete brand" button per row on the Uploads page (type the brand name to confirm), and a cross beside the selected brand in the sidebar that only navigates to `/uploads?wipe=<brand>`.
+- **45/60-day history reset:** `DELETE /api/inventory-data?history=1` (with or without `brand`) also clears the stock upload history (`clearSnapshotHistory` in `parser/snapshotHistory.js`). 45d / 60d then read n/a until about 30 days of new uploads exist. UI: a tick in the Stock Clear Data dialog, which spells out the consequence. The shared dialog takes `extraLabel` / `extraWarning` and emits `extraChange`.
+- **Menus never stick:** every right-click menu (Advertising edges and ATC / Qty / Sales headers, the Stock Status header) closes on one click or right-click outside it, Esc, a page scroll or a window resize. The old "double click to close after a tick" rule is gone; do not bring it back.
+- **Sales > Month by month:** the product dropdown is a tick menu ("All products" tick at the top, one tick per product, an "Only" shortcut per row). One tick uses `GET /api/product-month-detail` as before; several use `POST /api/product-month-detail { brand, products }`, which adds the products together (`buildProductSetDetail`). For several products "orders" is each product's orders added up, so the label becomes "Orders (per product)"; profit counts only products with a cost-sheet row (`profitMissing`).
+- **Advertising trend chart:** the line is drawn in real pixels (the plot box is measured with a ResizeObserver, `plotSize` / `trendLine()`), grid lines are plain elements, and no `vector-effect: non-scaling-stroke` is used anywhere, because the line did not show on one Mac. Do not go back to a stretched 0-100 viewBox with non-scaling strokes.
+
+## Users, roles and brand access
+
+- Roles and what they may do: `config/permissions.js`, one true/false table (allBrands, profit, upload, deleteData, download, manageUsers). The values there are placeholders until the team confirms them. A role not in the table has no access.
+- Every `/api` call: `middleware/access.js` loads the user's role and brands from storage (not from the session), so an admin's change applies on the user's next click. A deactivated user gets 401.
+- Brand rule for accounts without `allBrands`: every request must name one of the user's brands (`?brand=` or body `brand`). Any other brand, or a made-up one, gets the same `404 Not found.`. No brand parameter gets `400 Choose a brand first.`. JSON answers are cleaned (`brandUploads`, `brands`, `brandSummaries`, `allBrands`) so other brand names never leave the server.
+- Upload also needs `allBrands` (enforced in `permsFor`). Protected routes use `requirePerm(...)`; exports need `download`; profit fields need `profit`.
+- Users API: `routes/users.js` (manageUsers only). Email, password (bcrypt) and role stay in `admin_users`; name, brand ticks and active flag are in kv `userProfiles`. The last active admin cannot be demoted or deactivated. A password reset or deactivation ends that user's sessions.
+- Test: `node scripts/access-smoke.js` (no server or database needed). Express routes themselves are not covered by it.

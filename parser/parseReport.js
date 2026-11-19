@@ -1,5 +1,6 @@
 const XLSX = require('xlsx');
 const columnMap = require('./columnMap');
+const { normalizeBrand, loadAliases } = require('./brandResolver');
 
 /**
  * Turns a raw cell value into a clean number.
@@ -57,6 +58,7 @@ function parseReport(filePath) {
   }
 
   const dataRows = rows.slice(headerRowIndex + 1);
+  const aliases = loadAliases();
 
   const parsed = [];
   for (const row of dataRows) {
@@ -74,7 +76,7 @@ function parseReport(filePath) {
     parsed.push({
       itemId: String(record.itemId).trim(),
       productName: String(record.productName || '').trim(),
-      brandName: String(record.brandName || '').trim(),
+      brandName: normalizeBrand(String(record.brandName || ''), aliases),
       warehouseId: String(record.warehouseId).trim(),
       warehouseName: String(record.warehouseName || '').trim(),
 
@@ -91,7 +93,9 @@ function parseReport(filePath) {
 
       // Derived fields, per the accountant's export spec
       totalStockAvailable: toNumber(record.totalSellable),
-      incomingInventory: toNumber(record.netScheduledInventory),
+      // "Net scheduled" is already "Incoming scheduled" minus "Recalled", so adding the two
+      // double-counted. The incoming quantity is the "Incoming scheduled inventory" column.
+      incomingInventory: toNumber(record.incomingScheduledInventory),
     });
   }
 

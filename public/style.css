@@ -1,61 +1,390 @@
-* { box-sizing: border-box; }
+﻿/* ==========================================================================
+   Blinkit Dashboard — Apple-style liquid glass
+   Type: Apple system stack (SF Pro), Inter as cross-platform fallback.
+   Surfaces: translucent blurred glass over a soft grape/coral/mint backdrop.
+   Gradient-clip text is reserved for the brand and campaign highlights.
+   ========================================================================== */
+
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+
+* {
+  box-sizing: border-box;
+}
+
+:root {
+  --sidebar-width: 220px;
+
+  /* Playful palette */
+  --grape: #7c3aed;
+  --grape-rgb: 124, 58, 237;
+  --coral: #ff5470;
+  --coral-rgb: 255, 84, 112;
+  --mango: #ffb020;
+  --mango-rgb: 255, 176, 32;
+  --mint: #16c79a;
+  --mint-rgb: 22, 199, 154;
+
+  --gradient: linear-gradient(135deg, var(--grape) 0%, var(--coral) 55%, var(--mango) 100%);
+
+  /* Semantic roles, mapped onto the palette */
+  --accent: var(--grape);
+  --accent-rgb: var(--grape-rgb);
+  --accent-hover: #6b2fd6;
+
+  --success: #0ea573;
+  --success-rgb: 14, 165, 115;
+  --danger: var(--coral);
+  --danger-rgb: var(--coral-rgb);
+  --warning: #d98c00;
+  --warning-rgb: 217, 140, 0;
+
+  /* Light theme surface */
+  --bg: #fcfaff;
+  --surface: #ffffff;
+  --surface-rgb: 255, 255, 255;
+  --surface-alt: #f6f1ff;
+  --border: rgba(124, 58, 237, 0.12);
+  --text: #1a1523;
+  --text-muted: #6b6478;
+  --shadow: rgba(124, 58, 237, 0.1);
+
+  /* Liquid-glass tokens (Apple-style translucent surfaces) */
+  --glass-bg: rgba(255, 255, 255, 0.38);
+  --glass-bg-strong: rgba(255, 255, 255, 0.86);
+  --glass-border: rgba(255, 255, 255, 0.7);
+  --glass-highlight: rgba(255, 255, 255, 0.9);
+  --glass-shadow: 0 10px 30px -12px rgba(31, 20, 60, 0.22);
+  --glass-blur: blur(30px) saturate(190%);
+
+  --font-sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Inter", "Segoe UI", system-ui, sans-serif;
+  --font-display: -apple-system, BlinkMacSystemFont, "SF Pro Display", "Inter", system-ui, sans-serif;
+
+  --sidebar-bg: rgba(26, 21, 35, 0.78);
+  --sidebar-text: rgba(255, 255, 255, 0.68);
+  --sidebar-text-active: #ffffff;
+  --sidebar-border: rgba(255, 255, 255, 0.1);
+
+  color-scheme: light;
+}
+
+html[data-theme="dark"] {
+  --bg: #150f1f;
+  --surface: #201830;
+  --surface-rgb: 32, 24, 48;
+  --surface-alt: #291f3d;
+  --border: rgba(255, 255, 255, 0.1);
+  --text: #f6f2ff;
+  --text-muted: #a99cc2;
+  --shadow: rgba(0, 0, 0, 0.45);
+
+  --glass-bg: rgba(32, 24, 48, 0.38);
+  --glass-bg-strong: rgba(32, 24, 48, 0.88);
+  --glass-border: rgba(255, 255, 255, 0.12);
+  --glass-highlight: rgba(255, 255, 255, 0.08);
+  --glass-shadow: 0 10px 30px -12px rgba(0, 0, 0, 0.55);
+
+  --accent: #a875ff;
+  --accent-rgb: 168, 117, 255;
+  --accent-hover: #bd93ff;
+
+  --success: #2ee6ab;
+  --success-rgb: 46, 230, 171;
+  --danger: #ff7590;
+  --danger-rgb: 255, 117, 144;
+  --warning: #ffc857;
+  --warning-rgb: 255, 200, 87;
+
+  --sidebar-bg: rgba(14, 10, 22, 0.94);
+  --sidebar-border: rgba(255, 255, 255, 0.06);
+
+  color-scheme: dark;
+}
+
+/* Glass fallbacks: opaque surfaces when blur or transparency is unsupported/unwanted */
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  :root,
+  html[data-theme="dark"] {
+    --glass-bg: var(--glass-bg-strong);
+  }
+}
+
+@media (prefers-reduced-transparency: reduce) {
+  :root,
+  html[data-theme="dark"] {
+    --glass-bg: var(--glass-bg-strong);
+    --glass-blur: none;
+  }
+}
+
+/* Accessibility and readability */
+td,
+.card-value {
+  font-variant-numeric: tabular-nums;
+}
+
+button:focus-visible,
+select:focus-visible,
+input:focus-visible,
+a:focus-visible {
+  outline: 2px solid rgba(var(--accent-rgb), 0.75);
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+::selection {
+  background: var(--grape);
+  color: #fff;
+}
+
+::-moz-selection {
+  background: var(--grape);
+  color: #fff;
+}
+
+::-webkit-scrollbar {
+  width: 12px;
+  height: 12px;
+}
+
+::-webkit-scrollbar-track {
+  background: var(--bg);
+}
+
+::-webkit-scrollbar-thumb {
+  background: linear-gradient(180deg, var(--grape), var(--coral));
+  border-radius: 980px;
+  border: 3px solid var(--bg);
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: linear-gradient(180deg, var(--accent-hover), var(--coral));
+}
 
 body {
-  font-family: -apple-system, Segoe UI, Roboto, Arial, sans-serif;
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  letter-spacing: -0.005em;
   margin: 0;
-  background: #f4f6f8;
-  color: #1c2733;
+  background:
+    radial-gradient(circle at 12% 8%, rgba(var(--grape-rgb), 0.24), transparent 42%),
+    radial-gradient(circle at 88% 18%, rgba(var(--coral-rgb), 0.18), transparent 40%),
+    radial-gradient(circle at 55% 100%, rgba(var(--mint-rgb), 0.16), transparent 45%),
+    var(--bg);
+  background-attachment: fixed;
+  color: var(--text);
+  transition: background-color 0.25s ease, color 0.25s ease;
+}
+
+/* Gradient-clip text: reserved for the brand and campaign highlights. */
+.gradient-text,
+.sidebar-brand,
+.highlight-name {
+  font-family: var(--font-display);
+  font-weight: 600;
+  background: var(--gradient);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  color: var(--grape);
+  /* fallback for browsers without background-clip:text */
 }
 
 .topbar {
-  background: #ffffff;
-  border-bottom: 1px solid #e2e6ea;
+  position: sticky;
+  top: 0;
+  z-index: 50;
+  background: var(--glass-bg);
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
+  border-bottom: 1px solid var(--glass-border);
   padding: 16px 24px;
   display: flex;
   justify-content: space-between;
   align-items: center;
   flex-wrap: wrap;
   gap: 12px;
+  transition: background-color 0.25s ease, border-color 0.25s ease;
 }
 
 .topbar-left h1 {
-  font-size: 20px;
+  font-family: var(--font-display);
+  font-size: 24px;
+  font-weight: 700;
   margin: 0;
+  letter-spacing: -0.02em;
+  color: var(--text);
+}
+
+.topbar-left {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+
+.topbar-left > div {
+  min-width: 0;
+}
+
+.sidebar-brand app-brand-mark {
+  display: block;
+  flex: 0 0 32px;
+}
+
+.sidebar-brand .brand-mark {
+  display: block;
+  width: 32px;
+  height: 32px;
 }
 
 .muted {
-  color: #7c8794;
+  color: var(--text-muted);
   font-size: 13px;
 }
 
 .topbar-right {
   display: flex;
   gap: 10px;
+  align-items: center;
 }
 
-.upload-btn, .secondary-btn {
-  background: #f8b400;
-  color: #1c2733;
-  padding: 10px 18px;
-  border-radius: 6px;
+/* Playful pop-on-hover buttons */
+.upload-btn,
+.secondary-btn,
+button {
+  font-family: inherit;
+}
+
+.upload-btn,
+.secondary-btn {
+  background: rgba(var(--accent-rgb), 0.12);
+  backdrop-filter: blur(20px) saturate(180%);
+  -webkit-backdrop-filter: blur(20px) saturate(180%);
+  color: var(--accent);
+  padding: 10px 20px;
+  border-radius: 980px;
   font-weight: 600;
   cursor: pointer;
-  border: none;
+  border: 1px solid rgba(var(--accent-rgb), 0.25);
   font-size: 14px;
+  transition: background-color 0.2s ease, border-color 0.2s ease,
+    transform 0.25s cubic-bezier(0.34, 1.56, 0.64, 1), box-shadow 0.25s ease;
+}
+
+.upload-btn:hover,
+.secondary-btn:hover {
+  background: rgba(var(--accent-rgb), 0.2);
+  border-color: rgba(var(--accent-rgb), 0.4);
+  transform: translateY(-3px) scale(1.03);
+  box-shadow: 0 10px 20px -6px rgba(var(--accent-rgb), 0.45);
+}
+
+.upload-btn:active,
+.secondary-btn:active {
+  transform: translateY(-1px) scale(0.97);
 }
 
 .secondary-btn {
-  background: #eef1f4;
-  color: #1c2733;
+  background: rgba(var(--surface-rgb), 0.7);
+  color: var(--text);
+  border-color: var(--border);
+}
+
+.secondary-btn:hover {
+  background: rgba(var(--mango-rgb), 0.15);
+  border-color: rgba(var(--mango-rgb), 0.4);
+  color: #a35f00;
+  box-shadow: 0 10px 20px -6px rgba(var(--mango-rgb), 0.4);
+}
+
+html[data-theme="dark"] .secondary-btn:hover {
+  color: var(--warning);
+}
+
+.full-report-btn {
+  background: var(--gradient);
+  color: #fff;
+  border-color: transparent;
+}
+
+.full-report-btn:hover {
+  background: var(--gradient);
+  border-color: transparent;
+  color: #fff;
+  box-shadow: 0 12px 24px -6px rgba(var(--grape-rgb), 0.55);
+}
+
+.danger-btn {
+  background: rgba(var(--danger-rgb), 0.12);
+  color: var(--danger);
+  border-color: rgba(var(--danger-rgb), 0.28);
+}
+
+.danger-btn:hover {
+  background: rgba(var(--danger-rgb), 0.2);
+  border-color: rgba(var(--danger-rgb), 0.45);
+  color: var(--danger);
+  box-shadow: 0 10px 20px -6px rgba(var(--danger-rgb), 0.45);
+}
+
+.delete-btn {
+  background: rgba(var(--surface-rgb), 0.6);
+  color: var(--text-muted);
+  border: 1px solid var(--border);
+  border-radius: 980px;
+  padding: 5px 10px;
+  font-size: 13px;
+  cursor: pointer;
+  font-family: inherit;
+  transition: background-color 0.15s ease, color 0.15s ease, border-color 0.15s ease,
+    transform 0.2s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+.delete-btn:hover {
+  background: rgba(var(--danger-rgb), 0.12);
+  color: var(--danger);
+  border-color: rgba(var(--danger-rgb), 0.35);
+  transform: translateY(-2px) scale(1.08);
+}
+
+.delete-btn.confirming {
+  background: var(--danger);
+  color: #fff;
+  border-color: var(--danger);
+  font-weight: 600;
+  padding: 5px 12px;
+}
+
+.delete-btn:disabled {
+  opacity: 0.6;
+  cursor: default;
+  transform: none;
 }
 
 .upload-status {
   padding: 0 24px;
   font-size: 13px;
   min-height: 20px;
+  font-weight: 500;
 }
-.upload-status.error { color: #c0392b; }
-.upload-status.success { color: #1e8e3e; }
+
+.upload-status.error {
+  color: var(--danger);
+}
+
+.upload-status.success {
+  color: var(--success);
+}
 
 .cards {
   display: grid;
@@ -65,79 +394,4557 @@ body {
 }
 
 .card {
-  background: #fff;
-  border-radius: 10px;
-  padding: 16px 18px;
-  border: 1px solid #e2e6ea;
+  --card-accent-rgb: var(--grape-rgb);
+  position: relative;
+  overflow: hidden;
+  background-color: var(--glass-bg);
+  background-image: radial-gradient(circle at 100% 0%, rgba(var(--card-accent-rgb), 0.22), transparent 60%);
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
+  border-radius: 20px;
+  padding: 18px 20px 20px;
+  border: 1px solid var(--glass-border);
+  box-shadow: var(--glass-shadow), inset 0 1px 0 var(--glass-highlight);
+  transition: background-color 0.25s ease, border-color 0.25s ease,
+    transform 0.25s ease, box-shadow 0.25s ease;
+}
+
+/* Accent pill, coloured per card variant */
+.card::before {
+  content: '';
+  position: absolute;
+  top: 14px;
+  left: 20px;
+  width: 28px;
+  height: 4px;
+  border-radius: 980px;
+  background: rgb(var(--card-accent-rgb));
+}
+
+.card:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--glass-shadow), 0 16px 32px -14px var(--shadow),
+    inset 0 1px 0 var(--glass-highlight);
+}
+
+.card:nth-of-type(4n+1) {
+  --card-accent-rgb: var(--grape-rgb);
+}
+
+.card:nth-of-type(4n+2) {
+  --card-accent-rgb: var(--mango-rgb);
+}
+
+.card:nth-of-type(4n+3) {
+  --card-accent-rgb: var(--mint-rgb);
+}
+
+.card:nth-of-type(4n+4) {
+  --card-accent-rgb: var(--coral-rgb);
 }
 
 .card-label {
-  font-size: 13px;
-  color: #7c8794;
+  margin-top: 12px;
   margin-bottom: 6px;
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-muted);
 }
 
 .card-value {
-  font-size: 26px;
+  font-family: var(--font-display);
+  font-size: 32px;
   font-weight: 700;
+  line-height: 1.1;
+  letter-spacing: -0.02em;
+  color: var(--text);
+  overflow-wrap: anywhere;
 }
 
 .controls {
   padding: 20px 24px 0;
 }
 
-#searchBox {
-  width: 100%;
-  max-width: 320px;
-  padding: 10px 12px;
-  border: 1px solid #d5dbe1;
-  border-radius: 6px;
-  font-size: 14px;
+.feeder-product-filter {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  color: var(--text);
 }
 
+.feeder-product-filter label {
+  font-size: 13px;
+  font-weight: 600;
+}
+
+#feederProductFilter {
+  min-width: min(320px, 100%);
+  max-width: 100%;
+  padding: 9px 36px 9px 14px;
+  border: 1px solid var(--border);
+  border-radius: 980px;
+  background: var(--glass-bg);
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
+  color: var(--text);
+  font: inherit;
+}
+
+#feederProductFilter:focus {
+  outline: none;
+  border-color: rgba(var(--accent-rgb), 0.65);
+  box-shadow: 0 0 0 3px rgba(var(--accent-rgb), 0.15);
+}
+
+#searchBox,
+#periodSelect {
+  width: 100%;
+  max-width: 320px;
+  padding: 10px 14px;
+  border: 1px solid var(--border);
+  border-radius: 980px;
+  font-size: 14px;
+  background: rgba(var(--surface-rgb), 0.7);
+  backdrop-filter: blur(20px) saturate(180%);
+  -webkit-backdrop-filter: blur(20px) saturate(180%);
+  color: var(--text);
+  font-family: inherit;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+#searchBox:focus,
+#periodSelect:focus {
+  outline: none;
+  border-color: rgba(var(--accent-rgb), 0.55);
+  box-shadow: 0 0 0 4px rgba(var(--accent-rgb), 0.15);
+}
+
+/* The wrapper is the scroll container, so the table header can stick inside it */
 .table-wrap {
   padding: 16px 24px 40px;
-  overflow-x: auto;
+  max-height: calc(100vh - 160px);
+  overflow: auto;
 }
 
 table {
   width: 100%;
-  border-collapse: collapse;
-  background: #fff;
-  border-radius: 10px;
-  overflow: hidden;
+  border-collapse: separate;
+  border-spacing: 0;
+  background: var(--glass-bg-strong);
+  border-radius: 18px;
   min-width: 900px;
+  border: 1px solid var(--border);
 }
 
-th, td {
-  padding: 10px 14px;
+th,
+td {
+  padding: 11px 14px;
   text-align: left;
   font-size: 13.5px;
-  border-bottom: 1px solid #eef1f4;
+  border-bottom: 1px solid var(--border);
   white-space: nowrap;
 }
 
-th {
-  background: #f8f9fb;
-  color: #55606b;
-  cursor: pointer;
-  user-select: none;
+td {
+  height: 44px;
 }
 
-tbody tr:hover {
-  background: #fafbfc;
+tbody tr:last-child td {
+  border-bottom: none;
+}
+
+tbody tr:last-child td:first-child {
+  border-bottom-left-radius: 18px;
+}
+
+tbody tr:last-child td:last-child {
+  border-bottom-right-radius: 18px;
+}
+
+/* Header stays opaque so scrolled rows never show through */
+th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: var(--surface-alt);
+  color: var(--accent);
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  cursor: pointer;
+  user-select: none;
+  transition: background-color 0.15s ease;
+}
+
+th:first-child {
+  border-top-left-radius: 18px;
+}
+
+th:last-child {
+  border-top-right-radius: 18px;
+}
+
+th:hover {
+  background: linear-gradient(rgba(var(--accent-rgb), 0.12), rgba(var(--accent-rgb), 0.12)),
+    var(--surface-alt);
+}
+
+tbody tr {
+  transition: background-color 0.15s ease;
+}
+
+tbody tr:nth-child(even):not(.row-top):not(.row-low) {
+  background: rgba(var(--accent-rgb), 0.035);
+}
+
+tbody tr:not(.row-top):not(.row-low):hover {
+  background: var(--surface-alt);
+}
+
+/* Numeric columns right-aligned (column order matches each table's thead) */
+#productTable :is(th, td):nth-child(n+3):nth-child(-n+9),
+#feederProductTable :is(th, td):nth-child(n+3):nth-child(-n+6),
+#cityTable :is(th, td):nth-child(n+3):nth-child(-n+6),
+#campaignTable :is(th, td):nth-child(n+5):nth-child(-n+12) {
+  text-align: right;
+}
+
+#cityTable :is(th, td):first-child:not([colspan]),
+#campaignTable :is(th, td):first-child:not([colspan]) {
+  text-align: center;
 }
 
 .status-pill {
   display: inline-block;
-  padding: 3px 10px;
-  border-radius: 20px;
+  padding: 3px 12px;
+  border-radius: 980px;
   font-size: 12px;
   font-weight: 600;
 }
 
-.status-ok { background: #e3f5e6; color: #1e8e3e; }
-.status-low { background: #fff3d6; color: #b8860b; }
-.status-out { background: #fbe4e2; color: #c0392b; }
+.status-ok {
+  background: rgba(var(--success-rgb), 0.16);
+  color: var(--success);
+}
 
-.na { color: #b0b8c0; font-style: italic; }
+.status-low {
+  background: rgba(var(--warning-rgb), 0.18);
+  color: var(--warning);
+}
+
+.status-out {
+  background: rgba(var(--danger-rgb), 0.16);
+  color: var(--danger);
+}
+
+/* Stock status pills (parser/stockStatus.js). status-out above is shared with the red Out of Stock pill. */
+.status-healthy {
+  background: rgba(var(--success-rgb), 0.16);
+  color: var(--success);
+}
+
+.status-covered {
+  background: rgba(var(--accent-rgb), 0.14);
+  color: var(--accent);
+}
+
+.status-now {
+  background: rgba(var(--warning-rgb), 0.18);
+  color: var(--warning);
+}
+
+.status-urgent,
+.status-awaiting {
+  background: rgba(234, 108, 30, 0.2);
+  color: #d9531e;
+}
+
+.status-nosales {
+  background: rgba(128, 128, 128, 0.16);
+  color: var(--text-muted);
+}
+
+.status-surge {
+  color: var(--warning);
+}
+
+/* ---- Stock table: fixed column widths and one row height, so long text never stretches a column or a
+   row (like a spreadsheet). Text that does not fit is cut with "..." and shown in full on hover. ---- */
+#productTable.stock-table {
+  table-layout: auto;  /* columns follow their content (see "Column sizing" below); fixed only after a hand resize */
+  min-width: 0;
+}
+
+#productTable.stock-table.manual {
+  table-layout: fixed; /* hand-set widths: the <col> widths and the table width come from inventory-page colPx */
+}
+
+#productTable.stock-table :is(th, td) {
+  padding: 6px 7px;
+  border-right: 1px solid var(--border);
+  overflow: hidden;
+  vertical-align: middle;
+}
+
+#productTable.stock-table :is(th, td):last-child {
+  border-right: none;
+}
+
+#productTable.stock-table th {
+  white-space: normal;
+  line-height: 1.25;
+  vertical-align: bottom;
+}
+
+/* 48px of content = 3 lines of text; with the padding every row is the same 61px */
+#productTable.stock-table tbody td {
+  height: 48px;
+  white-space: normal;
+  font-size: 12.5px;
+}
+
+#productTable.stock-table tfoot td {
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.stock-table .col-product { width: auto; } /* takes the room left after the measured columns */
+.stock-table .col-warehouse { width: 96px; }
+.stock-table .col-num { width: 60px; } /* fits totals like 12,345 in bold */
+.stock-table .col-stock { width: 64px; } /* room for 5-digit stock with commas, e.g. 12,450 */
+.stock-table .col-incoming { width: 74px; }
+.stock-table .col-status { width: 160px; }
+.stock-table .col-action { width: 60px; }
+
+/* At most 3 lines in a cell; the rest is cut with "..." and shown in full on hover */
+.cell-clamp {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+  line-clamp: 3;
+  overflow: hidden;
+  line-height: 1.25;
+  overflow-wrap: anywhere;
+}
+
+.cell-detail {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+/* Pill, then the surge badge under it: tight line spacing so the pair never makes a row taller */
+.status-cell {
+  line-height: 1.1;
+}
+
+.status-cell .status-pill {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  vertical-align: middle;
+}
+
+.surge-badge {
+  display: block;
+  width: fit-content;
+  max-width: 100%;
+  margin-top: 4px;
+  padding: 1px 7px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  border: 1px solid rgba(var(--warning-rgb), 0.45);
+  border-radius: 980px;
+  color: var(--warning);
+  font-size: 11px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.stock-table .delete-btn {
+  padding: 3px 6px;
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.stock-table td:last-child {
+  text-align: center;
+}
+
+/* ---- Stock table polish: strong lines only where they carry meaning (under the header, around the
+   "Units sold" group, above the totals); thin lines everywhere else. Header in two rows: "Units sold"
+   spans 7d-60d. Product column stays pinned when the table scrolls sideways. No zebra stripes here:
+   the rows already carry hover and status colours. ---- */
+#productTable.stock-table {
+  --line-strong: color-mix(in srgb, var(--text) 45%, transparent);
+  --head-top-h: 30px; /* height of the first header row; the second row sticks right under it */
+  --pin-left: -24px;   /* minus .table-wrap's side padding, so the pinned column sits flush with the scroll edge */
+  --line-inner: color-mix(in srgb, var(--text) 24%, transparent); /* thin row/column lines, darker than --border */
+  border: 2px solid var(--line-strong); /* outer frame matches the strong inner lines */
+  font-family: Calibri, Carlito, "Segoe UI", Arial, sans-serif; /* Carlito = free Calibri look-alike (same letter widths) */
+}
+
+/* Calibri runs small, so the table text is a touch larger than the rest of the app */
+#productTable.stock-table tbody td,
+#productTable.stock-table tfoot td {
+  font-size: 13.5px;
+}
+
+#productTable.stock-table thead th {
+  font-size: 13.5px;
+}
+
+/* Thin inner lines, a step darker than elsewhere so rows and columns separate clearly */
+#productTable.stock-table :is(th, td) {
+  border-right-color: var(--line-inner);
+  border-bottom-color: var(--line-inner);
+}
+
+/* The second header row is never the table's corner: no rounded edge on its last cell */
+#productTable.stock-table thead tr.head-sub th:last-child {
+  border-radius: 0;
+}
+
+#productTable.stock-table thead th {
+  z-index: 2;
+  font-weight: 700;
+  vertical-align: middle;
+  border-bottom: 2px solid var(--line-strong);
+}
+
+#productTable.stock-table thead tr.head-top th.th-group {
+  height: var(--head-top-h);
+  box-sizing: border-box;
+  padding-top: 0;
+  padding-bottom: 0;
+  border-bottom: 1px solid var(--line-inner);
+  cursor: default;
+}
+
+#productTable.stock-table thead tr.head-sub th {
+  top: var(--head-top-h);
+}
+
+/* Every header is centred in its cell (the cells below keep text left, numbers right) */
+#productTable.stock-table thead th:is(.th-text, .th-num, .th-group, .th-static) { text-align: center; }
+#productTable.stock-table thead th:is(.th-static, .th-group) { cursor: default; }
+#productTable.stock-table thead th:is(.th-static, .th-group):hover { background: var(--surface-alt); }
+
+/* Strong lines: Product | Warehouse (the draggable line), and each side of the "Units sold" group (Stock's right edge and 60d's right edge) */
+#productTable.stock-table thead tr.head-top th:first-child,
+#productTable.stock-table :is(tbody, tfoot) td:first-child,
+#productTable.stock-table thead tr.head-top th:nth-child(3),
+#productTable.stock-table :is(tbody, tfoot) td:nth-child(3),
+#productTable.stock-table :is(th, td).g-end {
+  border-right: 2px solid var(--line-strong);
+}
+
+/* Centred data columns. Rule: a column that touches a strong separator line is centred top to bottom
+   (Stock and 7d on either side of the line before "Units sold", 60d and Incoming on either side of the
+   line after it), and so are Warehouse, the whole "Units sold" group, Status and What to do. Only Product stays left. */
+#productTable.stock-table :is(tbody, tfoot) td:is(:nth-child(n+2):nth-child(-n+11)) {
+  text-align: center;
+}
+
+#productTable.stock-table .status-cell .surge-badge {
+  margin-inline: auto;
+}
+
+/* Product column pinned on sideways scroll; it needs its own background so rows slide under it */
+#productTable.stock-table thead tr.head-top th:first-child {
+  left: var(--pin-left);
+  z-index: 3;
+}
+
+#productTable.stock-table :is(tbody, tfoot) td:first-child {
+  position: sticky;
+  left: var(--pin-left);
+  z-index: 1;
+  background: var(--surface);
+}
+
+#productTable.stock-table tbody tr:nth-child(even):not(:hover) {
+  background: none;
+}
+
+#productTable.stock-table tbody tr:hover td:first-child {
+  background: var(--surface-alt);
+}
+
+/* Totals row: strong line above, tinted like the header */
+#productTable.stock-table tfoot td,
+#productTable.stock-table tfoot td:first-child {
+  border-top: 2px solid var(--line-strong);
+  background: var(--surface-alt);
+}
+
+/* ---- Column sizing (automatic mode, no hand resize yet): every column shrinks to its content on one line
+   (width: 1% + nowrap) and Product alone takes the room left over, wrapping up to 3 lines. If even that
+   cannot fit, the table runs past the screen and scrolls sideways (Product stays pinned). ---- */
+#productTable.stock-table:not(.manual) col {
+  width: auto;
+}
+
+#productTable.stock-table:not(.manual) :is(th, td) {
+  width: 1%;
+  white-space: nowrap;
+}
+
+#productTable.stock-table:not(.manual) :is(thead tr.head-top th:first-child, tbody td:first-child, tfoot td:first-child) {
+  width: auto;
+  white-space: normal;
+}
+
+#productTable.stock-table:not(.manual) tbody td:first-child .cell-clamp {
+  min-width: 170px; /* Product never squeezed below this; past it the table scrolls instead */
+}
+
+/* Drag handle on every header's right edge (inventory-page startResize). Sits on the inside edge of each header (the cell clips overflow); shows an accent line on hover or drag. */
+#productTable.stock-table .col-resizer {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 4;
+  width: 8px;
+  cursor: col-resize;
+  touch-action: none;
+}
+
+#productTable.stock-table .col-resizer::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  right: 0;
+  width: 2px;
+  background: transparent;
+  transition: background-color 0.15s ease;
+}
+
+#productTable.stock-table .col-resizer:hover::after,
+#productTable.stock-table .col-resizer:active::after {
+  background: var(--accent);
+}
+
+/* One line, never wrapped: Warehouse, Status and What to do. Their columns are sized to the longest text in view (inventory-page colWidths) */
+.stock-table .cell-one-line {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Brand part of the product name, e.g. "Oicia" in "Oicia Spoon Set" */
+.stock-table .brand-name {
+  color: var(--accent);
+  font-weight: 600;
+}
+
+/* Quantities: zero is greyed so real numbers stand out; zero stock stays loud */
+.stock-table .qty-zero {
+  color: var(--text-muted);
+}
+
+.stock-table .qty-out {
+  color: var(--danger);
+  font-weight: 700;
+}
+
+/* ---- Sales tab tables: the same look as the Stock table (no drag-resize). Targeted by id, so the templates are
+   unchanged. Strong lines: outer frame, under the header, above totals, and right of the name column; thin darker
+   lines elsewhere. Every column is centred and fits its content on one line, except the name column (City, Product
+   or Month), which is left-aligned, wraps, and takes the spare width. The table scrolls sideways only if it cannot fit.
+   "[id]" and ":nth-child(n)" only raise specificity above the older per-table alignment rules. ---- */
+table:is(#feederCityTotals, #feederProductTable, #cityTable, #productCityTable, #productListTable, #productMonthsTable, #productMonthCityTable, #productMonthsBrandTable) {
+  --line-strong: color-mix(in srgb, var(--text) 45%, transparent);
+  --line-inner: color-mix(in srgb, var(--text) 24%, transparent);
+  table-layout: auto;
+  min-width: 0;
+  border: 2px solid var(--line-strong);
+  font-family: Calibri, Carlito, "Segoe UI", Arial, sans-serif;
+}
+
+table:is(#feederCityTotals, #feederProductTable, #cityTable, #productCityTable, #productListTable, #productMonthsTable, #productMonthCityTable, #productMonthsBrandTable)[id] :is(th, td):nth-child(n) {
+  width: 1%;
+  white-space: nowrap;
+  text-align: center;
+  vertical-align: middle;
+  font-size: 13.5px;
+  border-right: 1px solid var(--line-inner);
+  border-bottom-color: var(--line-inner);
+}
+
+table:is(#feederCityTotals, #feederProductTable, #cityTable, #productCityTable, #productListTable, #productMonthsTable, #productMonthCityTable, #productMonthsBrandTable) :is(th, td):last-child {
+  border-right: none;
+}
+
+table:is(#feederCityTotals, #feederProductTable, #cityTable, #productCityTable, #productListTable, #productMonthsTable, #productMonthCityTable, #productMonthsBrandTable) thead th {
+  font-weight: 700;
+  border-bottom: 2px solid var(--line-strong);
+}
+
+table:is(#feederCityTotals, #feederProductTable, #cityTable, #productCityTable, #productListTable, #productMonthsTable, #productMonthCityTable, #productMonthsBrandTable) tfoot td {
+  border-top: 2px solid var(--line-strong);
+  background: var(--surface-alt);
+}
+
+/* Name column: left, wraps, takes the spare width, strong line on its right (the header stays centred) */
+table#feederCityTotals[id][id] :is(th, td):nth-child(1):not([colspan]),
+table#feederProductTable[id][id] :is(th, td):nth-child(2):not([colspan]),
+table#cityTable[id][id] :is(th, td):nth-child(2):not([colspan]),
+table#productCityTable[id][id] :is(th, td):nth-child(2):not([colspan]),
+table#productListTable[id][id] :is(th, td):nth-child(2):not([colspan]),
+table#productMonthsTable[id][id] :is(th, td):nth-child(1):not([colspan]),
+table#productMonthCityTable[id][id] :is(th, td):nth-child(2):not([colspan]),
+table#productMonthsBrandTable[id][id] :is(th, td):nth-child(1):not([colspan]) {
+  width: auto;
+  white-space: normal;
+  border-right: 2px solid var(--line-strong);
+}
+
+table#feederCityTotals[id][id] :is(tbody, tfoot) td:nth-child(1),
+table#feederProductTable[id][id] :is(tbody, tfoot) td:nth-child(2),
+table#cityTable[id][id] :is(tbody, tfoot) td:nth-child(2),
+table#productCityTable[id][id] :is(tbody, tfoot) td:nth-child(2),
+table#productListTable[id][id] :is(tbody, tfoot) td:nth-child(2),
+table#productMonthsTable[id][id] :is(tbody, tfoot) td:nth-child(1),
+table#productMonthCityTable[id][id] :is(tbody, tfoot) td:nth-child(2),
+table#productMonthsBrandTable[id][id] :is(tbody, tfoot) td:nth-child(1) {
+  text-align: left;
+}
+
+/* City performance: city names are short, so City fits its content and the best-selling product column takes the
+   spare width instead (wrapping only if the screen is too narrow) */
+table#cityTable[id][id] :is(th, td):nth-child(2):not([colspan]) {
+  width: 1%;
+  white-space: nowrap;
+}
+
+table#cityTable[id][id] :is(th, td):nth-child(7) {
+  width: auto;
+  white-space: normal;
+}
+
+/* No zebra stripes (as on Stock); the City performance top/low tints stay */
+table:is(#feederCityTotals, #feederProductTable, #cityTable, #productCityTable, #productListTable, #productMonthsTable, #productMonthCityTable, #productMonthsBrandTable) tbody tr:nth-child(even):not(.row-top):not(.row-low):not(:hover) {
+  background: none;
+}
+
+/* Product list: brand in the accent colour, like the brand part of names on Stock */
+table#productListTable[id] tbody td:nth-child(3) {
+  color: var(--accent);
+  font-weight: 600;
+}
+
+/* ---- Profit and Advertising tables: the same look as Stock and Sales. Scoped to the two pages (the Profit tables
+   have no ids). Child combinators (">") keep it to each table's own rows, so the keyword breakdown table inside an
+   opened campaign row (.detail-table) and the opened row itself (colspan) are left as they were. ---- */
+:is(app-profit-page, app-campaign-page) table:not(.detail-table) {
+  --line-strong: color-mix(in srgb, var(--text) 45%, transparent);
+  --line-inner: color-mix(in srgb, var(--text) 24%, transparent);
+  table-layout: auto;
+  min-width: 0;
+  border: 2px solid var(--line-strong);
+  font-family: Calibri, Carlito, "Segoe UI", Arial, sans-serif;
+}
+
+:is(app-profit-page, app-campaign-page) table:not(.detail-table) > :is(thead, tbody, tfoot) > tr > :is(th, td):not([colspan]):nth-child(n),
+table:is(#brandTable, #campaignListTable)[id] > :is(thead, tbody, tfoot) > tr > :is(th, td).num:nth-child(n) {
+  width: 1%;
+  white-space: nowrap;
+  text-align: center;
+  vertical-align: middle;
+  font-size: 13.5px;
+  border-right: 1px solid var(--line-inner);
+  border-bottom-color: var(--line-inner);
+}
+
+:is(app-profit-page, app-campaign-page) table:not(.detail-table) > :is(thead, tbody, tfoot) > tr > :is(th, td):last-child {
+  border-right: none;
+}
+
+:is(app-profit-page, app-campaign-page) table:not(.detail-table) > thead > tr > th {
+  font-weight: 700;
+  border-bottom: 2px solid var(--line-strong);
+}
+
+:is(app-profit-page, app-campaign-page) table:not(.detail-table) > tfoot > tr > td {
+  border-top: 2px solid var(--line-strong);
+  background: var(--surface-alt);
+}
+
+/* Name column: left, wraps, takes the spare width, strong line on its right (header stays centred).
+   Profit: the first column (not the "Your numbers" table, whose first cell is an input). Advertising: Brand in the
+   brand table, Metric in the compare card, Campaign in the campaign list. */
+app-profit-page table:not(:has(> tbody > tr > td:first-child input)) > :is(thead, tbody, tfoot) > tr > :is(th, td):first-child:not([colspan]):nth-child(n),
+app-campaign-page .compare-card table > :is(thead, tbody, tfoot) > tr > :is(th, td):first-child:not([colspan]):nth-child(n),
+table#brandTable[id] > :is(thead, tbody, tfoot) > tr > :is(th, td):nth-child(2):not([colspan]):nth-child(n),
+table#campaignListTable[id] > :is(thead, tbody, tfoot) > tr > :is(th, td):nth-child(3):not([colspan]):nth-child(n) {
+  width: auto;
+  white-space: normal;
+  border-right: 2px solid var(--line-strong);
+}
+
+app-profit-page table:not(:has(> tbody > tr > td:first-child input)) > :is(tbody, tfoot) > tr > td:first-child:not([colspan]):nth-child(n),
+app-campaign-page .compare-card table > :is(tbody, tfoot) > tr > td:first-child:not([colspan]):nth-child(n),
+table#brandTable[id] > :is(tbody, tfoot) > tr > td:nth-child(2):not([colspan]):nth-child(n),
+table#campaignListTable[id] > :is(tbody, tfoot) > tr > td:nth-child(3):not([colspan]):nth-child(n) {
+  text-align: left;
+}
+
+/* A table with a totals row: its last body row is not the bottom edge, so no rounded corners there */
+/* (the repeated :nth-child(n) only outranks the Pro look's corner rule) */
+html table:has(> tfoot) > tbody > tr:last-child > td:nth-child(n):nth-child(n):nth-child(n) {
+  border-radius: 0;
+}
+
+/* No zebra stripes (top/low tints and the selected row tint stay) */
+:is(app-profit-page, app-campaign-page) table:not(.detail-table) > tbody > tr:nth-child(even):not(.row-top):not(.row-low):not(:hover) {
+  background: none;
+}
+
+/* The keyword breakdown inside an opened campaign row: drop the global 900px table minimum so it fits its box now
+   that the campaign list itself fits the screen */
+app-campaign-page .detail-table {
+  min-width: 0;
+}
+
+/* Campaign list: brand in the accent colour, like on Stock and Sales */
+table#campaignListTable[id] > tbody > tr:not(.detail-row) > td:nth-child(4) {
+  color: var(--accent);
+  font-weight: 600;
+}
+
+/* ---- Stock page: the list that drops down from the "Products Needing Urgent Action" card on hover or focus ---- */
+.card.card-hover-list {
+  overflow: visible;
+}
+
+.card-hover-list:hover,
+.card-hover-list:focus-within,
+.card-hover-list:focus {
+  z-index: 35;
+}
+
+.card-info {
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+/* The transparent top padding bridges the gap to the card, so the list stays open while the mouse moves down */
+.card-popover {
+  position: absolute;
+  top: 100%;
+  right: 0;
+  z-index: 35;
+  display: none;
+  width: max-content;
+  min-width: 100%;
+  max-width: min(600px, 92vw);
+  padding-top: 6px;
+}
+
+.card-hover-list:hover .card-popover,
+.card-hover-list:focus .card-popover,
+.card-hover-list:focus-within .card-popover {
+  display: block;
+}
+
+.card-popover-body {
+  max-height: min(480px, 70vh);
+  overflow: auto;
+  padding: 12px 14px 6px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.16);
+}
+
+.card-popover-title {
+  max-width: 520px;
+  margin-bottom: 8px;
+  color: var(--text-muted);
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.card-popover-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 7px 0;
+  border-top: 1px solid var(--border);
+  color: var(--text);
+  font-size: 13px;
+}
+
+.card-popover-name {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.card-popover-tags {
+  display: flex;
+  flex: none;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 6px;
+  max-width: 62%;
+}
+
+.card-popover .status-pill {
+  padding: 2px 9px;
+  font-size: 11.5px;
+  white-space: nowrap;
+}
+
+.card-popover-meta {
+  flex: none;
+  color: var(--text-muted);
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+/* ---- Stock page: search box and the feeder checklist side by side ---- */
+.stock-controls {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.stock-controls #searchBox {
+  flex: 0 1 320px;
+}
+
+.feeder-picker {
+  position: relative;
+}
+
+/* ---- Stock page: status filter chips (colours come from the status-<key> pill classes) ---- */
+.controls.status-filter {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding-top: 12px;
+}
+
+.status-chip {
+  padding: 5px 12px;
+  border: 1.5px solid transparent;
+  border-radius: 980px;
+  font: inherit;
+  font-size: 12.5px;
+  font-weight: 600;
+  white-space: nowrap;
+  cursor: pointer;
+  opacity: 0.72;
+  transition: opacity 0.15s ease, border-color 0.15s ease;
+}
+
+.status-chip:hover,
+.status-chip.active {
+  opacity: 1;
+}
+
+.status-chip.active {
+  border-color: currentColor;
+}
+
+.status-chip-all {
+  background: var(--surface-alt);
+  color: var(--text);
+}
+
+.status-chip-count {
+  margin-left: 4px;
+  font-weight: 700;
+  opacity: 0.75;
+}
+
+/* A parent chip whose statuses hang under it as a small tree: shown on hover, on keyboard focus,
+   or pinned open by a click (.open). */
+.status-group {
+  position: relative;
+  display: inline-flex;
+}
+
+.status-tree {
+  position: absolute;
+  top: 100%;
+  left: 10px;
+  z-index: 30;
+  display: none;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+  margin-top: 0;
+  padding: 12px 12px 10px 26px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.16);
+}
+
+.status-group:hover .status-tree,
+.status-group:focus-within .status-tree,
+.status-group.open .status-tree {
+  display: flex;
+}
+
+/* The trunk of the tree, and a branch to each status */
+.status-tree::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 24px;
+  left: 12px;
+  border-left: 1.5px solid var(--text-muted);
+  opacity: 0.45;
+}
+
+.status-tree .status-chip {
+  position: relative;
+  opacity: 1;
+}
+
+.status-tree .status-chip::before {
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: -15px;
+  width: 12px;
+  border-top: 1.5px solid var(--text-muted);
+  opacity: 0.45;
+}
+
+.feeder-menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  z-index: 40;
+  min-width: 270px;
+  max-height: 340px;
+  overflow: auto;
+  padding: 8px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.16);
+}
+
+.feeder-menu-actions {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 6px;
+  padding: 2px 2px 8px;
+  border-bottom: 1px solid var(--border);
+}
+
+.feeder-menu-actions button {
+  padding: 4px 8px;
+  border: none;
+  border-radius: 6px;
+  background: none;
+  color: var(--accent);
+  font: inherit;
+  font-size: 12.5px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.feeder-menu-actions button:hover {
+  background: rgba(var(--accent-rgb), 0.1);
+}
+
+.feeder-option {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px;
+  border-radius: 8px;
+  color: var(--text);
+  font-size: 13.5px;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.feeder-option:hover {
+  background: var(--surface-alt);
+}
+
+.feeder-option input {
+  width: 16px;
+  height: 16px;
+  accent-color: var(--accent);
+}
+
+.na {
+  color: var(--text-muted);
+  font-style: italic;
+}
+
+.nav-link {
+  color: var(--text);
+  text-decoration: none;
+  font-weight: 600;
+  font-size: 14px;
+  align-self: center;
+  padding: 10px 14px;
+  border-radius: 980px;
+  transition: background-color 0.2s ease, transform 0.2s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+.nav-link:hover {
+  background: rgba(var(--accent-rgb), 0.12);
+  text-decoration: none;
+  transform: translateY(-2px);
+}
+
+.legend {
+  padding: 14px 24px 0;
+  display: flex;
+  gap: 20px;
+  flex-wrap: wrap;
+  font-size: 13px;
+  color: var(--text-muted);
+}
+
+.legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  display: inline-block;
+}
+
+.dot-top {
+  background: var(--success);
+}
+
+.dot-low {
+  background: var(--danger);
+}
+
+.dot-up {
+  background: var(--success);
+}
+
+.dot-down {
+  background: var(--danger);
+}
+
+/* City performance row highlighting */
+tr.row-top {
+  background: rgba(var(--success-rgb), 0.09);
+}
+
+tr.row-top:hover {
+  background: rgba(var(--success-rgb), 0.16);
+}
+
+tr.row-low {
+  background: rgba(var(--danger-rgb), 0.09);
+}
+
+tr.row-low:hover {
+  background: rgba(var(--danger-rgb), 0.16);
+}
+
+.trend-up {
+  color: var(--success);
+  font-weight: 600;
+}
+
+.trend-down {
+  color: var(--danger);
+  font-weight: 600;
+}
+
+.trend-flat {
+  color: var(--text-muted);
+  font-weight: 600;
+}
+
+/* Sidebar */
+.sidebar {
+  position: fixed;
+  top: 0;
+  left: 0;
+  height: 100vh;
+  width: var(--sidebar-width);
+  background: var(--sidebar-bg);
+  backdrop-filter: blur(24px) saturate(180%);
+  -webkit-backdrop-filter: blur(24px) saturate(180%);
+  color: #fff;
+  display: flex;
+  flex-direction: column;
+  z-index: 100;
+  overflow: hidden;
+  border-right: 1px solid var(--sidebar-border);
+  transition: background-color 0.25s ease, transform 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.sidebar.collapsed {
+  transform: translateX(-100%);
+}
+
+.sidebar-brand {
+  padding: 20px 18px;
+  font-size: 17px;
+  border-bottom: 1px solid var(--sidebar-border);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.sidebar-nav {
+  list-style: none;
+  margin: 0;
+  padding: 10px 0;
+  flex: 1;
+  overflow-y: auto;
+  min-height: 0;
+}
+
+.sidebar-nav a {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 18px;
+  color: var(--sidebar-text);
+  text-decoration: none;
+  font-size: 14px;
+  white-space: nowrap;
+  border-radius: 0 980px 980px 0;
+  margin-right: 10px;
+  transition: background-color 0.15s ease, color 0.15s ease, transform 0.2s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+.sidebar-nav a:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--sidebar-text-active);
+  transform: translateX(3px);
+}
+
+.sidebar-nav a.active {
+  background: var(--gradient);
+  color: #fff;
+  font-weight: 600;
+}
+
+.sidebar-icon {
+  font-size: 15px;
+}
+
+/* Sidebar Focus & Brand Filter (Fixed at Bottom of Sidebar) */
+.sidebar-focus {
+  padding: 12px 14px;
+  border-top: 1px solid var(--sidebar-border);
+  margin-top: auto;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.sidebar-focus-label {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--sidebar-text);
+  margin-bottom: 5px;
+  display: block;
+}
+
+.sidebar-focus-select {
+  width: 100%;
+  padding: 8px 28px 8px 12px;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  color: #ffffff;
+  font-family: inherit;
+  font-size: 12.5px;
+  outline: none;
+  cursor: pointer;
+  appearance: none;
+  -webkit-appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='white' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 10px center;
+  transition: background-color 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.sidebar-focus-select:hover {
+  background-color: rgba(255, 255, 255, 0.14);
+  border-color: rgba(255, 255, 255, 0.3);
+}
+
+.sidebar-focus-select:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(var(--grape-rgb), 0.3);
+}
+
+.sidebar-focus-select option {
+  background: #201830;
+  color: #ffffff;
+  padding: 8px;
+}
+
+/* Theme toggle */
+.sidebar-footer {
+  padding: 6px 10px 14px;
+  border-top: 1px solid var(--sidebar-border);
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.sidebar-logout {
+  margin-top: 10px;
+  height: 34px;
+  padding: 0 14px;
+  border-radius: 999px;
+  border: 1px solid var(--sidebar-border);
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--sidebar-text);
+  font: inherit;
+  font-size: 12.5px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background-color 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+}
+
+.sidebar-logout:hover {
+  background: rgba(var(--danger-rgb), 0.2);
+  border-color: rgba(var(--danger-rgb), 0.5);
+  color: #fff;
+}
+
+/* Dark-mode switch: two icons with a sliding thumb behind the active one */
+.theme-switch {
+  position: relative;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  align-items: center;
+  width: 68px;
+  height: 34px;
+  margin-top: 10px;
+  padding: 0;
+  border-radius: 999px;
+  border: 1px solid var(--sidebar-border);
+  background: rgba(255, 255, 255, 0.08);
+  cursor: pointer;
+  transition: background-color 0.2s ease, border-color 0.2s ease;
+}
+
+.theme-switch:hover {
+  border-color: rgba(255, 255, 255, 0.28);
+}
+
+.theme-switch-thumb {
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: var(--gradient);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3);
+  transition: transform 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.theme-switch-icon {
+  position: relative;
+  text-align: center;
+  font-size: 14px;
+  line-height: 1;
+  opacity: 0.55;
+  transition: opacity 0.2s ease;
+}
+
+html:not([data-theme="dark"]) .theme-switch-icon:first-of-type,
+html[data-theme="dark"] .theme-switch-icon:last-of-type {
+  opacity: 1;
+}
+
+html[data-theme="dark"] .theme-switch-thumb {
+  transform: translateX(32px);
+}
+
+.sidebar-resize-handle {
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 5px;
+  height: 100%;
+  cursor: col-resize;
+}
+
+.sidebar-resize-handle:hover {
+  background: rgba(var(--grape-rgb), 0.4);
+}
+
+.main-content {
+  margin-left: var(--sidebar-width);
+  transition: margin-left 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.main-content.sidebar-collapsed {
+  margin-left: 0;
+}
+
+.sidebar-collapse-toggle {
+  position: fixed;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  color: var(--accent);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  z-index: 150;
+  font-size: 13px;
+  padding: 0;
+  box-shadow: 0 1px 4px var(--shadow);
+  transition: left 0.25s cubic-bezier(0.4, 0, 0.2, 1), background-color 0.2s ease,
+    border-color 0.2s ease, color 0.2s ease, transform 0.2s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+.shortcut-hint {
+  position: fixed;
+  left: 50%;
+  bottom: 20px;
+  z-index: 999;
+  transform: translateX(-50%);
+  padding: 9px 16px;
+  border-radius: 980px;
+  background: rgba(28, 28, 30, 0.9);
+  color: #fff;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.22);
+  font-size: 13px;
+  white-space: nowrap;
+}
+
+.shortcut-hint kbd {
+  display: inline-block;
+  margin-left: 9px;
+  color: #7ab8ff;
+  font: inherit;
+  font-weight: 700;
+}
+
+.sidebar-collapse-toggle:hover {
+  background: rgba(var(--accent-rgb), 0.14);
+  border-color: rgba(var(--accent-rgb), 0.4);
+  transform: translateY(-50%) scale(1.15);
+}
+
+.sidebar-collapse-toggle .arrow {
+  display: inline-block;
+  transition: transform 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.sidebar-collapse-toggle.collapsed .arrow {
+  transform: rotate(180deg);
+}
+
+@media (max-width: 700px) {
+  .sidebar {
+    position: static;
+    width: 100% !important;
+    height: auto;
+    transform: none !important;
+  }
+
+  .sidebar-nav {
+    display: flex;
+    flex-wrap: wrap;
+  }
+
+  .sidebar-footer {
+    border-top: none;
+  }
+
+  .main-content {
+    margin-left: 0 !important;
+  }
+
+  .topbar {
+    position: static;
+    padding: 14px 16px;
+  }
+
+  .table-wrap {
+    max-height: none;
+  }
+
+  .topbar-left,
+  .topbar-right {
+    width: 100%;
+    min-width: 0;
+  }
+
+  .topbar-left h1 {
+    font-size: 21px;
+  }
+
+  .topbar-right {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+
+  .topbar-right > .user-info {
+    flex: 1 0 100%;
+    border: 0;
+    margin: 0;
+    padding: 0;
+  }
+
+  .topbar-right > .upload-btn,
+  .topbar-right > .secondary-btn,
+  .topbar-right > .logout-btn {
+    flex: 1 1 calc(50% - 8px);
+    min-width: 0;
+    max-width: 100%;
+    padding: 9px 8px;
+    text-align: center;
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+
+  .controls {
+    padding: 16px 16px 0;
+  }
+
+  #searchBox {
+    width: 100%;
+    max-width: none;
+  }
+
+  .shortcut-hint {
+    bottom: 12px;
+    max-width: calc(100vw - 24px);
+    white-space: normal;
+    text-align: center;
+  }
+
+  .sidebar-collapse-toggle {
+    display: none;
+  }
+}
+
+/* Campaign Analysis page */
+.campaign-controls {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.filter-label {
+  font-size: 13px;
+  color: var(--text-muted);
+  font-weight: 600;
+}
+
+.campaign-highlights {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 16px;
+  padding: 16px 24px 0;
+}
+
+.highlight-card,
+.funnel-card {
+  background: var(--surface);
+  border-radius: 18px;
+  padding: 16px 18px;
+  border: 1px solid var(--border);
+  transition: background-color 0.25s ease, border-color 0.25s ease,
+    transform 0.25s cubic-bezier(0.34, 1.56, 0.64, 1), box-shadow 0.25s ease;
+}
+
+.highlight-card:hover,
+.funnel-card:hover {
+  transform: translateY(-3px);
+  box-shadow: 0 14px 26px -10px var(--shadow);
+}
+
+.highlight-best {
+  border-left: 4px solid var(--success);
+}
+
+.highlight-worst {
+  border-left: 4px solid var(--danger);
+}
+
+.highlight-label {
+  font-size: 12px;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  margin-bottom: 6px;
+  font-weight: 600;
+}
+
+.highlight-name {
+  font-size: 18px;
+  margin-bottom: 4px;
+}
+
+.highlight-metric {
+  font-size: 13px;
+  color: var(--text-muted);
+}
+
+.funnel-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.funnel-row>div:not(.funnel-arrow) {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.funnel-row strong {
+  font-size: 16px;
+  color: var(--text);
+}
+
+.funnel-arrow {
+  color: var(--text-muted);
+  font-size: 16px;
+}
+
+/* Focus Banner (Across Tabs) */
+.focus-banner {
+  background: linear-gradient(135deg, rgba(var(--grape-rgb), 0.14) 0%, rgba(var(--coral-rgb), 0.12) 100%);
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
+  border-bottom: 1px solid rgba(var(--grape-rgb), 0.2);
+  padding: 10px 24px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 13.5px;
+  color: var(--text);
+  animation: fadeIn 0.2s ease;
+}
+
+.focus-banner strong {
+  color: var(--accent);
+}
+
+.focus-banner-clear {
+  background: rgba(var(--coral-rgb), 0.12);
+  color: var(--danger);
+  border: 1px solid rgba(var(--coral-rgb), 0.28);
+  border-radius: 980px;
+  padding: 4px 12px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.focus-banner-clear:hover {
+  background: var(--danger);
+  color: #fff;
+  border-color: var(--danger);
+  transform: translateY(-1px);
+}
+
+/* ================================================================
+   AUTH STYLES
+   ================================================================ */
+
+.user-info {
+  font-size: 13px;
+  color: var(--text-muted);
+  padding-right: 6px;
+  border-right: 1px solid var(--border);
+  margin-right: 4px;
+}
+
+.logout-btn {
+  background: rgba(var(--danger-rgb), 0.05);
+  border: 1px solid var(--border);
+  color: var(--text-muted);
+  padding: 9px 16px;
+  border-radius: 980px;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.logout-btn:hover {
+  background: rgba(var(--danger-rgb), 0.1);
+  color: var(--danger);
+  border-color: rgba(var(--danger-rgb), 0.2);
+}
+
+/* ================================================================
+   LOGIN PAGE
+   ================================================================ */
+
+.login-body {
+  background: var(--bg);
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.login-container {
+  width: 100%;
+  max-width: 420px;
+  padding: 20px;
+}
+
+.login-card {
+  background: var(--glass-bg-strong);
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
+  border-radius: 24px;
+  padding: 40px 36px;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.08), 0 0 0 1px var(--border);
+  animation: fadeUp 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+html[data-theme="dark"] .login-card {
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.4), 0 0 0 1px var(--border);
+}
+
+@keyframes fadeUp {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.login-header {
+  text-align: center;
+  margin-bottom: 32px;
+}
+
+.login-logo {
+  margin-bottom: 16px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 48px;
+  height: 48px;
+  background: var(--gradient);
+  border-radius: 14px;
+  color: white;
+  font-family: var(--font-display);
+  font-size: 26px;
+  font-weight: 700;
+  box-shadow: 0 8px 16px rgba(124, 58, 237, 0.25);
+}
+
+.login-header h1 {
+  font-size: 24px;
+  margin: 0 0 6px;
+  color: var(--text);
+  font-family: var(--font-display);
+}
+
+.login-header .muted {
+  font-size: 14px;
+  color: var(--text-muted);
+}
+
+.form-group {
+  margin-bottom: 20px;
+}
+
+.form-group label {
+  display: block;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-muted);
+  margin-bottom: 8px;
+}
+
+.form-group input {
+  width: 100%;
+  padding: 14px 16px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  font-size: 15px;
+  font-family: inherit;
+  transition: border-color 0.2s, box-shadow 0.2s;
+  background: var(--surface-alt);
+  color: var(--text);
+}
+
+.form-group input:focus {
+  outline: none;
+  border-color: var(--grape);
+  box-shadow: 0 0 0 4px rgba(var(--grape-rgb), 0.15);
+  background: var(--surface);
+}
+
+.login-error {
+  background: rgba(var(--danger-rgb), 0.12);
+  color: var(--danger);
+  padding: 12px 16px;
+  border-radius: 10px;
+  font-size: 13px;
+  margin-bottom: 20px;
+  font-weight: 500;
+  text-align: center;
+}
+
+.login-btn {
+  width: 100%;
+  padding: 16px;
+  background: var(--gradient);
+  color: #fff;
+  border: none;
+  border-radius: 12px;
+  font-size: 16px;
+  font-weight: 600;
+  cursor: pointer;
+  font-family: inherit;
+  transition: transform 0.2s cubic-bezier(0.34, 1.56, 0.64, 1), box-shadow 0.2s ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+
+.login-btn:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 12px 24px -8px rgba(var(--grape-rgb), 0.5);
+}
+
+.login-btn:active {
+  transform: translateY(0);
+}
+
+.login-btn:disabled {
+  opacity: 0.7;
+  cursor: not-allowed;
+  transform: none;
+}
+
+.spinner {
+  width: 18px;
+  height: 18px;
+  border: 2.5px solid rgba(255, 255, 255, 0.2);
+  border-top-color: #fff;
+  border-radius: 50%;
+  animation: spin 0.6s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* Campaign Analysis: brand-first layout */
+.sheet-tabs {
+  display: inline-flex;
+  gap: 4px;
+  padding: 3px;
+  border: 1px solid var(--border);
+  border-radius: 980px;
+  background: var(--surface-alt);
+}
+
+.sheet-tab {
+  border: 0;
+  background: transparent;
+  color: var(--text-muted);
+  padding: 5px 14px;
+  border-radius: 980px;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.sheet-tab.active {
+  background: var(--accent);
+  color: #fff;
+}
+
+/* A table that must show all its rows (e.g. every city of one product) instead of scrolling inside its own box. */
+.table-wrap.table-flat {
+  max-height: none;
+  overflow-x: auto;
+  overflow-y: visible;
+}
+
+.brand-bar {
+  padding: 4px 24px 0;
+}
+
+.brand-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.brand-chip {
+  position: relative;
+  overflow: hidden;
+  display: inline-flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 8px 16px;
+  border: 1px solid var(--border);
+  border-radius: 980px;
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.brand-chip-fill {
+  position: absolute;
+  inset: 0 auto 0 0;
+  background: rgba(var(--accent-rgb), 0.14);
+  pointer-events: none;
+}
+
+.brand-chip-name,
+.brand-chip-spend {
+  position: relative;
+}
+
+.brand-chip-spend {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-muted);
+}
+
+.brand-chip.active {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px rgba(var(--accent-rgb), 0.25);
+}
+
+.brand-chip.unknown {
+  border-style: dashed;
+}
+
+.brand-note {
+  padding: 8px 24px 0;
+  font-size: 13px;
+}
+
+.section-title {
+  margin: 4px 0 10px;
+  font-size: 15px;
+}
+
+.compare-card {
+  margin: 16px 24px 0;
+  padding: 16px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 18px;
+  overflow-x: auto;
+}
+
+#brandTable .num,
+#campaignListTable .num,
+.compare-card .num,
+.detail-table .num {
+  text-align: right;
+}
+
+tr.clickable {
+  cursor: pointer;
+}
+
+tr.row-selected td {
+  background: rgba(var(--accent-rgb), 0.1);
+}
+
+tr.detail-row > td {
+  white-space: normal;
+  background: var(--surface-alt);
+}
+
+.detail-grid {
+  display: grid;
+  grid-template-columns: minmax(260px, 1fr) minmax(420px, 2fr);
+  gap: 24px;
+  padding: 8px 4px;
+}
+
+.sparkline {
+  /* Same shape as its 300 x 70 drawing, so the lines are never stretched and keep an even thickness in every browser. */
+  width: 100%;
+  height: auto;
+  aspect-ratio: 300 / 70;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+}
+
+.sparkline polyline {
+  fill: none;
+  stroke-width: 1.4;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+}
+
+.spark-sales {
+  stroke: var(--mint);
+}
+
+.spark-spend {
+  stroke: var(--coral);
+}
+
+.spark-legend {
+  display: flex;
+  gap: 14px;
+  align-items: center;
+  margin-top: 6px;
+  font-size: 12px;
+}
+
+.spark-key::before {
+  content: '';
+  display: inline-block;
+  width: 10px;
+  height: 3px;
+  margin-right: 5px;
+  vertical-align: middle;
+  border-radius: 2px;
+}
+
+.spark-key-sales::before {
+  background: var(--mint);
+}
+
+.spark-key-spend::before {
+  background: var(--coral);
+}
+
+.funnel-arrow small {
+  display: block;
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+@media (max-width: 900px) {
+  .detail-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* Inventory: the page scrolls as a whole; only the table header stays pinned */
+.topbar.topbar-static {
+  position: static;
+}
+
+@media (min-width: 1100px) {
+  .table-wrap.table-wrap-page {
+    max-height: none;
+    overflow: visible;
+  }
+}
+
+/* Sales, Profit and Advertising: same as Stock. The top bar scrolls away with the page and each table shows all
+   its rows with the page scrolling, instead of scrolling inside its own short box; table headers stay pinned. */
+:is(app-sales-page, app-profit-page, app-campaign-page) > .topbar {
+  position: static;
+}
+
+@media (min-width: 1100px) {
+  :is(app-sales-page, app-profit-page, app-campaign-page) .table-wrap {
+    max-height: none;
+    overflow: visible;
+  }
+}
+
+/* Active brand/feeder filter: a small floating pill so it never pushes page content */
+.focus-banner {
+  position: fixed;
+  right: 20px;
+  bottom: 20px;
+  z-index: 60;
+  padding: 6px 8px 6px 14px;
+  gap: 8px;
+  border: 1px solid rgba(var(--grape-rgb), 0.25);
+  border-radius: 980px;
+  background: var(--glass-bg-strong);
+  box-shadow: var(--glass-shadow);
+}
+
+.focus-banner-clear {
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+  line-height: 1;
+}
+
+/* Shared pill styling for the page-level select / search controls */
+#feederSelect,
+.styled-select,
+#campaignSearch,
+#productSearch {
+  min-width: 200px;
+  max-width: 320px;
+  padding: 9px 36px 9px 14px;
+  border: 1px solid var(--border);
+  border-radius: 980px;
+  background: rgba(var(--surface-rgb), 0.7);
+  backdrop-filter: blur(20px) saturate(180%);
+  -webkit-backdrop-filter: blur(20px) saturate(180%);
+  color: var(--text);
+  font: inherit;
+  font-size: 14px;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+#campaignSearch,
+#productSearch,
+input.styled-select {
+  padding-right: 14px;
+  width: 100%;
+}
+
+#feederSelect:focus,
+.styled-select:focus,
+#campaignSearch:focus,
+#productSearch:focus {
+  outline: none;
+  border-color: rgba(var(--accent-rgb), 0.55);
+  box-shadow: 0 0 0 4px rgba(var(--accent-rgb), 0.15);
+}
+
+#feederSelect option,
+#periodSelect option {
+  background: var(--surface);
+  color: var(--text);
+}
+
+/* Tier tint must show on every cell, whichever table it is in */
+tbody tr.row-top > td {
+  background: rgba(var(--success-rgb), 0.09);
+}
+
+tbody tr.row-low > td {
+  background: rgba(var(--danger-rgb), 0.09);
+}
+
+tbody tr.row-top:hover > td {
+  background: rgba(var(--success-rgb), 0.16);
+}
+
+tbody tr.row-low:hover > td {
+  background: rgba(var(--danger-rgb), 0.16);
+}
+
+/* Clear-data dialog (which brand to delete) */
+.dialog-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  background: rgba(15, 10, 25, 0.5);
+  backdrop-filter: blur(4px);
+}
+
+.dialog {
+  width: min(420px, 100%);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 22px;
+  border-radius: 18px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  box-shadow: var(--glass-shadow);
+}
+
+.dialog h2 {
+  margin: 0 0 4px;
+  font-size: 18px;
+  text-transform: capitalize;
+}
+
+.dialog select {
+  padding: 9px 36px 9px 14px;
+  border: 1px solid var(--border);
+  border-radius: 980px;
+  background: rgba(var(--surface-rgb), 0.7);
+  color: var(--text);
+  font: inherit;
+  font-size: 14px;
+}
+
+.dialog select:focus {
+  outline: none;
+  border-color: rgba(var(--accent-rgb), 0.55);
+  box-shadow: 0 0 0 4px rgba(var(--accent-rgb), 0.15);
+}
+
+.dialog-warning {
+  margin: 4px 0 0;
+  font-size: 13px;
+  color: var(--danger);
+}
+
+.dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 8px;
+}
+
+/* ==========================================================================
+   Brand overview (one brand per screen, for client meetings)
+   Built on the existing glass tokens; only layout pieces are new here.
+   ========================================================================== */
+a.secondary-btn {
+  display: inline-flex;
+  align-items: center;
+  text-decoration: none;
+}
+
+.overview-section {
+  padding: 28px 24px 0;
+}
+
+.overview-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-end;
+  flex-wrap: wrap;
+  gap: 16px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--border);
+}
+
+.overview-head h2 {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: 20px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  color: var(--text);
+}
+
+.overview-head p {
+  margin: 4px 0 0;
+  font-size: 13px;
+}
+
+.overview-link {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--accent);
+  text-decoration: none;
+}
+
+.overview-link:hover {
+  text-decoration: underline;
+}
+
+.overview-link:focus-visible,
+.brand-picker-item:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.overview-cards {
+  padding: 16px 0 0;
+}
+
+.overview-split {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+  margin-top: 16px;
+}
+
+.overview-list {
+  background: var(--glass-bg);
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
+  border: 1px solid var(--glass-border);
+  border-radius: 16px;
+  padding: 16px 18px;
+}
+
+.overview-list h3 {
+  margin: 0 0 12px;
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.overview-list > p {
+  margin: 12px 0 0;
+  font-size: 12px;
+}
+
+.rank-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 12px;
+}
+
+.rank-list li {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  column-gap: 12px;
+  row-gap: 4px;
+  align-items: baseline;
+}
+
+.rank-name {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text);
+  overflow-wrap: anywhere;
+}
+
+.rank-value {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+
+.rank-bar {
+  grid-column: 1 / -1;
+  height: 6px;
+  border-radius: 980px;
+  background: rgba(var(--accent-rgb), 0.1);
+  overflow: hidden;
+}
+
+.rank-bar > span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--accent);
+}
+
+.rank-share {
+  grid-column: 1 / -1;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.month-bars {
+  display: flex;
+  align-items: flex-end;
+  gap: 16px;
+  min-height: 220px;
+  padding: 20px 4px 4px;
+  overflow-x: auto;
+}
+
+.month-bar {
+  flex: 1 1 0;
+  min-width: 72px;
+  max-width: 140px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+}
+
+.month-bar-value {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.month-bar-track {
+  width: 100%;
+  height: 160px;
+  display: flex;
+  align-items: flex-end;
+  border-radius: 10px;
+  background: rgba(var(--accent-rgb), 0.06);
+}
+
+.month-bar-fill {
+  display: block;
+  width: 100%;
+  border-radius: 10px;
+  background: var(--accent);
+  transition: height 0.3s ease;
+}
+
+/* A partial month is hatched so it isn't read as a full month's drop */
+.month-bar.partial .month-bar-fill {
+  background: repeating-linear-gradient(135deg, rgba(var(--accent-rgb), 0.6) 0 6px, rgba(var(--accent-rgb), 0.35) 6px 12px);
+}
+
+.month-bar-label {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
+.overview-footnote {
+  margin: 8px 0 0;
+  font-size: 12px;
+}
+
+.overview-none {
+  margin: 16px 0 0;
+  padding: 16px 18px;
+  border: 1px dashed var(--border);
+  border-radius: 14px;
+  font-size: 14px;
+  color: var(--text-muted);
+}
+
+.overview-note {
+  margin: 14px 0 0;
+  font-size: 14px;
+  color: var(--text);
+}
+
+.overview-table {
+  padding: 16px 0 0;
+  max-height: none;
+}
+
+.overview-loading {
+  padding: 24px;
+}
+
+.overview-empty {
+  max-width: 640px;
+  margin: 48px auto;
+  padding: 0 24px;
+  text-align: center;
+}
+
+.overview-empty h2 {
+  margin: 0 0 8px;
+  font-family: var(--font-display);
+  font-size: 24px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  color: var(--text);
+}
+
+.overview-empty p {
+  margin: 0 0 20px;
+  line-height: 1.55;
+}
+
+.brand-picker {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 10px;
+}
+
+.brand-picker-item {
+  font: inherit;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text);
+  background: var(--glass-bg-strong);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 12px 20px;
+  cursor: pointer;
+  transition: border-color 0.2s ease, color 0.2s ease;
+}
+
+.brand-picker-item:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+@media (max-width: 900px) {
+  .overview-split {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .month-bar-fill {
+    transition: none;
+  }
+}
+
+/* ==========================================================================
+   Monthly comparison
+   ========================================================================== */
+.month-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.month-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.month-chip {
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-muted);
+  background: var(--glass-bg-strong);
+  border: 1px solid var(--border);
+  border-radius: 980px;
+  padding: 6px 14px;
+  cursor: pointer;
+}
+
+.month-chip.active {
+  color: #fff;
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+.month-chip:focus-visible,
+.link-btn:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.month-cards .card-value {
+  font-size: 28px;
+}
+
+.delta {
+  display: inline-block;
+  margin-top: 6px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.delta.up {
+  color: var(--success);
+}
+
+.delta.down {
+  color: var(--danger);
+}
+
+.month-card-stats {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px 12px;
+  margin: 14px 0 0;
+}
+
+.month-card-stats div {
+  min-width: 0;
+}
+
+.month-card-stats dt {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.month-card-stats dd {
+  margin: 2px 0 0;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+
+.month-card-range {
+  margin: 12px 0 0;
+  font-size: 12px;
+}
+
+/* Comparison tables grow with their rows instead of scrolling inside a box */
+.compare-table {
+  max-height: none;
+  overflow-x: auto;
+  overflow-y: visible;
+}
+
+.compare-table h3 {
+  margin: 0 0 4px;
+}
+
+.compare-table > p {
+  margin: 0 0 12px;
+  font-size: 13px;
+}
+
+.compare-table th,
+.compare-table td {
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.compare-table td:first-child {
+  white-space: normal;
+}
+
+.link-btn {
+  font: inherit;
+  font-weight: 700;
+  color: var(--accent);
+  background: none;
+  border: 0;
+  padding: 0 0 0 8px;
+  cursor: pointer;
+  text-decoration: underline;
+}
+
+.manage-months {
+  margin: 8px 24px 40px;
+  padding: 12px 16px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+}
+
+.manage-months summary {
+  cursor: pointer;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.manage-months ul {
+  list-style: none;
+  margin: 12px 0 0;
+  padding: 0;
+  display: grid;
+  gap: 8px;
+}
+
+.manage-months li {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+/* Brand overview: period lines and cards that open their detail page */
+.overview-head .overview-period {
+  margin: 4px 0 0;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.overview-card-link {
+  display: block;
+  color: inherit;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.overview-card-link:hover {
+  border-color: rgba(var(--accent-rgb), 0.45);
+}
+
+.overview-card-link:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* ==========================================================================
+   Layout for the brand workspace pages (v7). Works with both looks:
+   Pro and Glass. Colours come from the tokens of the active look.
+   ========================================================================== */
+.sidebar-icon {
+  display: inline-flex;
+  align-items: center;
+}
+
+.sidebar-icon svg {
+  width: 18px;
+  height: 18px;
+}
+
+.brand-switcher {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+}
+
+.brand-switcher:focus-within {
+  border-color: var(--accent);
+}
+
+.brand-avatar {
+  flex: 0 0 26px;
+  width: 26px;
+  height: 26px;
+  border-radius: 6px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(var(--accent-rgb), 0.14);
+  color: var(--accent);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.brand-switcher .sidebar-focus-select {
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: 4px 22px 4px 2px;
+  border: 0;
+  border-radius: 6px;
+  background-color: transparent;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%23888780' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M8 9l4 -4l4 4'/%3E%3Cpath d='M16 15l-4 4l-4 -4'/%3E%3C/svg%3E");
+  background-position: right 2px center;
+  color: var(--text);
+  font-size: 14px;
+  font-weight: 600;
+  box-shadow: none;
+}
+
+.brand-switcher .sidebar-focus-select:hover,
+.brand-switcher .sidebar-focus-select:focus {
+  background-color: transparent;
+  box-shadow: none;
+}
+
+.sidebar-focus-select option {
+  color: var(--text);
+  background: var(--surface);
+}
+
+.overview-context {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.context-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.context-pill svg {
+  width: 15px;
+  height: 15px;
+  color: var(--text-muted);
+}
+
+.kpi-row {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+  padding: 20px 24px 0;
+}
+
+.kpi-row .card {
+  min-width: 0;
+}
+
+.kpi-note {
+  display: block;
+  margin-top: 4px;
+  font-size: 12.5px;
+  color: var(--text-muted);
+}
+
+.kpi-note.up {
+  color: var(--success);
+}
+
+.kpi-note.down {
+  color: var(--danger);
+}
+
+.overview-panels {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  padding: 12px 24px 0;
+}
+
+.panel-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.panel-head h3 {
+  margin: 0;
+}
+
+.overview-list .month-bars {
+  min-height: 0;
+  padding: 4px 0 0;
+  gap: 12px;
+}
+
+.overview-list .month-bar-track {
+  height: 110px;
+  border-radius: 6px;
+}
+
+.overview-list .month-bar-fill {
+  border-radius: 6px;
+}
+
+.overview-note-row {
+  padding: 16px 24px 0;
+  margin: 0;
+  font-size: 13.5px;
+  color: var(--text-muted);
+}
+
+.overview-list .rank-name {
+  font-weight: 500;
+}
+
+.overview-list .rank-value {
+  font-weight: 600;
+}
+
+.overview-list .rank-bar {
+  height: 5px;
+}
+
+.overview-end {
+  height: 32px;
+}
+
+.platform-tabs {
+  display: inline-flex;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  overflow: hidden;
+  background: var(--surface);
+}
+
+.platform-tabs a {
+  padding: 6px 11px;
+  font-size: 13px;
+  color: var(--text-muted);
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.platform-tabs a + a {
+  border-left: 1px solid var(--border);
+}
+
+.platform-tabs a:hover {
+  color: var(--text);
+  background: var(--surface-alt);
+}
+
+.platform-tabs a.active {
+  background: rgba(var(--accent-rgb), 0.13);
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.platform-tabs a:focus-visible,
+.overview-action:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.overview-action {
+  gap: 6px;
+  padding: 6px 11px;
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.overview-action svg {
+  width: 15px;
+  height: 15px;
+  color: var(--text-muted);
+}
+
+.sidebar-section-label {
+  margin: 14px 22px 4px;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--sidebar-text);
+}
+
+.coming-soon {
+  max-width: 560px;
+  margin: 72px auto;
+  padding: 0 24px;
+  text-align: center;
+}
+
+.coming-soon-badge {
+  display: inline-block;
+  margin-bottom: 14px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: rgba(var(--accent-rgb), 0.13);
+  color: var(--accent);
+  font-size: 12.5px;
+  font-weight: 600;
+}
+
+.coming-soon h2 {
+  margin: 0 0 10px;
+  font-family: var(--font-display);
+  font-size: 24px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.coming-soon p {
+  margin: 0 0 24px;
+  line-height: 1.6;
+  color: var(--text-muted);
+}
+
+@media (max-width: 1100px) {
+  .kpi-row {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 760px) {
+  .kpi-row,
+  .overview-panels {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* Sidebar starts with the brand switcher (no logo or title above it) */
+.sidebar-focus.sidebar-workspace {
+  margin-top: 0;
+  padding-top: 18px;
+  border-top: 0;
+  border-bottom: 1px solid var(--sidebar-border);
+}
+
+/* Profile page */
+.profile {
+  display: grid;
+  gap: 12px;
+  max-width: 640px;
+  padding: 20px 24px 32px;
+}
+
+.profile-card h3 {
+  margin: 0 0 4px;
+}
+
+.profile-card > p.muted {
+  margin: 0 0 12px;
+  font-size: 13px;
+}
+
+.profile-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 16px;
+  padding: 10px 0;
+  border-top: 1px solid var(--border);
+}
+
+.profile-label {
+  font-weight: 600;
+  color: var(--text);
+}
+
+.profile-card > p.profile-hint {
+  margin: 0 0 6px;
+  font-size: 12.5px;
+}
+
+.profile-facts {
+  margin: 0;
+  display: grid;
+}
+
+.profile-facts div {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 10px 0;
+  border-top: 1px solid var(--border);
+}
+
+.profile-facts dt {
+  color: var(--text-muted);
+}
+
+.profile-facts dd {
+  margin: 0;
+  font-weight: 600;
+  color: var(--text);
+  overflow-wrap: anywhere;
+}
+
+/* Sales > Month by month (v7) */
+.product-months-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px 14px;
+}
+
+.product-months-controls .styled-select {
+  width: auto;
+  flex: 1 1 220px;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.month-card-pick {
+  cursor: pointer;
+}
+
+.month-card-pick.picked {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+.month-card-pick:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.month-card-wide {
+  grid-column: 1 / -1;
+}
+
+.badge-partial {
+  display: inline-block;
+  margin-left: 8px;
+  padding: 1px 8px;
+  border-radius: 980px;
+  border: 1px solid var(--border);
+  background: var(--surface-alt);
+  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: 600;
+  vertical-align: middle;
+}
+
+.month-card-note {
+  margin: 10px 0 0;
+  font-size: 12px;
+}
+
+.wins-strip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 0 0 16px;
+}
+
+.win-item {
+  padding: 8px 14px;
+  border-radius: 980px;
+  border: 1px solid rgba(var(--success-rgb), 0.35);
+  background: rgba(var(--success-rgb), 0.12);
+  color: var(--text);
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.brand-strip {
+  margin-top: 20px;
+}
+
+/* Overview month dropdown and loading state (v7) */
+.context-select {
+  font: inherit;
+  color: inherit;
+  background: transparent;
+  border: 0;
+  padding: 0 2px;
+  max-width: 240px;
+  text-overflow: ellipsis;
+  cursor: pointer;
+}
+
+.context-select:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+.is-loading {
+  opacity: 0.55;
+  transition: opacity 0.15s ease;
+}
+
+.stock-tag {
+  margin-left: 6px;
+  padding: 1px 7px;
+  border-radius: 980px;
+  border: 1px solid var(--border);
+  background: var(--surface-alt);
+  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: 600;
+  vertical-align: middle;
+}
+
+/* Admin Uploads panel (v7) */
+.upload-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 16px;
+  padding: 20px 24px;
+}
+
+.upload-card {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 16px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface);
+  color: var(--text);
+}
+
+.upload-card h3 {
+  margin: 0;
+  font-size: 16px;
+}
+
+.upload-card p {
+  margin: 0;
+  font-size: 13px;
+}
+
+.upload-card .styled-select {
+  width: 100%;
+}
+
+.upload-note.success {
+  color: var(--success);
+}
+
+.upload-note.error {
+  color: var(--danger);
+}
+
+.upload-hint a {
+  color: var(--accent);
+}
+
+.upload-btn.disabled {
+  opacity: 0.55;
+  pointer-events: none;
+}
+
+/* Advertising: selected campaigns (v7) */
+.selection-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 20px;
+  margin: 0 24px 12px;
+  padding: 12px 16px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface-alt);
+  color: var(--text);
+}
+
+.selection-stat {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.selection-stat span {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.selection-stat strong {
+  font-size: 15px;
+  font-variant-numeric: tabular-nums;
+}
+
+.select-col {
+  width: 32px;
+}
+
+/* Presentation mode (v7): no sidebar, a thin top bar, larger text */
+html[data-presenting="true"] {
+  --present-bar-height: 52px;
+  --present-zoom: 1.1;
+}
+
+.present-bar {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: var(--present-bar-height);
+  z-index: 200;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 0 20px;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  color: var(--text);
+}
+
+.present-brand {
+  max-width: 30vw;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 16px;
+  font-weight: 700;
+}
+
+.present-tabs {
+  display: flex;
+  flex: 1 1 auto;
+  gap: 4px;
+  min-width: 0;
+  overflow-x: auto;
+}
+
+.present-tabs a {
+  padding: 6px 12px;
+  border-radius: 8px;
+  color: var(--text-muted);
+  font-size: 14px;
+  font-weight: 600;
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.present-tabs a:hover {
+  color: var(--text);
+  background: var(--surface-alt);
+}
+
+.present-tabs a.active {
+  color: var(--accent);
+  background: var(--surface-alt);
+}
+
+.present-exit {
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 6px 12px;
+  cursor: pointer;
+}
+
+.present-exit:hover {
+  background: var(--surface-alt);
+}
+
+.present-exit:focus-visible,
+.present-tabs a:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* The zoom enlarges the page text for a projector; the bar itself is not zoomed, so its height is divided out. */
+.main-content.presenting {
+  margin-left: 0;
+  padding-top: calc(var(--present-bar-height) / var(--present-zoom));
+  zoom: var(--present-zoom);
+}
+
+.main-content.presenting .topbar {
+  top: calc(var(--present-bar-height) / var(--present-zoom));
+}
+
+/* Platform tabs are hidden until Zepto and Flipkart Minutes are built. To bring them back, remove the
+   hidden attribute from the platform-tabs nav in the Overview template and delete this rule. */
+.platform-tabs[hidden] {
+  display: none;
+}
+
+/* Reports page (v7): settings panel, preview and print */
+.report-layout {
+  display: grid;
+  grid-template-columns: 340px minmax(0, 1fr);
+  gap: 20px;
+  padding: 20px 24px;
+  align-items: start;
+}
+
+.report-panel {
+  position: sticky;
+  top: 84px;
+  max-height: calc(100vh - 104px);
+  overflow-y: auto;
+  padding: 16px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface);
+  color: var(--text);
+}
+
+.rp-block {
+  margin-bottom: 18px;
+}
+
+.rp-head {
+  display: block;
+  margin-bottom: 8px;
+  font-weight: 700;
+}
+
+.rp-check {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin: 6px 0;
+  font-size: 14px;
+  cursor: pointer;
+}
+
+.rp-check.disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.rp-help {
+  margin: 6px 0;
+  font-size: 12px;
+}
+
+.rp-group {
+  margin-bottom: 8px;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+
+.rp-group summary {
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.rp-input {
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+  margin: 6px 0;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+  font-size: 14px;
+}
+
+.rp-input:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.rp-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr auto;
+  gap: 6px;
+  align-items: center;
+  margin: 6px 0 10px;
+}
+
+.rp-row .rp-input {
+  margin: 0;
+}
+
+.rp-row .rp-name {
+  grid-column: 1 / -1;
+}
+
+.report-stage {
+  min-width: 0;
+  overflow-x: auto;
+}
+
+@media (max-width: 1100px) {
+  .report-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .report-panel {
+    position: static;
+    max-height: none;
+  }
+}
+
+/* Download PDF = the browser's print window: only the report pages are printed, one slide per page. */
+@media print {
+  html,
+  body {
+    height: auto !important;
+    overflow: visible !important;
+    background: #fff !important;
+  }
+
+  .sidebar,
+  .sidebar-collapse-toggle,
+  .present-bar,
+  .shortcut-hint,
+  .report-controls,
+  .topbar,
+  .upload-status {
+    display: none !important;
+  }
+
+  .main-content {
+    margin: 0 !important;
+    padding: 0 !important;
+    zoom: 1 !important;
+  }
+
+  .report-layout {
+    display: block !important;
+    padding: 0 !important;
+  }
+
+  .report-stage {
+    overflow: visible !important;
+  }
+
+  .report-preview {
+    zoom: 1 !important;
+  }
+}
+
+/* ===== Strategy tab. Paste just ABOVE the "Pro look (v7)" comment block in public/style.css. Tokens only. ===== */
+.strat-bar { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin-bottom: 16px; }
+.strat-select { height: 36px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); color: var(--text); padding: 0 10px; font: inherit; }
+.strat-last { font-size: 12px; }
+.strat-h { font-size: 12px; font-weight: 600; letter-spacing: 0.04em; text-transform: none; color: var(--text-muted); margin: 18px 0 8px; }
+
+.strat-strip { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 8px; }
+.strat-pill { display: inline-flex; align-items: center; gap: 8px; padding: 7px 14px; border: 1px solid var(--border); border-radius: 999px; background: var(--surface); color: var(--text); font: inherit; font-size: 13px; cursor: pointer; }
+.strat-pill i, .strat-dot { width: 9px; height: 9px; border-radius: 50%; flex: none; display: inline-block; background: var(--text-muted); }
+.strat-pill span { font-size: 11px; color: var(--text-muted); }
+.strat-g i, .strat-dot.strat-g { background: var(--success); }
+.strat-a i, .strat-dot.strat-a { background: var(--warning); }
+.strat-r i, .strat-dot.strat-r { background: var(--danger); }
+.strat-pill.strat-g { border-color: var(--success); }
+.strat-pill.strat-a { border-color: var(--warning); }
+.strat-pill.strat-r { border-color: var(--danger); }
+
+.strat-actions { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+.strat-card { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 14px 16px; }
+.strat-card h3 { margin: 0 0 6px; font-size: 14px; }
+.strat-card p { margin: 4px 0; font-size: 12.5px; color: var(--text-muted); }
+
+.strat-acc { margin-top: 18px; background: var(--surface); border: 1px solid var(--border); border-radius: 12px; overflow: hidden; }
+.strat-row + .strat-row { border-top: 1px solid var(--border); }
+.strat-row-btn { width: 100%; display: flex; align-items: center; gap: 12px; padding: 14px 16px; border: 0; background: none; color: var(--text); font: inherit; text-align: left; cursor: pointer; }
+.strat-row-title { width: 230px; flex: none; font-weight: 600; font-size: 14px; }
+.strat-row-sum { flex: 1; min-width: 0; font-size: 13px; color: var(--text-muted); }
+.strat-row-body { padding: 0 16px 16px 38px; font-size: 13px; line-height: 1.6; }
+.strat-row-body ul { margin: 0 0 6px; padding-left: 18px; }
+
+.strat-foot { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; margin-top: 16px; position: relative; }
+.strat-pop-host { position: relative; }
+.strat-grow { flex: 1; }
+.strat-chip { border: 1px solid var(--warning); background: var(--surface); color: var(--text); border-radius: 999px; padding: 6px 12px; font: inherit; font-size: 12px; cursor: pointer; }
+.strat-assume { margin-top: 12px; font-size: 12.5px; color: var(--text-muted); }
+
+.strat-talk { padding: 18px 20px; }
+.strat-talk-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
+.strat-talk-head h2 { margin: 0; font-size: 14px; }
+.strat-talk ol { margin: 0; padding-left: 20px; font-size: 14px; line-height: 1.9; }
+
+.strat-side { position: fixed; top: 0; right: 0; bottom: 0; width: 320px; z-index: 40; overflow-y: auto; background: var(--surface); border-left: 1px solid var(--border); padding: 16px; box-shadow: -8px 0 24px rgba(0, 0, 0, 0.12); }
+.strat-side-head { display: flex; justify-content: space-between; align-items: center; }
+.strat-side label { display: block; font-size: 12px; margin: 10px 0 0; color: var(--text-muted); }
+.strat-side input, .strat-side select { display: block; width: 100%; box-sizing: border-box; height: 34px; margin-top: 4px; border: 1px solid var(--border); border-radius: 6px; background: var(--surface); color: var(--text); padding: 0 10px; font: inherit; font-size: 13px; }
+.strat-side .upload-btn { margin-top: 16px; }
+
+/* Strategy v2: 6-month plan, checklist ticks, add-ons */
+.strat-note { font-size: 12px; margin: 6px 0 0; }
+.strat-months { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+.strat-month { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 14px 16px; }
+.strat-month h3 { margin: 0 0 2px; font-size: 14px; }
+.strat-month p { margin: 0 0 6px; font-size: 12.5px; }
+.strat-month ul { margin: 0 0 8px; padding-left: 18px; font-size: 12.5px; line-height: 1.5; }
+.strat-month.current { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+.strat-month.done { border-color: var(--success); }
+.strat-month.later { opacity: 0.7; }
+.strat-check { display: flex; align-items: flex-start; gap: 8px; margin: 6px 0; font-size: 13px; line-height: 1.5; cursor: pointer; }
+.strat-check input { margin-top: 3px; flex: none; }
+.strat-gate { padding-top: 8px; border-top: 1px dashed var(--border); font-size: 12.5px; }
+.strat-facts { margin: 0 0 8px; padding-left: 18px; color: var(--text-muted); }
+.strat-stop { margin: 8px 0 0; color: var(--danger); }
+.strat-mods { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin-top: 8px; }
+.strat-needs { margin: 6px 0 0; padding-left: 0; list-style: none; font-size: 12.5px; color: var(--text-muted); }
+.strat-badge { display: inline-block; margin-left: 6px; padding: 1px 8px; border-radius: 999px; border: 1px solid var(--border); font-size: 11px; font-weight: 500; color: var(--text-muted); vertical-align: middle; }
+.strat-badge.ok { border-color: var(--success); color: var(--success); }
+.strat-badge.no { border-color: var(--warning); color: var(--warning); }
+.strat-ai { margin-top: 18px; }
+.strat-ai > summary { cursor: pointer; font-weight: 600; font-size: 13px; color: var(--text); }
+
+@media (max-width: 800px) {
+  .strat-actions, .strat-months, .strat-mods { grid-template-columns: 1fr; }
+  .strat-row-title { width: 140px; }
+}
+
+/* ==========================================================================
+   Pro look (v7): flat, quiet surfaces for client meetings.
+   Applies only when <html data-look="pro"> (Profile > Appearance). Without it the
+   original glass design above is used unchanged.
+   ========================================================================== */
+html[data-look="pro"] {
+  --bg: #f6f6f4;
+  --surface: #ffffff;
+  --surface-rgb: 255, 255, 255;
+  --surface-alt: #f0efec;
+  --border: rgba(31, 30, 29, 0.12);
+  --text: #1f1e1d;
+  --text-muted: #6b6a66;
+  --shadow: rgba(31, 30, 29, 0.08);
+
+  --accent: #1f6fd1;
+  --accent-rgb: 31, 111, 209;
+  --accent-hover: #185ab0;
+  --success: #1e7d4f;
+  --success-rgb: 30, 125, 79;
+  --danger: #c23b3b;
+  --danger-rgb: 194, 59, 59;
+  --gradient: var(--accent);
+
+  --glass-bg: var(--surface);
+  --glass-bg-strong: var(--surface);
+  --glass-border: var(--border);
+  --glass-highlight: transparent;
+  --glass-shadow: none;
+  --glass-blur: none;
+
+  --sidebar-bg: var(--surface-alt);
+  --sidebar-text: var(--text-muted);
+  --sidebar-text-active: var(--text);
+  --sidebar-border: var(--border);
+}
+
+html[data-look="pro"][data-theme="dark"] {
+  --bg: #1a1a19;
+  --surface: #232322;
+  --surface-rgb: 35, 35, 34;
+  --surface-alt: #2c2c2a;
+  --border: rgba(255, 255, 255, 0.11);
+  --text: #ecebe8;
+  --text-muted: #a3a19b;
+  --shadow: rgba(0, 0, 0, 0.4);
+
+  --accent: #6aa6f2;
+  --accent-rgb: 106, 166, 242;
+  --accent-hover: #8dbbf5;
+  --success: #5cc28a;
+  --success-rgb: 92, 194, 138;
+  --danger: #f07171;
+  --danger-rgb: 240, 113, 113;
+
+  --glass-bg: var(--surface);
+  --glass-bg-strong: var(--surface);
+  --glass-border: var(--border);
+  --glass-highlight: transparent;
+  --glass-shadow: none;
+
+  --sidebar-bg: #202020;
+  --sidebar-text: var(--text-muted);
+  --sidebar-text-active: var(--text);
+  --sidebar-border: var(--border);
+}
+
+html[data-look="pro"] body {
+  background: var(--bg);
+}
+
+html[data-look="pro"] .topbar,
+html[data-look="pro"] .sidebar,
+html[data-look="pro"] .card,
+html[data-look="pro"] .overview-list,
+html[data-look="pro"] .upload-btn,
+html[data-look="pro"] .secondary-btn {
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+
+html[data-look="pro"] .topbar {
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+}
+
+html[data-look="pro"] .topbar-left h1 {
+  font-size: 22px;
+  font-weight: 600;
+}
+
+html[data-look="pro"] .sidebar-brand {
+  background: none;
+  -webkit-text-fill-color: currentColor;
+  color: var(--text);
+  font-size: 15px;
+  font-weight: 600;
+}
+
+html[data-look="pro"] .sidebar-nav {
+  padding: 8px 0;
+}
+
+html[data-look="pro"] .sidebar-nav a {
+  margin: 2px 10px;
+  padding: 9px 12px;
+  border-radius: 8px;
+  font-size: 14px;
+  color: var(--sidebar-text);
+}
+
+html[data-look="pro"] .sidebar-nav a:hover {
+  background: rgba(var(--accent-rgb), 0.07);
+  color: var(--text);
+  transform: none;
+}
+
+html[data-look="pro"] .sidebar-nav a.active {
+  background: rgba(var(--accent-rgb), 0.13);
+  color: var(--accent);
+  font-weight: 600;
+}
+
+html[data-look="pro"] .sidebar-focus-label {
+  text-transform: none;
+  letter-spacing: 0;
+  font-size: 12px;
+  font-weight: 500;
+}
+
+html[data-look="pro"] .sidebar-logout,
+html[data-look="pro"] .theme-switch {
+  background: var(--surface);
+  border-color: var(--border);
+  color: var(--text-muted);
+}
+
+html[data-look="pro"] .sidebar-logout:hover {
+  background: var(--surface);
+  color: var(--text);
+}
+
+html[data-look="pro"] .theme-switch-thumb {
+  background: var(--accent);
+  box-shadow: none;
+}
+
+html[data-look="pro"] .card {
+  background-color: var(--surface);
+  background-image: none;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  box-shadow: none;
+  padding: 14px 16px;
+}
+
+html[data-look="pro"] .card::before {
+  display: none;
+}
+
+html[data-look="pro"] .card:hover {
+  transform: none;
+  box-shadow: none;
+}
+
+html[data-look="pro"] .card-label {
+  margin-top: 0;
+  margin-bottom: 4px;
+  font-size: 13px;
+  font-weight: 500;
+  text-transform: none;
+  letter-spacing: 0;
+}
+
+html[data-look="pro"] .card-value {
+  font-size: 26px;
+  font-weight: 600;
+}
+
+html[data-look="pro"] .overview-card-link:hover {
+  border-color: rgba(var(--accent-rgb), 0.5);
+  background-color: rgba(var(--accent-rgb), 0.04);
+}
+
+html[data-look="pro"] .upload-btn,
+html[data-look="pro"] .secondary-btn {
+  border-radius: 8px;
+  padding: 8px 14px;
+  font-size: 13.5px;
+  box-shadow: none;
+}
+
+html[data-look="pro"] .upload-btn {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #ffffff;
+}
+
+html[data-look="pro"] .upload-btn:hover {
+  background: var(--accent-hover);
+  border-color: var(--accent-hover);
+  transform: none;
+  box-shadow: none;
+}
+
+html[data-look="pro"] .secondary-btn {
+  background: var(--surface);
+  border-color: var(--border);
+  color: var(--text);
+}
+
+html[data-look="pro"] .secondary-btn:hover,
+html[data-look="pro"][data-theme="dark"] .secondary-btn:hover {
+  background: var(--surface-alt);
+  border-color: var(--border);
+  color: var(--text);
+  transform: none;
+  box-shadow: none;
+}
+
+html[data-look="pro"] .upload-btn:active,
+html[data-look="pro"] .secondary-btn:active {
+  transform: scale(0.98);
+}
+
+html[data-look="pro"] .secondary-btn.danger-btn {
+  background: var(--surface);
+  border-color: rgba(var(--danger-rgb), 0.4);
+  color: var(--danger);
+}
+
+html[data-look="pro"] .secondary-btn.danger-btn:hover {
+  background: rgba(var(--danger-rgb), 0.08);
+  border-color: rgba(var(--danger-rgb), 0.55);
+  color: var(--danger);
+}
+
+html[data-look="pro"] table {
+  border-radius: 12px;
+}
+
+html[data-look="pro"] tbody tr:last-child td:first-child {
+  border-bottom-left-radius: 12px;
+}
+
+html[data-look="pro"] tbody tr:last-child td:last-child {
+  border-bottom-right-radius: 12px;
+}
+
+html[data-look="pro"] th {
+  color: var(--text-muted);
+  font-size: 12.5px;
+  text-transform: none;
+  letter-spacing: 0;
+}
+
+html[data-look="pro"] .sheet-tabs {
+  border-radius: 8px;
+  background: var(--surface-alt);
+}
+
+html[data-look="pro"] .sheet-tab {
+  border-radius: 6px;
+}
+
+html[data-look="pro"] .sheet-tab.active {
+  background: var(--surface);
+  color: var(--accent);
+  box-shadow: 0 0 0 1px var(--border);
+}
+
+html[data-look="pro"] .month-chip {
+  border-radius: 8px;
+  background: var(--surface);
+}
+
+/* The selected chip keeps its accent fill in the Pro look (Trends and Reports); without this its white text sits on a white chip */
+html[data-look="pro"] .month-chip.active {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: #fff;
+}
+
+html[data-look="pro"] .overview-list {
+  border-radius: 12px;
+  padding: 14px 16px;
+}
+
+/* Sales > Month by month: Pro-only colours */
+html[data-look="pro"] .badge-partial {
+  background: var(--surface-alt);
+  border-color: var(--border);
+}
+
+html[data-look="pro"] .month-card-pick.picked {
+  outline-color: var(--accent);
+}
+html[data-look="pro"] .win-item {
+  border-radius: 8px;
+  border-color: var(--border);
+  border-left: 3px solid var(--success);
+  background: var(--surface);
+}
+/* Stock table header in the Pro look: dark, bold text on the tinted header (other tables keep the muted header) */
+html[data-look="pro"] #productTable.stock-table thead th {
+  color: var(--text);
+  background: var(--surface-alt);
+}
+
+/* Sales, Profit and Advertising table headers in the Pro look: dark, bold text on the tinted header (same as Stock) */
+html[data-look="pro"] :is(app-profit-page, app-campaign-page) table:not(.detail-table) > thead > tr > th,
+html[data-look="pro"] table:is(#feederCityTotals, #feederProductTable, #cityTable, #productCityTable, #productListTable, #productMonthsTable, #productMonthCityTable, #productMonthsBrandTable) thead th {
+  color: var(--text);
+  background: var(--surface-alt);
+}
+
+/* Overview: 2px borders on the four number cards and the four panels, dark enough to see; hover still turns them blue */
+html[data-look="pro"] .kpi-row .card,
+html[data-look="pro"] .overview-panels .overview-list {
+  border-width: 2px;
+  border-style: solid;
+  border-color: color-mix(in srgb, var(--text) 30%, transparent);
+}
+
+html[data-look="pro"] .kpi-row .overview-card-link:hover {
+  border-color: rgba(var(--accent-rgb), 0.6);
+}
+
+
+/* ==========================================================================================================
+   Advertising page (Nov 2026): cards in Blinkit's order, daily trend chart with a Best / Needs Attention legend,
+   campaign table with hidden edge columns, right-click menus, adjustable column widths and a pinned name column.
+   Kept at the end of the file so it outranks the Pro-look rules above.
+   ========================================================================================================== */
+
+/* Cards: always one row of seven. Sizes follow the width of the card row itself (cqw = 1% of it), so the numbers
+   shrink with the screen and with the sidebar open, and never break onto a second line. */
+html app-campaign-page .cards.ad-kpis {
+  container-type: inline-size;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: clamp(6px, 0.8vw, 16px);
+}
+
+html app-campaign-page .ad-kpis .card {
+  min-width: 0;
+  padding-left: clamp(6px, 0.9cqw, 16px);
+  padding-right: clamp(6px, 0.9cqw, 16px);
+}
+
+html app-campaign-page .ad-kpis .card-label,
+html app-campaign-page .ad-kpis .card-value {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  overflow-wrap: normal;
+}
+
+html app-campaign-page .ad-kpis .card-label {
+  font-size: clamp(10px, 0.95cqw, 13px);
+}
+
+html app-campaign-page .ad-kpis .card-value {
+  font-size: clamp(12px, 1.7cqw, 26px);
+}
+
+/* Phones: seven across is unreadable, so the cards wrap there */
+@media (max-width: 640px) {
+  html app-campaign-page .cards.ad-kpis {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  html app-campaign-page .ad-kpis .card-value {
+    font-size: 20px;
+  }
+}
+
+/* "Showing 3 of 15 ads": the cards and chart are following the ticked ads */
+.ad-scope-note {
+  margin: 14px 24px -8px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--accent);
+}
+
+/* ---- Trend chart ---- */
+.ad-trend {
+  margin: 16px 24px 0;
+  padding: 14px 16px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface);
+  color: var(--text);
+}
+
+.ad-trend-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 12px;
+  margin-bottom: 6px;
+}
+
+.ad-trend-head .section-title {
+  margin: 0;
+}
+
+.ad-trend-pills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.ad-pill {
+  padding: 4px 12px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--text-muted);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.ad-pill:hover {
+  color: var(--text);
+}
+
+.ad-pill.active {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: #fff;
+}
+
+.ad-trend-body {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(200px, 280px);
+  gap: 18px;
+  align-items: stretch;
+}
+
+.ad-trend-chart {
+  min-width: 0;
+}
+
+/* The plot box. The grid lines, axis labels and day dots are ordinary elements placed by percentage. The line is an
+   SVG whose drawing size is the box's own size in pixels (measured in the page code), with a plain stroke, so it
+   shows the same in every browser. */
+.ad-plot {
+  position: relative;
+  height: clamp(130px, 13vw, 190px);
+  margin: 10px 24px 26px 54px;
+}
+
+.ad-plot svg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+}
+
+.ad-gridline {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 0;
+  border-top: 1px solid rgba(128, 128, 128, 0.25); /* for browsers without color-mix */
+  border-top-color: color-mix(in srgb, var(--text) 12%, transparent);
+  pointer-events: none;
+}
+
+.ad-line {
+  fill: none;
+  stroke: #7c3aed; /* in case the accent colour cannot be read */
+  stroke: var(--accent);
+  stroke-width: 2.5;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+}
+
+.ad-axis {
+  position: absolute;
+  font-size: 11px;
+  line-height: 1;
+  white-space: nowrap;
+  color: var(--text-muted);
+}
+
+.ad-axis-y {
+  right: 100%;
+  margin-right: 8px;
+  transform: translateY(-50%);
+}
+
+.ad-axis-x {
+  top: 100%;
+  margin-top: 9px;
+  transform: translateX(-50%);
+}
+
+.ad-dot {
+  position: absolute;
+  width: 9px;
+  height: 9px;
+  margin: -4.5px 0 0 -4.5px;
+  border: 2px solid var(--accent);
+  border-radius: 50%;
+  background: var(--surface);
+}
+
+.ad-dot:hover {
+  background: var(--accent);
+}
+
+/* Best campaign / Needs attention: a small legend beside the chart (full name on hover) */
+.ad-trend-side {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 20px;
+  min-width: 0;
+  padding-left: 18px;
+  border-left: 1px solid var(--border);
+}
+
+.ad-side-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.ad-side-item .dot {
+  flex: none;
+}
+
+.ad-side-text {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.ad-side-label {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-muted);
+}
+
+.ad-side-name {
+  overflow: hidden;
+  font-size: 14px;
+  font-weight: 600;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.ad-side-value {
+  font-size: 18px;
+  font-variant-numeric: tabular-nums;
+}
+
+.ad-good {
+  color: var(--success);
+}
+
+.ad-bad {
+  color: var(--danger);
+}
+
+@media (max-width: 900px) {
+  .ad-trend-body {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .ad-trend-side {
+    flex-direction: row;
+    flex-wrap: wrap;
+    padding: 12px 0 0;
+    border-top: 1px solid var(--border);
+    border-left: none;
+  }
+
+  .ad-side-item {
+    flex: 1 1 220px;
+  }
+}
+
+/* Selection bar: count, the Apply tick, Clear */
+.ad-apply {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13.5px;
+  cursor: pointer;
+}
+
+/* ---- Campaign table ---- */
+
+/* The tick-box column stays in the page while hidden, so the column rules above (Campaign = 3rd, Brand = 4th) hold */
+table#campaignListTable .col-hidden {
+  display: none;
+}
+
+/* Edge cells: the arrow that opens the tick-box column (left) and the optional columns (right) */
+table#campaignListTable[id] > thead > tr > th.ad-edge:nth-child(n) {
+  min-width: 40px;
+  padding-left: 4px;
+  padding-right: 4px;
+  font-size: 15px;
+  font-weight: 700;
+  line-height: 1;
+  text-align: center;
+  user-select: none;
+}
+
+table#campaignListTable > thead > tr > th.ad-edge:hover {
+  color: var(--accent);
+}
+
+table#campaignListTable th.ad-edge-left,
+table#campaignListTable th.ad-edge-right.open {
+  cursor: w-resize;
+}
+
+table#campaignListTable th.ad-edge-right,
+table#campaignListTable th.ad-edge-left.open {
+  cursor: e-resize;
+}
+
+/* Fixed widths for the two narrow columns, so the pinned offsets below are exact */
+table#campaignListTable[id] > :is(thead, tbody) > tr > :is(th, td).select-col:nth-child(n) {
+  width: 34px;
+  min-width: 34px;
+  max-width: 34px;
+  padding-left: 0;
+  padding-right: 0;
+  text-align: center;
+}
+
+table#campaignListTable[id] > :is(thead, tbody) > tr > :is(th, td):nth-child(2):not([colspan]):nth-child(n) {
+  width: 40px;
+  min-width: 40px;
+  max-width: 40px;
+  padding-left: 4px;
+  padding-right: 4px;
+}
+
+/* Pinned on sideways scroll: tick box, row number and campaign name (the header row is already pinned on the way down).
+   Below 1100px the table scrolls inside .table-wrap, so --ad-pin is minus that box's side padding (flush with its
+   edge, as on Stock). From 1100px the whole page scrolls instead, so the cells pin just right of the sidebar, or at
+   the screen edge when the sidebar is collapsed or in presentation mode. */
+app-campaign-page .table-wrap {
+  --ad-pin: -24px;
+}
+
+@media (min-width: 1100px) {
+  app-campaign-page .table-wrap {
+    --ad-pin: var(--sidebar-width);
+  }
+
+  .main-content.sidebar-collapsed app-campaign-page .table-wrap,
+  .main-content.presenting app-campaign-page .table-wrap {
+    --ad-pin: 0px;
+  }
+}
+
+table#campaignListTable > tbody > tr:not(.detail-row) > td:nth-child(-n + 3) {
+  position: sticky;
+  z-index: 2;
+  background: var(--surface);
+}
+
+table#campaignListTable > thead > tr > th:nth-child(-n + 3) {
+  z-index: 4;
+}
+
+table#campaignListTable > :is(thead, tbody) > tr > :is(th, td):nth-child(1):not([colspan]),
+table#campaignListTable > :is(thead, tbody) > tr > :is(th, td):nth-child(2):not([colspan]) {
+  left: var(--ad-pin);
+}
+
+table#campaignListTable > :is(thead, tbody) > tr > :is(th, td):nth-child(3):not([colspan]) {
+  left: calc(var(--ad-pin) + 40px);
+}
+
+table#campaignListTable.has-select > :is(thead, tbody) > tr > :is(th, td):nth-child(2):not([colspan]) {
+  left: calc(var(--ad-pin) + 34px);
+}
+
+table#campaignListTable.has-select > :is(thead, tbody) > tr > :is(th, td):nth-child(3):not([colspan]) {
+  left: calc(var(--ad-pin) + 74px);
+}
+
+/* Pinned cells need a solid background so the rows sliding under them never show through. The tints are layered on
+   top, twice, because elsewhere in the row both the row and its cells carry the tint. */
+table#campaignListTable > tbody > tr:not(.detail-row):hover > td:nth-child(-n + 3) {
+  background: var(--surface-alt);
+}
+
+table#campaignListTable > tbody > tr.row-top > td:nth-child(-n + 3) {
+  background: linear-gradient(rgba(var(--success-rgb), 0.09), rgba(var(--success-rgb), 0.09)),
+    linear-gradient(rgba(var(--success-rgb), 0.09), rgba(var(--success-rgb), 0.09)), var(--surface);
+}
+
+table#campaignListTable > tbody > tr.row-top:hover > td:nth-child(-n + 3) {
+  background: linear-gradient(rgba(var(--success-rgb), 0.16), rgba(var(--success-rgb), 0.16)),
+    linear-gradient(rgba(var(--success-rgb), 0.16), rgba(var(--success-rgb), 0.16)), var(--surface);
+}
+
+table#campaignListTable > tbody > tr.row-low > td:nth-child(-n + 3) {
+  background: linear-gradient(rgba(var(--danger-rgb), 0.09), rgba(var(--danger-rgb), 0.09)),
+    linear-gradient(rgba(var(--danger-rgb), 0.09), rgba(var(--danger-rgb), 0.09)), var(--surface);
+}
+
+table#campaignListTable > tbody > tr.row-low:hover > td:nth-child(-n + 3) {
+  background: linear-gradient(rgba(var(--danger-rgb), 0.16), rgba(var(--danger-rgb), 0.16)),
+    linear-gradient(rgba(var(--danger-rgb), 0.16), rgba(var(--danger-rgb), 0.16)), var(--surface);
+}
+
+table#campaignListTable > tbody > tr.row-selected:not(.row-top):not(.row-low) > td:nth-child(-n + 3) {
+  background: linear-gradient(rgba(var(--accent-rgb), 0.1), rgba(var(--accent-rgb), 0.1)), var(--surface);
+}
+
+/* A ticked ad is marked on every cell, whatever its tier tint */
+table#campaignListTable > tbody > tr.row-selected > td {
+  box-shadow: inset 0 0 0 9999px rgba(var(--accent-rgb), 0.14);
+}
+
+/* Brand Performance: tick box and brand name pinned the same way */
+table#brandTable[id] > :is(thead, tbody) > tr > :is(th, td):first-child:nth-child(n) {
+  width: 34px;
+  min-width: 34px;
+  max-width: 34px;
+  padding-left: 0;
+  padding-right: 0;
+  text-align: center;
+}
+
+table#brandTable > tbody > tr > td:nth-child(-n + 2) {
+  position: sticky;
+  z-index: 2;
+  background: var(--surface);
+}
+
+table#brandTable > thead > tr > th:nth-child(-n + 2) {
+  z-index: 4;
+}
+
+table#brandTable > :is(thead, tbody) > tr > :is(th, td):nth-child(1) {
+  left: var(--ad-pin);
+}
+
+table#brandTable > :is(thead, tbody) > tr > :is(th, td):nth-child(2) {
+  left: calc(var(--ad-pin) + 34px);
+}
+
+table#brandTable > tbody > tr:hover > td:nth-child(-n + 2),
+table#brandTable > tbody > tr.row-selected > td:nth-child(-n + 2) {
+  background: var(--surface-alt);
+}
+
+/* Drag the line at the right of a header to resize its column (double-click the line to reset) */
+table#campaignListTable .col-resize {
+  position: absolute;
+  top: 0;
+  right: 0;
+  z-index: 1;
+  width: 7px;
+  height: 100%;
+  cursor: col-resize;
+}
+
+table#campaignListTable .col-resize:hover,
+table#campaignListTable .col-resize:active {
+  background: rgba(var(--accent-rgb), 0.35);
+}
+
+/* A column with a dragged width cuts its text with "..." so it can be made narrower than its content.
+   !important: the name-column rule above sets white-space with a longer selector. */
+table#campaignListTable :is(th, td).ad-clip {
+  overflow: hidden;
+  white-space: nowrap !important;
+  text-overflow: ellipsis;
+}
+
+/* ---- Right-click menus and the small header tooltip (fixed, so the table's scroll box never cuts them) ---- */
+.ad-menu {
+  position: fixed;
+  z-index: 300;
+  min-width: 210px;
+  padding: 8px 0;
+  border: 1px solid color-mix(in srgb, var(--text) 24%, transparent);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--text);
+  box-shadow: 0 12px 28px -8px rgba(31, 20, 60, 0.35);
+  font-size: 13px;
+}
+
+.ad-menu label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 14px;
+  cursor: pointer;
+}
+
+.ad-menu label:hover {
+  background: var(--surface-alt);
+}
+
+.ad-menu-title {
+  padding: 2px 14px 4px;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-muted);
+}
+
+.ad-tip {
+  position: fixed;
+  z-index: 310;
+  padding: 3px 8px;
+  border-radius: 5px;
+  background: var(--text);
+  color: var(--bg);
+  font-size: 11px;
+  font-weight: 500;
+  white-space: nowrap;
+  pointer-events: none;
+  transform: translate(-50%, -100%);
+}
+
+/* Stock: the Status header has a right-click menu ("Show surge"), so it shows a pointer like the sortable headers.
+   The menu and its tooltip reuse .ad-menu and .ad-tip above. */
+#productTable.stock-table thead th.th-static.th-menu {
+  cursor: pointer;
+}
+
+/* ==========================================================================================================
+   14 Nov 2026: delete a whole brand, the 45/60-day history reset tick, and the product tick menu in
+   Sales > Month by month.
+   ========================================================================================================== */
+
+/* The cross beside the selected brand in the sidebar (admins): goes to the "Delete brand" confirmation */
+.brand-wipe-btn {
+  flex: 0 0 22px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: none;
+  border-radius: 6px;
+  background: none;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.brand-wipe-btn svg {
+  width: 13px;
+  height: 13px;
+}
+
+.brand-wipe-btn:hover,
+.brand-wipe-btn:focus-visible {
+  background: rgba(var(--danger-rgb), 0.14);
+  color: var(--danger);
+  outline: none;
+}
+
+/* Dialogs: a tick with its label, and the "what this means" box shown under it */
+.dialog-check {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text);
+  cursor: pointer;
+}
+
+.dialog-check input {
+  margin-top: 3px;
+}
+
+.dialog-consequence {
+  margin: 0;
+  padding: 10px 12px;
+  border: 1px solid rgba(var(--danger-rgb), 0.4);
+  border-radius: 10px;
+  background: rgba(var(--danger-rgb), 0.08);
+  color: var(--text);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.dialog.wipe-dialog {
+  width: min(480px, 100%);
+  max-height: calc(100vh - 32px);
+  overflow: auto;
+}
+
+.dialog.wipe-dialog h2 {
+  text-transform: none;
+}
+
+.wipe-dialog p {
+  margin: 0;
+  font-size: 14px;
+}
+
+.wipe-list {
+  margin: 0;
+  padding-left: 20px;
+  font-size: 13.5px;
+  line-height: 1.6;
+}
+
+.wipe-dialog .wipe-hint {
+  font-size: 12.5px;
+}
+
+.wipe-dialog .styled-select {
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.dialog .danger-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+/* Sales > Month by month: the product tick menu */
+.product-months-controls .pm-picker {
+  position: relative;
+  flex: 1 1 220px;
+  min-width: 0;
+  max-width: 420px;
+}
+
+.pm-picker .pm-picker-btn {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  width: 100%;
+  min-width: 0;
+}
+
+.pm-picker-text {
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.pm-menu {
+  width: max(100%, 320px);
+  max-width: min(520px, 90vw);
+  max-height: min(420px, 60vh);
+}
+
+.pm-menu .pm-all {
+  margin-bottom: 4px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--border);
+  border-radius: 8px 8px 0 0;
+  font-weight: 700;
+}
+
+.pm-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  border-radius: 8px;
+}
+
+.pm-row:hover {
+  background: var(--surface-alt);
+}
+
+.pm-row .feeder-option {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.pm-row .feeder-option span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.pm-only {
+  flex: none;
+  padding: 3px 8px;
+  border: none;
+  border-radius: 6px;
+  background: none;
+  color: var(--accent);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  opacity: 0;
+}
+
+.pm-row:hover .pm-only,
+.pm-only:focus-visible {
+  opacity: 1;
+}
+
+.pm-only:hover {
+  background: rgba(var(--accent-rgb), 0.12);
+}
+
+.pm-none {
+  margin: 0;
+  padding: 8px;
+}
+
+/* Profit tab > Listing table: header row and first column stay in view while the box scrolls; number columns are centred */
+.listing-scroll {
+  max-height: 60vh;
+  overflow: auto;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+
+.listing-table {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+}
+
+.listing-table th,
+.listing-table td {
+  padding: 8px 12px;
+  text-align: center;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  white-space: nowrap;
+}
+
+.listing-table thead th {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+}
+
+.listing-table th:first-child,
+.listing-table td:first-child {
+  position: sticky;
+  left: 0;
+  z-index: 1;
+  text-align: left;
+  min-width: 220px;
+  white-space: normal;
+}
+
+.listing-table thead th:first-child {
+  z-index: 3;
+}
+
+.listing-table input.styled-select {
+  width: 110px;
+  text-align: center;
+}

@@ -1,45 +1,283 @@
+require('dotenv').config();
+
 const express = require('express');
+const session = require('express-session');
 const multer = require('multer');
+const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
 const XLSX = require('xlsx');
 
 const { parseReport } = require('./parser/parseReport');
-const { appendSnapshot, computeExtendedWindows, todayDateString } = require('./parser/snapshotHistory');
+const { appendSnapshot, computeExtendedWindows, loadHistory, clearSnapshotHistory, todayDateString } = require('./parser/snapshotHistory');
+const { parseSalesRows, aggregateByCity, aggregateByProduct, assignPerformanceTiers } = require('./parser/parseSales');
+const {
+  appendCitySnapshot,
+  attachTrend,
+  clearHistory,
+  removeBrandFromHistory,
+  removeCityFromHistory,
+  getSnapshotsForCity,
+  restoreSnapshotsForCity,
+} = require('./parser/salesHistory');
+const { parseCampaignFile } = require('./parser/parseCampaign');
+const {
+  loadStore: loadCampaignStore,
+  clearStore: clearCampaignStore,
+  removeBrandRows: removeCampaignBrandRows,
+  planUpload: planCampaignUpload,
+  listUnresolvedCampaigns,
+  upsertUpload: upsertCampaignUpload,
+  listPeriods: listCampaignPeriods,
+  getLatestPeriodKey: getLatestCampaignPeriodKey,
+  resolvePeriodKey: resolveCampaignPeriod,
+  getLastUploadedDate: getCampaignUploadedDate,
+  removeCampaignRows,
+  restoreCampaignRows,
+  selectRows: selectCampaignRows,
+  aggregateTotals: aggregateCampaignTotals,
+  aggregateByCampaign: aggregateCampaigns,
+  aggregateByBrand: aggregateCampaignsByBrand,
+  aggregateDailyByCampaign: aggregateCampaignDaily,
+  getCampaignDetail,
+  listCampaignBrands,
+} = require('./parser/campaignStore');
+const { resolveBrand, saveAlias, loadAliases } = require('./parser/brandResolver');
+const { hashFile, isDuplicateUpload, recordUpload, clearUploadHashes } = require('./parser/uploadGuard');
+const {
+  monthLabel,
+  orderDateRange,
+  isPartial,
+  buildMonthSlots,
+  upsertMonthSlots,
+  listMonthlyBrands,
+  listMonths,
+  slotsFor,
+  compareMonths,
+  removeMonth,
+  removeBrandMonths,
+  restoreMonth,
+  MONTH_KEY_RE,
+} = require('./parser/salesMonthly');
+const { pickMonth, filterToMonth } = require('./parser/salesMonth');
+const { combineCityRows, salesBrandSummaries } = require('./parser/citySales');
+const { computeStockHealth, decorateRows, stripHealth, productsNeedingAction } = require('./parser/stockStatus');
+const { monthSalesView, previousMonthKey } = require('./parser/salesMonthView');
+const { buildBrandOverview } = require('./parser/brandOverview');
+const { parseCostFile } = require('./parser/parseBrandCosts');
+const { getBrandCosts, saveBrandProducts, setOtherCost, setProductField, setProfitSettings, listBrandCosts, removeBrandCosts } = require('./parser/brandCosts');
+const { buildUploadsOverview } = require('./parser/uploadsOverview');
+const { buildBrandProfit } = require('./parser/brandProfit');
+const { buildProfitView } = require('./parser/profitView');
+const { profitFromView } = require('./parser/strategyScorecard');
+const { buildProductMonthDetail } = require('./parser/productMonthDetail');
+const { buildBrandReport } = require('./parser/brandReport');
+const { buildReportProfit } = require('./parser/reportProfit');
+
+const kv = require('./store/kv');
+const brandRegistry = require('./store/brandRegistry');
+const { captureUndo, listUndo, undoUpload, clearUndo, UNDO_KINDS } = require('./store/uploadUndo');
+const KvSessionStore = require('./store/sessionStore');
+const { requireAuth } = require('./middleware/auth');
+const { loadAccount, brandGuard, requirePerm, canSeeBrand } = require('./middleware/access');
+const { createUsersRouter } = require('./routes/users');
+const { createStrategyRouter } = require('./routes/strategy');
+const accounts = require('./store/accounts');
+const authRoutes = require('./routes/auth');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 
 const UPLOAD_DIR = path.join(__dirname, 'uploads');
-const DATA_PATH = path.join(__dirname, 'data', 'latest.json');
-const LOW_STOCK_THRESHOLD = 10; // change this one number to adjust the "low stock" line
+// kv_store keys (see store/kv.js)
+const LATEST_KEY = 'latest';
+const SALES_LATEST_KEY = 'salesLatest';
+const PRODUCT_SALES_KEY = 'salesByProduct';
+const ANGULAR_DIST_PATH = path.join(__dirname, 'client', 'dist', 'client', 'browser');
+// Stock status rules (lead time, healthy days, surge) live in parser/stockStatus.js; LOW_STOCK_THRESHOLD in .env is no longer used.
 
 if (!fs.existsSync(UPLOAD_DIR)) fs.mkdirSync(UPLOAD_DIR, { recursive: true });
-if (!fs.existsSync(path.join(__dirname, 'data'))) fs.mkdirSync(path.join(__dirname, 'data'), { recursive: true });
 
-const upload = multer({ dest: UPLOAD_DIR });
+const MAX_UPLOAD_BYTES = 25 * 1024 * 1024;
+const upload = multer({
+  dest: UPLOAD_DIR,
+  limits: { fileSize: MAX_UPLOAD_BYTES },
+  fileFilter: (_req, file, cb) => {
+    if (/\.xlsx?$/i.test(file.originalname)) return cb(null, true);
+    cb(new Error('Only .xls and .xlsx files are accepted.'));
+  },
+});
 
-app.use(express.static(path.join(__dirname, 'public')));
+// Wraps upload.single('report') so rejections come back as JSON 400 instead of Express's HTML 500.
+const uploadReport = (req, res, next) => {
+  upload.single('report')(req, res, (err) => {
+    if (!err) return next();
+    const message = err.code === 'LIMIT_FILE_SIZE' ? 'File too large (max 25 MB).' : err.message;
+    res.status(400).json({ error: message });
+  });
+};
+
+// Wraps every data-changing route: runs one at a time (so a concurrent request can't read
+// stale data mid-save and overwrite it), awaits all writes, answers 500 if a save fails.
+const mutating = (handler) => (req, res) =>
+  kv.withLock(() => handler(req, res)).catch((err) => {
+    console.error(`${req.method} ${req.path} failed:`, err.message);
+    if (!res.headersSent) res.status(500).json({ error: 'Saving failed. Please try again.' });
+  });
+
+// --- Session setup --------------------------------------------------------
+
+// No hardcoded fallback: production refuses to start without a secret; elsewhere a random
+// per-process one is used (sessions are saved in kv_store, but a new random secret invalidates them
+// on every restart, so set SESSION_SECRET).
+let sessionSecret = process.env.SESSION_SECRET;
+if (!sessionSecret) {
+  if (process.env.NODE_ENV === 'production') {
+    console.error('SESSION_SECRET is not set. Refusing to start in production without it.');
+    process.exit(1);
+  }
+  sessionSecret = crypto.randomBytes(32).toString('hex');
+  console.warn('SESSION_SECRET is not set; using a random one for this run.');
+}
+
+// Wake-up / uptime ping (no login, no data). Point a free monitor such as UptimeRobot at /health every
+// 10 minutes so Render's free tier does not fall asleep.
+app.get('/health', (req, res) => res.json({ ok: true }));
+
+// Behind Render's HTTPS proxy: trust the first hop so req.secure / client IPs are right.
+app.set('trust proxy', 1);
+
+app.use(
+  session({
+    store: new KvSessionStore(), // logins survive restarts (kv_store)
+    secret: sessionSecret,
+    resave: false,
+    saveUninitialized: false,
+    cookie: {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production', // HTTPS only in production
+      sameSite: 'lax',
+      maxAge: 1000 * 60 * 60 * 24, // 24 hours
+    },
+  })
+);
+
 app.use(express.json());
+
+// --- Auth routes (public) -------------------------------------------------
+
+app.use('/api', authRoutes);
+
+// --- Serve login page (public) --------------------------------------------
+
+app.get('/login', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'login.html'));
+});
+app.get('/login.js', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'login.js'));
+});
+
+// --- Auth gate: everything below requires login ---------------------------
+
+// The login page deliberately remains a small, static page. The authenticated
+// dashboard is served as the Angular single-page application under /app.
+app.use((req, res, next) => {
+  // Allow style.css through without auth (needed by login page)
+  if (req.path === '/style.css') {
+    return express.static(path.join(__dirname, 'public'))(req, res, next);
+  }
+
+  // For all other static assets and pages, require session
+  if (!req.session || !req.session.user) {
+    // API requests get 401
+    if (req.path.startsWith('/api/')) {
+      return res.status(401).json({ error: 'Not authenticated.' });
+    }
+    // HTML/page requests get redirected
+    return res.redirect('/login');
+  }
+
+  next();
+});
+
+// Every /api call from here on: load the account (role, brands, active flag from storage), apply the brand
+// rules (middleware/access.js), then the route's own permission (requirePerm). Users API: admin only.
+app.use(loadAccount);
+app.use(brandGuard);
+app.use('/api/users', createUsersRouter({ knownBrands: allBrandNames, dataBrands: knownBrandNames }));
+// Strategy tab: the router reads the brand's data through this function (same sources as /api/brand-overview and /api/brand-profit).
+function strategyBrandData(brand, { includeProfit }) {
+  const aliases = loadAliases();
+  const uploadFor = (brandUploads) => {
+    const key = Object.keys(brandUploads || {}).find((b) => sameBrand(b, brand));
+    return key ? brandUploads[key] : null;
+  };
+  const inventory = loadLatest();
+  const salesLatest = loadSalesLatest();
+  const productSales = loadProductSalesLatest();
+  const stockRows = inventory
+    ? inventory.rows.filter((r) => sameBrand(brandOf(r.productName, r.brandName, aliases) || 'Unknown', brand))
+    : [];
+  const overview = buildBrandOverview({
+    brand,
+    cityRows: salesLatest ? combineCityRows(salesRowsForBrand(salesLatest, brand)) : [],
+    productRows: productSales ? (productSales.productRows || []).filter((p) => sameBrand(p.brandName, brand)) : [],
+    salesUpload: salesLatest ? uploadFor(salesLatest.brandUploads) : null,
+    inventoryRows: stockRows,
+    inventoryUpload: inventory ? uploadFor(inventory.brandUploads) : null,
+    campaignStore: loadCampaignStore(),
+    months: listMonths(brand),
+    month: '',
+    monthSlots: [],
+  });
+  const monthInfo = listMonths(brand, PROFIT_PLATFORM);
+  const slots = slotsFor(brand, PROFIT_PLATFORM);
+  // Same maths as the Profit tab (typed COGS, GST, fees included), one row per month, ads counted in.
+  const profit = includeProfit
+    ? profitFromView(buildProfitView({
+      brand, slots, monthInfo, costs: getBrandCosts(brand), adSpendByMonth: adSpendByMonthFor(brand),
+      groupBy: 'month', months: monthInfo.map((m) => m.monthKey).slice(-12), includeAds: true,
+    }))
+    : null;
+  const rawMonthly = slots.slice(-6).map((s) => ({
+    month: s.monthKey,
+    products: (s.products || []).slice(0, 30).map((p) => ({ product: p.productName, revenue: p.revenue, units: p.units })),
+  }));
+    return { overview, stockRows, monthInfo, profit, rawMonthly, slots, costs: getBrandCosts(brand), adSpendByMonth: adSpendByMonthFor(brand), campaignStore: loadCampaignStore() };
+}
+app.use('/api/strategy', createStrategyRouter({ getBrandData: strategyBrandData }));
+
+// Preserve useful legacy URLs while moving the actual dashboard to Angular.
+app.get('/', (_req, res) => res.redirect('/app/'));
+
+// The static middleware handles hashed JS/CSS files. The fallback is required
+// for direct loads and browser refreshes of Angular client-side routes.
+app.use('/app', express.static(ANGULAR_DIST_PATH));
+app.get(['/app', '/app/*'], (_req, res) => {
+  res.sendFile(path.join(ANGULAR_DIST_PATH, 'index.html'));
+});
 
 /**
  * Builds the full consolidated product list: today's parsed rows plus
  * the 45/60 day figures pulled from snapshot history.
  */
 function buildConsolidatedRows(parsedRows, date) {
+  const history = loadHistory({ readOnly: true }); // once per upload, not per row
   return parsedRows.map((row) => {
     const { unitsSold45, unitsSold60 } = computeExtendedWindows({
       itemId: row.itemId,
       warehouseId: row.warehouseId,
       latestDate: date,
+      latestUnitsSold15: row.unitsSold15,
       latestUnitsSold30: row.unitsSold30,
-    });
+    }, history);
 
-    const stockStatus =
-      row.totalStockAvailable <= 0 ? 'out' : row.totalStockAvailable <= LOW_STOCK_THRESHOLD ? 'low' : 'ok';
+    // Kept for older code; the Stock page reads stockHealth, which loadLatest() computes fresh on every read.
+    const stockStatus = computeStockHealth(row).legacyStatus;
 
     return {
       productName: row.productName,
+      brandName: row.brandName || '',
       warehouseName: row.warehouseName,
       totalStockAvailable: row.totalStockAvailable,
       unitsSold7: row.unitsSold7,
@@ -53,68 +291,351 @@ function buildConsolidatedRows(parsedRows, date) {
   });
 }
 
-function saveLatest(rows, date, fileName) {
-  fs.writeFileSync(DATA_PATH, JSON.stringify({ date, fileName, rows }, null, 2));
+// Inventory is stored per brand so uploading one brand never removes another:
+//   { date, fileName, rows, brandUploads: { "<Brand>": { date, fileName } } }
+// `date`/`fileName` mirror the most recent upload for older callers.
+async function saveLatest(store) {
+  // stockHealth is computed on every read (loadLatest), so it is never stored.
+  await kv.set(LATEST_KEY, { ...store, rows: stripHealth(store.rows) });
 }
 
+// Returns a private copy (small document), or null if nothing is stored.
 function loadLatest() {
-  if (!fs.existsSync(DATA_PATH)) return null;
-  return JSON.parse(fs.readFileSync(DATA_PATH, 'utf-8'));
+  const latest = kv.get(LATEST_KEY);
+  if (!latest) return null;
+  if (latest.brandUploads) {
+    decorateRows(latest.rows);
+    return latest;
+  }
+
+  // Pre-per-brand shape: attribute every row to its brand with the old date/file name.
+  // Converted in memory on each read; the next save stores the new shape.
+  const brandUploads = {};
+  (latest.rows || []).forEach((r) => {
+    r.brandName = r.brandName || 'Unknown';
+    brandUploads[r.brandName] = { date: latest.date, fileName: latest.fileName };
+  });
+  return { ...latest, rows: decorateRows(latest.rows || []), brandUploads };
 }
 
-// --- Upload -----------------------------------------------------------
+// --- Upload (upload permission, all brands only) ---------------------------
 
-app.post('/api/upload', upload.single('report'), (req, res) => {
+app.post('/api/upload', requirePerm('upload'), uploadReport, mutating(async (req, res) => {
   if (!req.file) {
     return res.status(400).json({ error: 'No file uploaded.' });
   }
 
   try {
+    // Same file already processed today -> skip (?force=1 overrides).
+    const fileHash = hashFile(req.file.path);
+    if (req.query.force !== '1' && isDuplicateUpload('inventory', fileHash)) {
+      return res.json({ ok: true, duplicate: true, skipped: true });
+    }
+
     const parsedRows = parseReport(req.file.path);
     const date = todayDateString();
 
+    // Rows with an empty Brand Name column fall back to the file name, then "Unknown".
+    const fileBrand = resolveBrand(path.parse(req.file.originalname).name).brand;
+    parsedRows.forEach((row) => {
+      if (!row.brandName) row.brandName = fileBrand;
+    });
+
     // Save this upload into the history log BEFORE computing 45/60 day
     // windows for it, so today's own snapshot is available for future uploads.
-    appendSnapshot(parsedRows, date);
+    // Write order: history, then the current view, then the upload hash. Each step is
+    // idempotent on retry, and the hash is only recorded once the data is saved.
+    await captureUndo('inventory', { fileName: req.file.originalname, brands: Array.from(new Set(parsedRows.map((r) => r.brandName))) });
+    await appendSnapshot(parsedRows, date);
 
-    const rows = buildConsolidatedRows(parsedRows, date);
-    saveLatest(rows, date, req.file.originalname);
+    const newRows = buildConsolidatedRows(parsedRows, date);
 
-    res.json({ ok: true, date, rowCount: rows.length });
+    // Replace only the brands present in this file; every other brand stays.
+    const brands = Array.from(new Set(newRows.map((r) => r.brandName)));
+    const previous = loadLatest() || { rows: [], brandUploads: {} };
+    const brandUploads = { ...previous.brandUploads };
+    brands.forEach((b) => {
+      brandUploads[b] = { date, fileName: req.file.originalname };
+    });
+    const rows = previous.rows.filter((r) => !brands.includes(r.brandName)).concat(newRows);
+    await saveLatest({ date, fileName: req.file.originalname, rows, brandUploads });
+    await recordUpload('inventory', fileHash);
+
+    res.json({ ok: true, date, rowCount: newRows.length, totalRowCount: rows.length, brands });
   } catch (err) {
+    if (err.kvError) throw err; // save failed -> 500 from mutating()
     res.status(400).json({ error: err.message });
   } finally {
     fs.unlink(req.file.path, () => {});
   }
-});
+}));
 
-// --- Read APIs ----------------------------------------------------------
+// --- Read APIs (any authenticated user) ------------------------------------
 
-app.get('/api/products', (req, res) => {
+app.get('/api/products', requireAuth, (req, res) => {
   const latest = loadLatest();
   if (!latest) return res.json({ date: null, rows: [] });
-  res.json(latest);
+  // Stamp the resolved brand so the client never has to guess it. ?brand= keeps that brand's rows only.
+  const aliases = loadAliases();
+  const brand = typeof req.query.brand === 'string' ? req.query.brand.trim() : '';
+  const rows = latest.rows
+    .map((r) => ({ ...r, brandName: brandOf(r.productName, r.brandName, aliases) }))
+    .filter((r) => !brand || sameBrand(r.brandName || 'Unknown', brand));
+  res.json({ ...latest, rows });
 });
 
-app.get('/api/summary', (req, res) => {
+app.get('/api/summary', requireAuth, (req, res) => {
   const latest = loadLatest();
   if (!latest) {
     return res.json({ totalUnitsSold30: 0, totalStock: 0, productCount: 0, lowOrOutCount: 0 });
   }
 
+  // ?brand= counts that brand only (a brand-limited account always sends one).
+  const brand = typeof req.query.brand === 'string' ? req.query.brand.trim() : '';
+  if (brand) {
+    const aliases = loadAliases();
+    latest.rows = latest.rows.filter((r) => sameBrand(brandOf(r.productName, r.brandName, aliases) || 'Unknown', brand));
+  }
   const totalUnitsSold30 = latest.rows.reduce((sum, r) => sum + r.unitsSold30, 0);
   const totalStock = latest.rows.reduce((sum, r) => sum + r.totalStockAvailable, 0);
   const productCount = new Set(latest.rows.map((r) => r.productName)).size;
-  const lowOrOutCount = latest.rows.filter((r) => r.stockStatus !== 'ok').length;
+  const lowOrOutCount = productsNeedingAction(latest.rows); // products with at least one warehouse that needs action
 
   res.json({ date: latest.date, totalUnitsSold30, totalStock, productCount, lowOrOutCount });
 });
 
-// --- Export ---------------------------------------------------------------
+// Wipes the current inventory view for one brand (?brand=) or for every brand. The upload history log
+// (kv "history") is kept by default: it is what the 45/60-day figures are computed from, and it cannot
+// be rebuilt. ?history=1 resets it too (a fresh start): 45d / 60d then read "n/a" until about 30 days of
+// new uploads exist. A reset also forgets the saved "undo the last stock upload", which would bring it back.
+app.delete('/api/inventory-data', requirePerm('deleteData'), mutating(async (req, res) => {
+  const brand = typeof req.query.brand === 'string' ? req.query.brand.trim() : '';
+  const latest = brand ? loadLatest() : null;
+  if (req.query.history === '1') {
+    await clearSnapshotHistory(brand ? stockSnapshotOfBrand(brand) : undefined);
+    await clearUndo();
+  }
 
-app.get('/api/export', (req, res) => {
+  if (brand && latest) {
+    latest.rows = latest.rows.filter((r) => !sameBrand(r.brandName, brand));
+    Object.keys(latest.brandUploads).forEach((b) => {
+      if (sameBrand(b, brand)) delete latest.brandUploads[b];
+    });
+    if (latest.rows.length) {
+      await saveLatest(latest);
+      await clearUploadHashes('inventory');
+      return res.json({ ok: true, brand });
+    }
+  }
+
+  await kv.delete(LATEST_KEY);
+  await clearUploadHashes('inventory');
+  res.json({ ok: true });
+}));
+
+// The test for "this stock-history snapshot belongs to this brand". Old snapshots have no brandName, so
+// the brand is read from the product name, as everywhere else.
+function stockSnapshotOfBrand(brand) {
+  const aliases = loadAliases();
+  return (s) => sameBrand(s.brandName || brandOf(s.productName, '', aliases) || 'Unknown', brand);
+}
+
+// Wipes ONE brand from everything the app stores: stock, the 45/60-day stock history, sales, the sales
+// trend history, monthly sales, advertising and the uploaded cost sheet. ?typed=1 also removes what was
+// typed in by hand on the Profit tab (COGS, GST %, commission %, settings, monthly other costs).
+// Brand aliases are kept (they only teach the app how to read names). Saved "undo the last upload"
+// copies are dropped, because an undo would bring the brand back. This cannot be undone.
+app.delete('/api/brand', requirePerm('deleteData'), mutating(async (req, res) => {
+  const brand = typeof req.query.brand === 'string' ? req.query.brand.trim() : '';
+  if (!brand) return res.status(400).json({ error: 'brand is required.' });
+  const typed = req.query.typed === '1';
+  const aliases = loadAliases();
+  const removed = { stockRows: 0, stockHistory: 0, salesRows: 0, months: 0, campaignRows: 0, costSheet: false, typed: false };
+
   const latest = loadLatest();
-  if (!latest) return res.status(400).json({ error: 'No report uploaded yet.' });
+  if (latest) {
+    const before = latest.rows.length;
+    latest.rows = latest.rows.filter((r) =>
+      !sameBrand(r.brandName, brand) && !sameBrand(brandOf(r.productName, r.brandName, aliases) || 'Unknown', brand));
+    removed.stockRows = before - latest.rows.length;
+    Object.keys(latest.brandUploads || {}).forEach((b) => { if (sameBrand(b, brand)) delete latest.brandUploads[b]; });
+    if (latest.rows.length) await saveLatest(latest); else await kv.delete(LATEST_KEY);
+  }
+  removed.stockHistory = await clearSnapshotHistory(stockSnapshotOfBrand(brand));
+
+  const sales = loadSalesLatest();
+  if (sales) {
+    const before = (sales.cityRows || []).length;
+    sales.cityRows = (sales.cityRows || []).filter((r) => !sameBrand(r.brandName, brand));
+    removed.salesRows = before - sales.cityRows.length;
+    Object.keys(sales.brandUploads || {}).forEach((b) => { if (sameBrand(b, brand)) delete sales.brandUploads[b]; });
+    if (sales.cityRows.length) await saveSalesLatest(sales); else await kv.delete(SALES_LATEST_KEY);
+  }
+  const products = loadProductSalesLatest();
+  if (products && Array.isArray(products.productRows)) {
+    const kept = products.productRows.filter((p) => !sameBrand(p.brandName, brand));
+    if (kept.length) await saveProductSalesLatest(kept, products.date, products.fileName); else await kv.delete(PRODUCT_SALES_KEY);
+  }
+  await removeBrandFromHistory(brand);
+
+  removed.months = await removeBrandMonths(brand);
+  removed.campaignRows = await removeCampaignBrandRows(brand);
+  campaignTrash.clear();
+  Object.assign(removed, await removeBrandCosts(brand, { typed }));
+
+  // The same files can be uploaded again, and no saved undo can bring the brand back.
+  for (const kind of ['inventory', 'sales', 'salesMonthly', 'campaign']) await clearUploadHashes(kind);
+  await clearUndo();
+  res.json({ ok: true, brand, removed });
+}));
+
+// Removes one product+warehouse row from the current inventory view.
+// Kept intentionally simple: this only touches the current view (not the
+// 45/60 day snapshot history), since that history is shared across
+// products and warehouses and shouldn't be wiped by a single-row delete.
+app.delete('/api/products', requirePerm('deleteData'), mutating(async (req, res) => {
+  const { productName, warehouseName } = req.query;
+  if (!productName || !warehouseName) {
+    return res.status(400).json({ error: 'productName and warehouseName are required.' });
+  }
+
+  const latest = loadLatest();
+  if (!latest) return res.status(404).json({ error: 'No inventory data to delete from.' });
+
+  const index = latest.rows.findIndex(
+    (r) => r.productName === productName && r.warehouseName === warehouseName
+  );
+  if (index === -1) {
+    return res.status(404).json({ error: `Row for "${productName}" / "${warehouseName}" not found.` });
+  }
+
+  const [removedRow] = latest.rows.splice(index, 1);
+  await saveLatest(latest);
+  await clearUploadHashes('inventory');
+
+  res.json({ ok: true, removedRow, index, rowCount: latest.rows.length });
+}));
+
+// Re-inserts a previously deleted row (Ctrl+Z / undo) at its original
+// position.
+app.post('/api/products/restore', requirePerm('deleteData'), mutating(async (req, res) => {
+  const { row, index } = req.body || {};
+  if (!row) return res.status(400).json({ error: 'row is required.' });
+
+  const latest = loadLatest();
+  if (!latest) return res.status(404).json({ error: 'No inventory data to restore into.' });
+
+  const clampedIndex = Math.max(0, Math.min(typeof index === 'number' ? index : latest.rows.length, latest.rows.length));
+  latest.rows.splice(clampedIndex, 0, row);
+  await saveLatest(latest);
+
+  res.json({ ok: true, rowCount: latest.rows.length });
+}));
+
+// --- Product Focus (product-centric cross-tab view) ------------------------
+
+// Distinct product names, drawn from whatever data we currently have, so
+// the "focus one product" dropdown always reflects real data across tabs.
+app.get('/api/product-names', requireAuth, (req, res) => {
+  const names = new Set();
+  // ?brand= keeps that brand's products only.
+  const brand = typeof req.query.brand === 'string' ? req.query.brand.trim() : '';
+  const aliases = loadAliases();
+
+  const inventory = loadLatest();
+  if (inventory) {
+    inventory.rows.forEach((r) => {
+      if (!brand || sameBrand(brandOf(r.productName, r.brandName, aliases) || 'Unknown', brand)) names.add(r.productName);
+    });
+  }
+
+  const productSales = loadProductSalesLatest();
+  if (productSales) {
+    productSales.productRows.forEach((r) => {
+      if (!brand || sameBrand(r.brandName, brand)) names.add(r.productName);
+    });
+  }
+
+  res.json({ names: Array.from(names).sort((a, b) => a.localeCompare(b)) });
+});
+
+// --- Brand Filter (cross-tab brand dropdown) --------------------------------
+
+// Single source of truth is parser/brandResolver.js. Returns '' when the brand
+// can't be determined (so callers can skip it instead of showing "Unknown").
+function brandOf(name, explicitBrand, aliases) {
+  const { brand } = resolveBrand(name, explicitBrand, aliases);
+  return brand === 'Unknown' ? '' : brand;
+}
+
+// Distinct brand names across all uploaded data (inventory + sales + campaigns).
+function knownBrandNames() {
+  const brands = new Set();
+  const aliases = loadAliases();
+  const add = (name, explicit) => {
+    const b = brandOf(name, explicit, aliases);
+    if (b) brands.add(b);
+  };
+
+  const inventory = loadLatest();
+  if (inventory && Array.isArray(inventory.rows)) {
+    inventory.rows.forEach((r) => add(r.productName, r.brandName));
+  }
+
+  const productSales = loadProductSalesLatest();
+  if (productSales && Array.isArray(productSales.productRows)) {
+    productSales.productRows.forEach((r) => add(r.productName, r.brandName));
+  }
+
+  const salesLatest = loadSalesLatest();
+  if (salesLatest && Array.isArray(salesLatest.cityRows)) {
+    salesLatest.cityRows.forEach((r) => add('', r.brandName));
+  }
+
+  listCampaignBrands(loadCampaignStore()).forEach((b) => {
+    if (b !== 'Unknown') brands.add(b);
+  });
+
+  // Brands that only have monthly sales uploads must still be selectable.
+  listMonthlyBrands().forEach((b) => add('', b));
+
+  return Array.from(brands).sort((x, y) => x.localeCompare(y));
+}
+
+/** Every brand: the ones with uploaded data plus the ones added on the Users page. */
+function allBrandNames() {
+  const byLower = new Map();
+  for (const b of [...knownBrandNames(), ...brandRegistry.list()]) {
+    if (!byLower.has(b.toLowerCase())) byLower.set(b.toLowerCase(), b);
+  }
+  return Array.from(byLower.values()).sort((x, y) => x.localeCompare(y));
+}
+
+app.get('/api/brand-names', requireAuth, (req, res) => {
+  res.json({ brands: allBrandNames() }); // filtered to the account's brands by brandGuard
+});
+
+// Teaches the brand resolver a new mapping, e.g. { raw: 'Knife PB', canonical: 'Oicia' }.
+// Applies to files parsed from now on; already-stored campaign rows keep their brand.
+app.post('/api/brand-alias', requirePerm('upload'), mutating(async (req, res) => {
+  const { raw, canonical } = req.body || {};
+  if (typeof raw !== 'string' || typeof canonical !== 'string' || !raw.trim() || !canonical.trim()) {
+    return res.status(400).json({ error: 'raw and canonical are required.' });
+  }
+  await saveAlias(raw, canonical);
+  res.json({ ok: true });
+}));
+
+// --- Export (any authenticated user) ----------------------------------------
+
+/** Builds the Inventory worksheet, or null if nothing has been uploaded. */
+function buildInventoryWorksheet(brand = '') {
+  const latest = loadLatest();
+  if (!latest) return null;
+  // A brand view exports only that brand's rows.
+  const aliases = loadAliases();
+  const rows = brand ? latest.rows.filter((r) => sameBrand(brandOf(r.productName, r.brandName, aliases) || 'Unknown', brand)) : latest.rows;
+  if (brand && !rows.length) return null;
 
   const headers = [
     'Product Name',
@@ -128,7 +649,7 @@ app.get('/api/export', (req, res) => {
     'Incoming Inventory',
   ];
 
-  const dataRows = latest.rows.map((r) => [
+  const dataRows = rows.map((r) => [
     r.productName,
     r.warehouseName,
     r.totalStockAvailable,
@@ -140,19 +661,1102 @@ app.get('/api/export', (req, res) => {
     r.incomingInventory,
   ]);
 
-  const sheetData = [headers, ...dataRows];
-  const ws = XLSX.utils.aoa_to_sheet(sheetData);
+  const ws = XLSX.utils.aoa_to_sheet([headers, ...dataRows]);
   ws['!cols'] = [{ wch: 45 }, { wch: 30 }, { wch: 18 }, { wch: 16 }, { wch: 16 }, { wch: 16 }, { wch: 16 }, { wch: 16 }, { wch: 16 }];
+  return { ws, date: latest.date };
+}
+
+app.get('/api/export', requirePerm('download'), (req, res) => {
+  const brand = typeof req.query.brand === 'string' ? req.query.brand.trim() : '';
+  const built = buildInventoryWorksheet(brand);
+  if (!built) return res.status(400).json({ error: brand ? `No stock rows found for ${brand}.` : 'No report uploaded yet.' });
 
   const wb = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb, ws, 'Consolidated Report');
+  XLSX.utils.book_append_sheet(wb, built.ws, 'Consolidated Report');
 
   const buffer = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
-  res.setHeader('Content-Disposition', `attachment; filename="Consolidated_Inventory_Report_${latest.date}.xlsx"`);
+  res.setHeader('Content-Disposition', `attachment; filename="Consolidated_Inventory_Report_${built.date}.xlsx"`);
   res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
   res.send(buffer);
 });
 
-app.listen(PORT, () => {
-  console.log(`Blinkit dashboard running at http://localhost:${PORT}`);
+// --- Sales / City Performance -------------------------------------------
+// Stored per brand, like inventory, so uploading one brand never removes another:
+//   salesLatest.json    { date, fileName, brandUploads: { "<Brand>": { date, fileName } }, cityRows }
+//                       cityRows = one row per (brandName, city), each with its own trend vs that
+//                       brand's previous upload
+//   salesByProduct.json { date, fileName, productRows }   (each product row carries brandName)
+// Reads combine the brand rows per city (see combineCityRows).
+
+async function saveSalesLatest(store) {
+  await kv.set(SALES_LATEST_KEY, store);
+}
+
+// Returns a private copy (small document), or null if nothing is stored.
+function loadSalesLatest() {
+  const latest = kv.get(SALES_LATEST_KEY);
+  if (!latest) return null;
+  if (latest.brandUploads) return latest;
+
+  // Pre-per-brand shape: its city rows were totalled across brands. Attribute each row to
+  // its single brand (or "Unknown") and keep the old date / file name. Converted in memory
+  // on each read; the next save stores the new shape.
+  const brandUploads = {};
+  const cityRows = (latest.cityRows || []).map((r) => {
+    const brandName = r.brandName || (r.brands && r.brands.length === 1 ? r.brands[0] : 'Unknown');
+    brandUploads[brandName] = { date: latest.date, fileName: latest.fileName };
+    return { ...r, brandName };
+  });
+  return { ...latest, cityRows, brandUploads };
+}
+
+async function saveProductSalesLatest(productRows, date, fileName) {
+  await kv.set(PRODUCT_SALES_KEY, { date, fileName, productRows });
+}
+
+function loadProductSalesLatest() {
+  return kv.get(PRODUCT_SALES_KEY);
+}
+
+const sameBrand = (a, b) => String(a || 'Unknown').toLowerCase() === String(b || 'Unknown').toLowerCase();
+
+function salesRowsForBrand(store, brand) {
+  return brand ? store.cityRows.filter((r) => sameBrand(r.brandName, brand)) : store.cityRows;
+}
+
+app.post('/api/sales-upload', requirePerm('upload'), uploadReport, mutating(async (req, res) => {
+  if (!req.file) {
+    return res.status(400).json({ error: 'No file uploaded.' });
+  }
+
+  try {
+    const fileHash = hashFile(req.file.path);
+    if (req.query.force !== '1' && isDuplicateUpload('sales', fileHash)) {
+      return res.json({ ok: true, duplicate: true, skipped: true });
+    }
+
+    const allRows = parseSalesRows(req.file.path);
+    const date = todayDateString();
+
+    // Orders with an empty Brand Name fall back to the file name, then "Unknown".
+    const fileBrand = resolveBrand(path.parse(req.file.originalname).name).brand;
+    allRows.forEach((row) => {
+      if (!row.brandName) row.brandName = fileBrand;
+    });
+
+    // The Sales tab shows ONE month, like Blinkit's dashboard. Blinkit's export can carry rows from
+    // the next month (e.g. Nov 1 inside the October file), so only rows dated inside the month are
+    // added up. ?month=YYYY-MM picks the month; otherwise it is the month with the most rows.
+    const requestedMonth = typeof req.query.month === 'string' && MONTH_KEY_RE.test(req.query.month) ? req.query.month : '';
+    const salesMonth = pickMonth(allRows, requestedMonth);
+    if (!salesMonth) {
+      return res.status(400).json({ error: 'No month was saved: the Order Date column has no readable dates.' });
+    }
+    const { rows: salesRows, dropped: otherMonths } = filterToMonth(allRows, salesMonth);
+    if (!salesRows.length) {
+      return res.status(400).json({ error: `The file has no orders dated in ${salesMonth}.` });
+    }
+
+    const brands = Array.from(new Set(salesRows.map((r) => r.brandName)));
+    const cityAgg = brands.flatMap((brandName) =>
+      aggregateByCity(salesRows.filter((r) => r.brandName === brandName)).map((row) => ({ ...row, brandName }))
+    );
+
+    // Log this upload's per-brand city totals BEFORE computing the trend, so it
+    // becomes the comparison point for that brand's next upload.
+    // Write order: history, city view, product view, then the upload hash (see /api/upload).
+    await captureUndo('sales', { fileName: req.file.originalname, brands: brands });
+    await appendCitySnapshot(cityAgg, date);
+    const withTrend = attachTrend(cityAgg, date);
+
+    // Replace only the brands in this file; every other brand stays.
+    const previous = loadSalesLatest() || { cityRows: [], brandUploads: {} };
+    const brandUploads = { ...previous.brandUploads };
+    brands.forEach((b) => {
+      // from / to = the order dates this upload covers, so pages can say which period the numbers are for.
+      brandUploads[b] = { date, fileName: req.file.originalname, ...orderDateRange(salesRows.filter((r) => r.brandName === b)) };
+    });
+    const cityRows = previous.cityRows.filter((r) => !brands.includes(r.brandName)).concat(withTrend);
+    await saveSalesLatest({ date, fileName: req.file.originalname, brandUploads, cityRows });
+
+    // Per-product breakdown (powers the feeder view); same replace-by-brand rule.
+    const productAgg = aggregateByProduct(salesRows);
+    const oldProducts = loadProductSalesLatest();
+    const keptProducts = oldProducts ? oldProducts.productRows.filter((p) => !brands.some((b) => sameBrand(p.brandName, b))) : [];
+    await saveProductSalesLatest(keptProducts.concat(productAgg), date, req.file.originalname);
+    // Also file this report's orders under their order-date months (Monthly Comparison page).
+    // Uses allRows: every month in the file is filed under its own month, nothing is lost.
+    const monthly = buildMonthSlots(allRows, req.file.originalname, date);
+    if (monthly.slots.length) await upsertMonthSlots(monthly.slots);
+    await recordUpload('sales', fileHash);
+
+    res.json({
+      ok: true,
+      date,
+      brands,
+      cityCount: new Set(withTrend.map((r) => r.city)).size,
+      totalCityCount: new Set(cityRows.map((r) => r.city)).size,
+      month: salesMonth,
+      orderRowCount: salesRows.length,
+      ignoredRows: otherMonths.map((m) => ({ monthKey: m.monthKey, rows: m.rows, units: m.units, revenue: m.revenue })),
+    });
+  } catch (err) {
+    if (err.kvError) throw err; // save failed -> 500 from mutating()
+    res.status(400).json({ error: err.message });
+  } finally {
+    fs.unlink(req.file.path, () => {});
+  }
+}));
+
+// --- Monthly sales comparison ------------------------------------------------
+// kv `salesMonthly`: one slot per (brand, order-date month); see parser/salesMonthly.js.
+// This upload only adds months; it does not change the Sales tab's current view.
+app.post('/api/sales-month-upload', requirePerm('upload'), uploadReport, mutating(async (req, res) => {
+  if (!req.file) {
+    return res.status(400).json({ error: 'No file uploaded.' });
+  }
+
+  try {
+    const fileHash = hashFile(req.file.path);
+    if (req.query.force !== '1' && isDuplicateUpload('salesMonthly', fileHash)) {
+      return res.json({ ok: true, duplicate: true, skipped: true });
+    }
+
+    const salesRows = parseSalesRows(req.file.path);
+    // Orders with an empty Brand Name fall back to the file name, then "Unknown" (same as /api/sales-upload).
+    const fileBrand = resolveBrand(path.parse(req.file.originalname).name).brand;
+    salesRows.forEach((row) => {
+      if (!row.brandName) row.brandName = fileBrand;
+    });
+
+    const { slots, skippedRows } = buildMonthSlots(salesRows, req.file.originalname, todayDateString());
+    if (!slots.length) {
+      return res.status(400).json({ error: 'No month was saved: the Order Date column has no readable dates.' });
+    }
+    await captureUndo('salesMonthly', { fileName: req.file.originalname, brands: slots.map((s) => s.brandName) });
+    await upsertMonthSlots(slots);
+    await recordUpload('salesMonthly', fileHash);
+
+    res.json({
+      ok: true,
+      months: slots.map((s) => ({
+        brandName: s.brandName,
+        monthKey: s.monthKey,
+        label: monthLabel(s.monthKey),
+        orderCount: s.totals.orderCount,
+        revenue: s.totals.revenue,
+      })),
+      skippedRows,
+    });
+  } catch (err) {
+    if (err.kvError) throw err; // save failed -> 500 from mutating()
+    res.status(400).json({ error: err.message });
+  } finally {
+    fs.unlink(req.file.path, () => {});
+  }
+}));
+
+// Months stored for ?brand= (empty = all brands combined), oldest first.
+app.get('/api/sales-months', requireAuth, (req, res) => {
+  const brand = typeof req.query.brand === 'string' ? req.query.brand.trim() : '';
+  res.json({ months: listMonths(brand) });
 });
+
+// ?months=2026-08,2026-09,2026-10 (max 12) &brand= : totals, cities and products side by side.
+app.get('/api/sales-month-compare', requireAuth, (req, res) => {
+  const brand = typeof req.query.brand === 'string' ? req.query.brand.trim() : '';
+  const months = typeof req.query.months === 'string'
+    ? req.query.months.split(',').map((m) => m.trim()).filter(Boolean).slice(0, 12)
+    : [];
+  res.json(compareMonths(brand, months));
+});
+
+// Deletes one brand's month; returns the removed slot so the client can undo.
+app.delete('/api/sales-month', requirePerm('deleteData'), mutating(async (req, res) => {
+  const brand = typeof req.query.brand === 'string' ? req.query.brand.trim() : '';
+  const month = typeof req.query.month === 'string' ? req.query.month.trim() : '';
+  if (!brand || !MONTH_KEY_RE.test(month)) {
+    return res.status(400).json({ error: 'brand and month (YYYY-MM) are required.' });
+  }
+  const removed = await removeMonth(brand, month);
+  if (!removed) return res.status(404).json({ error: 'That month is not stored for this brand.' });
+  await clearUploadHashes('salesMonthly');
+  res.json({ ok: true, removed });
+}));
+
+app.post('/api/sales-month/restore', requirePerm('deleteData'), mutating(async (req, res) => {
+  const restored = await restoreMonth(req.body && req.body.slot);
+  if (!restored) return res.status(400).json({ error: 'Nothing valid to restore.' });
+  res.json({ ok: true });
+}));
+
+// --- Brand overview (one brand's dashboard) -----------------------------------
+// Everything for ?brand= (required) on one screen: sales, inventory, advertising, monthly trend.
+app.get('/api/brand-overview', requireAuth, (req, res) => {
+  const brand = typeof req.query.brand === 'string' ? req.query.brand.trim() : '';
+  if (!brand) return res.status(400).json({ error: 'brand is required.' });
+  // Optional ?month=YYYY-MM: sales and advertising for that month instead of the latest upload.
+  const month = typeof req.query.month === 'string' ? req.query.month.trim() : '';
+  if (month && !MONTH_KEY_RE.test(month)) return res.status(400).json({ error: 'month must look like 2026-10.' });
+
+  const aliases = loadAliases();
+  const uploadFor = (brandUploads) => {
+    const key = Object.keys(brandUploads || {}).find((b) => sameBrand(b, brand));
+    return key ? brandUploads[key] : null;
+  };
+  const inventory = loadLatest();
+  const salesLatest = loadSalesLatest();
+  const productSales = loadProductSalesLatest();
+
+  res.json(buildBrandOverview({
+    brand,
+    cityRows: salesLatest ? combineCityRows(salesRowsForBrand(salesLatest, brand)) : [],
+    productRows: productSales ? (productSales.productRows || []).filter((p) => sameBrand(p.brandName, brand)) : [],
+    salesUpload: salesLatest ? uploadFor(salesLatest.brandUploads) : null,
+    inventoryRows: inventory
+      ? inventory.rows.filter((r) => sameBrand(brandOf(r.productName, r.brandName, aliases) || 'Unknown', brand))
+      : [],
+    inventoryUpload: inventory ? uploadFor(inventory.brandUploads) : null,
+    campaignStore: loadCampaignStore(),
+    months: listMonths(brand),
+    month,
+    monthSlots: month ? slotsFor(brand, 'blinkit').filter((s) => s.monthKey === month) : [],
+  }));
+});
+
+// --- Uploads panel (admin): undo the last upload of a report type ---------------
+// Each upload route saves the previous data first (store/uploadUndo.js). Undo puts it back and
+// forgets the file's hash, so the same file can be uploaded again.
+const UPLOAD_HASH_KIND = { inventory: 'inventory', sales: 'sales', salesMonthly: 'salesMonthly', campaign: 'campaign' };
+
+app.post('/api/uploads/undo', requirePerm('upload'), mutating(async (req, res) => {
+  const kind = req.body && typeof req.body.kind === 'string' ? req.body.kind : '';
+  if (!UNDO_KINDS.includes(kind)) return res.status(400).json({ error: 'Unknown report type.' });
+  const undone = await undoUpload(kind);
+  if (!undone) return res.status(404).json({ error: 'Nothing to undo for this report.' });
+  if (UPLOAD_HASH_KIND[kind]) await clearUploadHashes(UPLOAD_HASH_KIND[kind]);
+  res.json({ ok: true, ...undone });
+}));
+
+// What is uploaded for each brand, and which uploads can be undone.
+app.get('/api/uploads-overview', requirePerm('upload'), (req, res) => {
+  const inventory = loadLatest();
+  const sales = loadSalesLatest();
+  const campaignStore = loadCampaignStore();
+  res.json(buildUploadsOverview({
+    stockUploads: (inventory && inventory.brandUploads) || {},
+    salesUploads: (sales && sales.brandUploads) || {},
+    monthlySlots: slotsFor(''),
+    campaignUploads: campaignStore.uploads,
+    campaignPeriods: listCampaignPeriods(campaignStore),
+    costs: listBrandCosts(),
+    undo: listUndo(),
+  }));
+});
+
+// --- Profit (profit permission: it shows what a brand really earns) ----------------
+// Costs come from an uploaded cost sheet (one row per product) plus an "other costs" amount per
+// month; sales come from the monthly sales store; ad spend from the campaign uploads. ?brand= is required.
+const PROFIT_PLATFORM = 'blinkit';
+
+// { 'YYYY-MM': rupees }: the brand's campaign spend (all sheet types) for each month it has campaign rows.
+function adSpendByMonthFor(brand) {
+  const store = loadCampaignStore();
+  const adSpendByMonth = {};
+  new Set(store.rows.filter((r) => sameBrand(r.brandName, brand)).map((r) => r.periodKey)).forEach((periodKey) => {
+    adSpendByMonth[periodKey] = aggregateCampaignTotals(selectCampaignRows(store, { periodKey, brand })).adSpend;
+  });
+  return adSpendByMonth;
+}
+
+app.get('/api/brand-profit', requirePerm('profit'), (req, res) => {
+  const brand = typeof req.query.brand === 'string' ? req.query.brand.trim() : '';
+  if (!brand) return res.status(400).json({ error: 'brand is required.' });
+
+  res.json(buildBrandProfit({
+    brand,
+    monthInfo: listMonths(brand, PROFIT_PLATFORM),
+    slots: slotsFor(brand, PROFIT_PLATFORM),
+    costs: getBrandCosts(brand),
+    adSpendByMonth: adSpendByMonthFor(brand),
+  }));
+});
+
+// The Profit tab: net profit or loss for any mix of months, products and cities (parser/profitView.js).
+// ?brand= is required. ?groupBy=month|product|city, ?months=2026-09,2026-10 (default: the latest full month),
+// ?products= and ?cities= are JSON lists of names (left out = all; [] = none), ?includeAds=0 leaves ad spend out.
+function jsonNameList(raw) {
+  if (raw === undefined) return undefined;
+  try {
+    const list = JSON.parse(String(raw));
+    if (Array.isArray(list) && list.length <= 300 && list.every((x) => typeof x === 'string' && x.length <= 300)) return list;
+  } catch (err) { /* falls through to null */ }
+  return null; // malformed
+}
+
+app.get('/api/profit-view', requirePerm('profit'), (req, res) => {
+  const brand = typeof req.query.brand === 'string' ? req.query.brand.trim() : '';
+  if (!brand) return res.status(400).json({ error: 'brand is required.' });
+  const products = jsonNameList(req.query.products);
+  const cities = jsonNameList(req.query.cities);
+  if (products === null || cities === null) return res.status(400).json({ error: 'products and cities must be JSON lists of names.' });
+  const months = typeof req.query.months === 'string'
+    ? req.query.months.split(',').map((m) => m.trim()).filter((m) => MONTH_KEY_RE.test(m)).slice(0, 12)
+    : [];
+
+  res.json(buildProfitView({
+    brand,
+    slots: slotsFor(brand, PROFIT_PLATFORM),
+    monthInfo: listMonths(brand, PROFIT_PLATFORM),
+    costs: getBrandCosts(brand),
+    adSpendByMonth: adSpendByMonthFor(brand),
+    groupBy: req.query.groupBy,
+    months,
+    products,
+    cities,
+    includeAds: req.query.includeAds !== '0',
+  }));
+});
+
+// One typed value of one product, body { brand, productName, field: 'cogs'|'taxPct'|'commissionPct'|'mrp'|'sellingPrice', value: number|null }.
+// null clears it. Kept apart from the uploaded cost sheet (see parser/brandCosts.js).
+app.post('/api/profit-product-cost', requirePerm('profit'), mutating(async (req, res) => {
+  const body = req.body || {};
+  const brand = typeof body.brand === 'string' ? body.brand.trim() : '';
+  if (!brand) return res.status(400).json({ error: 'brand is required.' });
+  try {
+    await setProductField(brand, body.productName, body.field, body.value === undefined ? null : body.value);
+    res.json({ ok: true });
+  } catch (err) {
+    if (err.kvError) throw err; // save failed -> 500 from mutating()
+    res.status(400).json({ error: err.message });
+  }
+}));
+
+// The Profit tab's default numbers, body { brand, settings: { defaultTaxPct?, defaultCommissionPct?, inwardFee?, fulfilmentFee?, storageFee? } }.
+app.post('/api/profit-settings', requirePerm('profit'), mutating(async (req, res) => {
+  const body = req.body || {};
+  const brand = typeof body.brand === 'string' ? body.brand.trim() : '';
+  if (!brand) return res.status(400).json({ error: 'brand is required.' });
+  try {
+    const settings = await setProfitSettings(brand, body.settings);
+    res.json({ ok: true, settings });
+  } catch (err) {
+    if (err.kvError) throw err;
+    res.status(400).json({ error: err.message });
+  }
+}));
+
+// Cost sheet for one brand (multipart `report`, ?brand=). Replaces the brand's product costs; other costs are kept.
+app.post('/api/brand-costs-upload', requirePerm('upload'), uploadReport, mutating(async (req, res) => {
+  const brand = typeof req.query.brand === 'string' ? req.query.brand.trim() : '';
+  if (!req.file) return res.status(400).json({ error: 'No file uploaded.' });
+  try {
+    if (!brand) return res.status(400).json({ error: 'brand is required.' });
+    const { products, skippedRows } = parseCostFile(req.file.path);
+    await captureUndo('costs', { fileName: req.file.originalname, brands: [brand] });
+    await saveBrandProducts(brand, products, req.file.originalname, todayDateString());
+    res.json({ ok: true, productCount: products.length, skippedRows });
+  } catch (err) {
+    if (err.kvError) throw err; // save failed -> 500 from mutating()
+    res.status(400).json({ error: err.message });
+  } finally {
+    fs.unlink(req.file.path, () => {});
+  }
+}));
+
+// One month's other costs in rupees, body { brand, monthKey: 'YYYY-MM', amount }. 0 clears it.
+app.post('/api/brand-other-costs', requirePerm('profit'), mutating(async (req, res) => {
+  const brand = typeof req.body.brand === 'string' ? req.body.brand.trim() : '';
+  const monthKey = typeof req.body.monthKey === 'string' ? req.body.monthKey : '';
+  const amount = Number(req.body.amount);
+  if (!brand) return res.status(400).json({ error: 'brand is required.' });
+  if (!MONTH_KEY_RE.test(monthKey)) return res.status(400).json({ error: 'monthKey must look like 2026-10.' });
+  if (!Number.isFinite(amount) || amount < 0 || amount > 1e9) {
+    return res.status(400).json({ error: 'amount must be a number of 0 or more.' });
+  }
+  await setOtherCost(brand, monthKey, amount);
+  res.json({ ok: true });
+}));
+
+// --- Product by month (Sales > Month by month) ---------------------------------
+// ?brand= is required. Without ?product= it lists the product names that have monthly data; with it
+// the product is shown month by month plus the whole brand's profit. Profit fields are removed when
+// the profit fields are left out for a role without the profit permission (config/permissions.js).
+// Several ticked products added together: POST { brand, products: [names] } (a POST only because a long
+// list of names does not fit in a web address; it changes nothing).
+app.post('/api/product-month-detail', requireAuth, (req, res) => {
+  const body = req.body || {};
+  const brand = typeof body.brand === 'string' ? body.brand.trim() : '';
+  if (!brand) return res.status(400).json({ error: 'brand is required.' });
+  const products = Array.isArray(body.products)
+    ? body.products.filter((name) => typeof name === 'string' && name.trim()).map((name) => name.trim()).slice(0, 2000)
+    : [];
+  if (!products.length) return res.status(400).json({ error: 'Tick at least one product.' });
+
+  const slots = slotsFor(brand, PROFIT_PLATFORM);
+  const monthInfo = listMonths(brand, PROFIT_PLATFORM);
+  const costs = getBrandCosts(brand);
+  res.json(buildProductMonthDetail({
+    brand,
+    products,
+    monthInfo,
+    slots,
+    costs,
+    brandProfit: buildBrandProfit({ brand, monthInfo, slots, costs, adSpendByMonth: adSpendByMonthFor(brand) }),
+    profitVisible: Boolean(req.account.perms.profit),
+  }));
+});
+
+app.get('/api/product-month-detail', requireAuth, (req, res) => {
+  const brand = typeof req.query.brand === 'string' ? req.query.brand.trim() : '';
+  if (!brand) return res.status(400).json({ error: 'brand is required.' });
+  const product = typeof req.query.product === 'string' ? req.query.product.trim() : '';
+
+  const slots = slotsFor(brand, PROFIT_PLATFORM);
+  if (!product) return res.json(buildProductMonthDetail({ slots }));
+
+  const monthInfo = listMonths(brand, PROFIT_PLATFORM);
+  const costs = getBrandCosts(brand);
+  res.json(buildProductMonthDetail({
+    brand,
+    product,
+    monthInfo,
+    slots,
+    costs,
+    brandProfit: buildBrandProfit({ brand, monthInfo, slots, costs, adSpendByMonth: adSpendByMonthFor(brand) }),
+    profitVisible: Boolean(req.account.perms.profit),
+  }));
+});
+
+// --- Reports (the client report: one brand, a few months, everything the slides need) ---------
+// ?brand= is required, ?months=2026-09,2026-10 optional (default: the latest months with data).
+// ?profit=1 adds profit figures only when the account has the profit permission.
+app.get('/api/brand-report', requireAuth, (req, res) => {
+  const brand = typeof req.query.brand === 'string' ? req.query.brand.trim() : '';
+  if (!brand) return res.status(400).json({ error: 'brand is required.' });
+  const monthKeys = typeof req.query.months === 'string'
+    ? req.query.months.split(',').map((m) => m.trim()).filter((m) => MONTH_KEY_RE.test(m)).slice(0, 12)
+    : [];
+  const wantsProfit = req.query.profit === '1' && req.account.perms.profit;
+
+  const slots = slotsFor(brand, PROFIT_PLATFORM);
+  const campaignStore = loadCampaignStore();
+  const inventory = loadLatest();
+  const aliases = loadAliases();
+  res.json(buildBrandReport({
+    brand,
+    monthKeys,
+    slots,
+    campaignRows: campaignStore.rows.filter((r) => sameBrand(r.brandName, brand)),
+    campaignPeriods: listCampaignPeriods(campaignStore),
+    costs: getBrandCosts(brand),
+    inventoryRows: inventory
+      ? inventory.rows.filter((r) => sameBrand(brandOf(r.productName, r.brandName, aliases) || 'Unknown', brand))
+      : [],
+    profit: wantsProfit
+      ? buildReportProfit({ brand, monthInfo: listMonths(brand, PROFIT_PLATFORM), slots, costs: getBrandCosts(brand), adSpendByMonth: adSpendByMonthFor(brand) })
+      : null,
+    today: todayDateString(),
+  }));
+});
+
+// ?brand= narrows the city table to one brand; brandSummaries always lists every brand.
+/**
+ * The Sales tab for ONE month (?month=YYYY-MM), rebuilt from the monthly slots so it is the same
+ * data the Monthly page holds. Returns null when that month has no sales.
+ */
+function salesViewForMonth(month, brand) {
+  const all = slotsFor('', 'blinkit');
+  const slots = all.filter((s) => s.monthKey === month);
+  if (!slots.length) return null;
+  const prevKey = previousMonthKey(month);
+  const months = listMonths('', 'blinkit');
+  const cur = months.find((m) => m.monthKey === month);
+  const prev = months.find((m) => m.monthKey === prevKey);
+  // The trend compares with the month before, and only when both months are complete.
+  const comparePrev = Boolean(cur && prev && !cur.partial && !prev.partial);
+  const v = monthSalesView(slots, all.filter((s) => s.monthKey === prevKey), comparePrev);
+  const inBrand = (r) => !brand || sameBrand(r.brandName, brand);
+  return {
+    date: v.date,
+    brandUploads: v.brandUploads,
+    cityRows: combineCityRows(v.cityRows.filter(inBrand)),
+    brandSummaries: salesBrandSummaries(v.cityRows),
+    productRows: v.productRows.filter(inBrand),
+    view: {
+      mode: 'month', monthKey: month, label: monthLabel(month), from: v.from, to: v.to,
+      partial: Boolean(cur && cur.partial),
+      // Only the files of the brand asked for (a brand-limited account must not see other brands' file names).
+      fileNames: brand ? Array.from(new Set(slots.filter((s) => sameBrand(s.brandName, brand)).map((s) => s.fileName).filter(Boolean))) : v.fileNames,
+      comparesPrevious: comparePrev,
+    },
+  };
+}
+
+/** What the "latest upload" view covers (the order dates and files of the selected brand, or all brands). */
+function latestSalesPeriod(latest, brand) {
+  const uploads = Object.entries(latest.brandUploads || {}).filter(([b]) => !brand || sameBrand(b, brand)).map(([, u]) => u);
+  const froms = uploads.map((u) => u.from).filter(Boolean).sort();
+  const tos = uploads.map((u) => u.to).filter(Boolean).sort();
+  const from = froms[0] || null;
+  const to = tos.length ? tos[tos.length - 1] : null;
+  const monthKey = from && to && from.slice(0, 7) === to.slice(0, 7) ? from.slice(0, 7) : '';
+  return {
+    mode: 'latest', monthKey, label: monthKey ? monthLabel(monthKey) : '', from, to,
+    partial: monthKey ? isPartial(monthKey, from, to) : false,
+    fileNames: Array.from(new Set(uploads.map((u) => u.fileName).filter(Boolean))), comparesPrevious: false,
+  };
+}
+
+// ?month=YYYY-MM shows that month from the monthly slots; without it, the latest upload as before.
+app.get('/api/city-performance', requireAuth, (req, res) => {
+  const brand = typeof req.query.brand === 'string' ? req.query.brand.trim() : '';
+  const month = typeof req.query.month === 'string' ? req.query.month.trim() : '';
+  if (month) {
+    if (!MONTH_KEY_RE.test(month)) return res.status(400).json({ error: 'month must look like 2026-10.' });
+    const v = salesViewForMonth(month, brand);
+    if (!v) {
+      return res.json({
+        date: null, brandUploads: {}, cityRows: [], brandSummaries: [],
+        view: { mode: 'month', monthKey: month, label: monthLabel(month), from: null, to: null, partial: false, fileNames: [], comparesPrevious: false },
+      });
+    }
+    return res.json({ date: v.date, brandUploads: v.brandUploads, cityRows: v.cityRows, brandSummaries: v.brandSummaries, view: v.view });
+  }
+  const latest = loadSalesLatest();
+  if (!latest) return res.json({ date: null, brandUploads: {}, cityRows: [], brandSummaries: [], view: null });
+  res.json({
+    date: latest.date,
+    brandUploads: latest.brandUploads,
+    cityRows: combineCityRows(salesRowsForBrand(latest, brand)),
+    brandSummaries: salesBrandSummaries(latest.cityRows),
+    view: latestSalesPeriod(latest, brand),
+  });
+});
+
+// Wipes sales data: one brand (?brand=) or everything. Trend history for the removed
+// scope goes with it so it can't resurface as a stale "previous" comparison.
+app.delete('/api/sales-history', requirePerm('deleteData'), mutating(async (req, res) => {
+  const brand = typeof req.query.brand === 'string' ? req.query.brand.trim() : '';
+  const latest = brand ? loadSalesLatest() : null;
+
+  if (brand && latest) {
+    latest.cityRows = latest.cityRows.filter((r) => !sameBrand(r.brandName, brand));
+    Object.keys(latest.brandUploads).forEach((b) => {
+      if (sameBrand(b, brand)) delete latest.brandUploads[b];
+    });
+    const products = loadProductSalesLatest();
+    if (products) {
+      await saveProductSalesLatest(products.productRows.filter((p) => !sameBrand(p.brandName, brand)), products.date, products.fileName);
+    }
+    await removeBrandFromHistory(brand);
+    if (latest.cityRows.length) {
+      await saveSalesLatest(latest);
+      await clearUploadHashes('sales');
+      return res.json({ ok: true, brand });
+    }
+  }
+
+  await clearHistory();
+  await kv.delete(SALES_LATEST_KEY);
+  await kv.delete(PRODUCT_SALES_KEY);
+  await clearUploadHashes('sales');
+  res.json({ ok: true });
+}));
+
+// Removes one city (all brands) from the current view and purges its history so it
+// doesn't resurface as a "previous" comparison point later. Returns everything needed
+// to fully undo the delete (Ctrl+Z), including the trend-history snapshots.
+app.delete('/api/city-performance/:city', requirePerm('deleteData'), mutating(async (req, res) => {
+  const { city } = req.params;
+  const latest = loadSalesLatest();
+  if (!latest) return res.status(404).json({ error: 'No sales data to delete from.' });
+
+  const removedRows = latest.cityRows.filter((c) => c.city === city);
+  if (!removedRows.length) {
+    return res.status(404).json({ error: `City "${city}" not found.` });
+  }
+
+  const removedHistorySnapshots = getSnapshotsForCity(city);
+  latest.cityRows = latest.cityRows.filter((c) => c.city !== city);
+
+  // History first: if the view save then fails, the city is still visible (nothing lost).
+  await removeCityFromHistory(city);
+  await saveSalesLatest(latest);
+  await clearUploadHashes('sales');
+
+  res.json({ ok: true, removedRows, removedHistorySnapshots });
+}));
+
+// Re-inserts a previously deleted city (Ctrl+Z / undo), including its trend-history snapshots.
+app.post('/api/city-performance/restore', requirePerm('deleteData'), mutating(async (req, res) => {
+  const { cityRows, historySnapshots } = req.body || {};
+  if (!Array.isArray(cityRows) || !cityRows.length) return res.status(400).json({ error: 'cityRows is required.' });
+
+  const latest = loadSalesLatest();
+  if (!latest) return res.status(404).json({ error: 'No sales data to restore into.' });
+
+  // History first: it skips snapshots already present, so a retry after a failed view
+  // save can't duplicate anything; the view concat runs last.
+  await restoreSnapshotsForCity(historySnapshots);
+  latest.cityRows = latest.cityRows.concat(cityRows);
+  await saveSalesLatest(latest);
+
+  res.json({ ok: true });
+}));
+
+// Product-focus: a single product's totals + per-city breakdown, drawn
+// from the last uploaded sales report.
+app.get('/api/product-sales', requireAuth, (req, res) => {
+  const { product } = req.query;
+  if (!product) return res.status(400).json({ error: 'product is required.' });
+
+  const latest = loadProductSalesLatest();
+  if (!latest) return res.json({ date: null, row: null });
+
+  // A brand-limited account only gets a product row of one of its brands.
+  const row = latest.productRows.find((r) => r.productName === product && canSeeBrand(req.account, r.brandName)) || null;
+  res.json({ date: latest.date, row });
+});
+
+// Product-by-city breakdown used by feeder-scoped Sales Performance (?brand= narrows it).
+app.get('/api/product-city-sales', requireAuth, (req, res) => {
+  const brand = typeof req.query.brand === 'string' ? req.query.brand.trim() : '';
+  const month = typeof req.query.month === 'string' ? req.query.month.trim() : '';
+  if (month) {
+    if (!MONTH_KEY_RE.test(month)) return res.status(400).json({ error: 'month must look like 2026-10.' });
+    const v = salesViewForMonth(month, brand);
+    return res.json({ date: v ? v.date : null, productRows: v ? v.productRows : [] });
+  }
+  const latest = loadProductSalesLatest();
+  if (!latest) return res.json({ date: null, productRows: [] });
+  const productRows = (latest.productRows || []).filter((p) => !brand || sameBrand(p.brandName, brand));
+  res.json({ date: latest.date, productRows });
+});
+
+// Brand-focus: a single brand's totals + per-city breakdown, aggregated
+// from the product sales data.
+app.get('/api/brand-sales', requireAuth, (req, res) => {
+  const { brand } = req.query;
+  if (!brand) return res.status(400).json({ error: 'brand is required.' });
+
+  const latest = loadProductSalesLatest();
+  if (!latest) return res.json({ date: null, cityRows: [] });
+
+  const brandProducts = latest.productRows.filter((r) => sameBrand(r.brandName, brand));
+  const cityAgg = new Map();
+
+  for (const p of brandProducts) {
+    for (const c of p.cities) {
+      if (!cityAgg.has(c.city)) {
+        cityAgg.set(c.city, { city: c.city, revenue: 0, units: 0, orderCount: 0, topProduct: null, topProductRevenue: 0 });
+      }
+      const agg = cityAgg.get(c.city);
+      agg.revenue += c.revenue;
+      agg.units += c.units;
+      if (c.revenue > agg.topProductRevenue) {
+        agg.topProductRevenue = c.revenue;
+        agg.topProduct = p.productName;
+      }
+    }
+  }
+
+  const cityRows = Array.from(cityAgg.values()).sort((a, b) => b.revenue - a.revenue);
+  res.json({ date: latest.date, cityRows });
+});
+
+app.get('/api/sales-summary', requireAuth, (req, res) => {
+  const latest = loadSalesLatest();
+  const brand = typeof req.query.brand === 'string' ? req.query.brand.trim() : '';
+  const rows = latest ? combineCityRows(salesRowsForBrand(latest, brand)) : [];
+  if (!rows.length) {
+    return res.json({ totalRevenue: 0, totalUnits: 0, totalOrders: 0, cityCount: 0, topCity: null });
+  }
+
+  const totalRevenue = rows.reduce((sum, c) => sum + c.revenue, 0);
+  const totalUnits = rows.reduce((sum, c) => sum + c.units, 0);
+  const totalOrders = rows.reduce((sum, c) => sum + c.orderCount, 0);
+
+  res.json({
+    date: latest.date,
+    totalRevenue: Math.round(totalRevenue * 100) / 100,
+    totalUnits,
+    totalOrders,
+    cityCount: rows.length,
+    topCity: rows[0].city,
+  });
+});
+
+/** Builds the Sales by City worksheet, or null if nothing has been uploaded. */
+function buildSalesWorksheet(brand = '', month = '') {
+  let cityRows;
+  let date;
+  if (month) {
+    const v = salesViewForMonth(month, brand);
+    if (!v) return null;
+    cityRows = v.cityRows;
+    date = month;
+  } else {
+    const latest = loadSalesLatest();
+    if (!latest) return null;
+    cityRows = combineCityRows(salesRowsForBrand(latest, brand));
+    date = latest.date;
+  }
+
+  const headers = [
+    'City', 'Revenue', 'Units Sold', 'Order Count', 'Avg Order Value',
+    'Best-Selling Product', 'Best-Selling Product Revenue',
+    'Performance Tier', month ? 'Revenue Change % (vs previous month)' : 'Revenue Change % (vs last upload)', 'Previous Revenue',
+  ];
+
+  const dataRows = cityRows.map((c) => [
+    c.city,
+    c.revenue,
+    c.units,
+    c.orderCount,
+    c.avgOrderValue,
+    c.topProduct || 'No data',
+    c.topProductRevenue ?? 0,
+    c.tier,
+    c.revenueChangePct === null || c.revenueChangePct === undefined ? 'No prior data' : c.revenueChangePct,
+    c.previousRevenue === null || c.previousRevenue === undefined ? 'No prior data' : c.previousRevenue,
+  ]);
+
+  const ws = XLSX.utils.aoa_to_sheet([headers, ...dataRows]);
+  ws['!cols'] = [{ wch: 22 }, { wch: 14 }, { wch: 12 }, { wch: 12 }, { wch: 16 }, { wch: 40 }, { wch: 22 }, { wch: 14 }, { wch: 22 }, { wch: 16 }];
+  return { ws, date };
+}
+
+app.get('/api/export-sales', requirePerm('download'), (req, res) => {
+  const month = typeof req.query.month === 'string' ? req.query.month.trim() : '';
+  if (month && !MONTH_KEY_RE.test(month)) return res.status(400).json({ error: 'month must look like 2026-10.' });
+  const built = buildSalesWorksheet(typeof req.query.brand === 'string' ? req.query.brand.trim() : '', month);
+  if (!built) return res.status(400).json({ error: 'No sales report uploaded yet.' });
+
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, built.ws, 'Sales by City');
+
+  const buffer = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
+  res.setHeader('Content-Disposition', `attachment; filename="Sales_by_City_${built.date}.xlsx"`);
+  res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+  res.send(buffer);
+});
+
+// --- Campaign Analysis ----------------------------------------------------
+// Raw daily rows are stored as uploaded; every figure below is aggregated at
+// request time (see parser/campaignStore.js).
+
+const SHEET_TYPES = ['PRODUCT_BOOSTING', 'PRODUCT_RECOMMENDATION'];
+
+// Rows removed by DELETE are held here so undo can restore them by token
+// instead of the browser re-posting thousands of daily rows. Lost on restart.
+const campaignTrash = new Map(); // undoToken -> { rows, expires }
+const TRASH_LIMIT = 20;
+const TRASH_TTL_MS = 10 * 60 * 1000;
+
+function sweepCampaignTrash() {
+  const now = Date.now();
+  for (const [token, entry] of campaignTrash) {
+    if (entry.expires <= now) campaignTrash.delete(token);
+  }
+}
+setInterval(sweepCampaignTrash, 60 * 1000).unref();
+
+function campaignFilters(req, store) {
+  const periodKey = resolveCampaignPeriod(store, req.query.periodKey);
+  const sheetType = SHEET_TYPES.includes(req.query.sheetType) ? req.query.sheetType : 'ALL';
+  const brand = typeof req.query.brand === 'string' ? req.query.brand.trim() : '';
+  return { periodKey, sheetType, brand };
+}
+
+// Reads the optional `campaignBrands` multipart field: JSON { "<campaign name>": "<brand>" }.
+// Anything malformed is ignored (those campaigns simply stay Unknown).
+function parseCampaignBrands(raw) {
+  if (typeof raw !== 'string' || !raw.trim()) return {};
+  try {
+    const value = JSON.parse(raw);
+    if (!value || typeof value !== 'object' || Array.isArray(value)) return {};
+    const out = {};
+    for (const [name, brand] of Object.entries(value)) {
+      if (typeof brand === 'string' && brand.trim()) out[String(name)] = brand.trim().slice(0, 80);
+    }
+    return out;
+  } catch {
+    return {};
+  }
+}
+
+app.post('/api/campaign-upload', requirePerm('upload'), uploadReport, mutating(async (req, res) => {
+  if (!req.file) {
+    return res.status(400).json({ error: 'No file uploaded.' });
+  }
+
+  try {
+    const parsed = parseCampaignFile(req.file.path, {
+      fileName: req.file.originalname,
+      defaultBrand: req.body && typeof req.body.defaultBrand === 'string' ? req.body.defaultBrand : '',
+      campaignBrands: parseCampaignBrands(req.body && req.body.campaignBrands),
+    });
+
+    // Dry run: report what this upload would replace, write nothing.
+    if (req.query.dryRun === '1') {
+      return res.json({
+        ok: true,
+        dryRun: true,
+        plan: planCampaignUpload(parsed),
+        rowCount: parsed.rows.length,
+        unresolved: listUnresolvedCampaigns(parsed), // brand "Unknown"; the admin can pick a defaultBrand
+        skippedRows: parsed.skippedRows,
+        unrecognisedSheets: parsed.unrecognisedSheets,
+      });
+    }
+
+    const fileHash = hashFile(req.file.path);
+    if (req.query.force !== '1' && isDuplicateUpload('campaign', fileHash)) {
+      return res.json({ ok: true, duplicate: true, skipped: true });
+    }
+
+    await captureUndo('campaign', { fileName: req.file.originalname, brands: parsed.uploads.map((u) => u.brandName) });
+    const store = await upsertCampaignUpload(parsed);
+    await recordUpload('campaign', fileHash);
+    res.json({
+      ok: true,
+      periodKeys: Array.from(new Set(parsed.uploads.map((u) => u.periodKey))),
+      sheetTypes: Array.from(new Set(parsed.uploads.map((u) => u.sheetType))),
+      rowCount: parsed.rows.length,
+      skippedRows: parsed.skippedRows,
+      unrecognisedSheets: parsed.unrecognisedSheets,
+      latestPeriodKey: getLatestCampaignPeriodKey(store),
+    });
+  } catch (err) {
+    if (err.kvError) throw err; // save failed -> 500 from mutating()
+    res.status(400).json({ error: err.message });
+  } finally {
+    fs.unlink(req.file.path, () => {});
+  }
+}));
+
+app.get('/api/campaign-analysis', requireAuth, (req, res) => {
+  const store = loadCampaignStore();
+  const periods = listCampaignPeriods(store);
+  const latestPeriodKey = getLatestCampaignPeriodKey(store);
+  const { periodKey, sheetType, brand } = campaignFilters(req, store);
+
+  if (!periodKey) {
+    return res.json({ date: null, periods: [], periodKey: null, latestPeriodKey: null, campaigns: [], daily: [], brandSummaries: [], allBrands: [] });
+  }
+
+  // Brand summaries ignore the brand filter so the chip bar always lists every brand.
+  const periodRows = selectCampaignRows(store, { periodKey, sheetType });
+  const brandSummaries = aggregateCampaignsByBrand(periodRows);
+  const rows = brand ? periodRows.filter((r) => r.brandName.toLowerCase() === brand.toLowerCase()) : periodRows;
+  const campaigns = aggregateCampaigns(rows);
+  // Per campaign per day, so the trend chart can follow whichever campaigns are shown or ticked.
+  const daily = aggregateCampaignDaily(rows);
+
+  res.json({ date: getCampaignUploadedDate(store, periodKey), periods, periodKey, latestPeriodKey, campaigns, daily, brandSummaries, allBrands: listCampaignBrands(store).sort() });
+});
+
+app.get('/api/campaign-brands', requireAuth, (req, res) => {
+  const store = loadCampaignStore();
+  const periodKey = resolveCampaignPeriod(store, req.query.periodKey);
+  if (!periodKey) return res.json({ periodKey: null, brands: [] });
+  const sheetType = SHEET_TYPES.includes(req.query.sheetType) ? req.query.sheetType : 'ALL';
+  const brands = aggregateCampaignsByBrand(selectCampaignRows(store, { periodKey, sheetType }));
+  res.json({ periodKey, brands: brands.map((b) => ({ brandName: b.brandName, adSpend: b.adSpend, campaignCount: b.campaignCount })) });
+});
+
+app.get('/api/campaign-detail', requireAuth, (req, res) => {
+  const { campaignId, sheetType } = req.query;
+  if (!campaignId || !SHEET_TYPES.includes(sheetType)) {
+    return res.status(400).json({ error: 'campaignId and a valid sheetType are required.' });
+  }
+  const store = loadCampaignStore();
+  const periodKey = resolveCampaignPeriod(store, req.query.periodKey);
+  if (!periodKey) return res.json({ periodKey: null, targeting: [], daily: [] });
+  // A brand-limited account only sees a campaign that belongs to its brand (same answer as "not found").
+  const brand = typeof req.query.brand === 'string' ? req.query.brand.trim() : '';
+  const owned = store.rows.some((r) => String(r.campaignId) === String(campaignId) && r.sheetType === sheetType && sameBrand(r.brandName, brand));
+  if (!req.account.perms.allBrands && !owned) return res.status(404).json({ error: 'Not found.' });
+  res.json({ periodKey, ...getCampaignDetail(store, { periodKey, sheetType, campaignId }) });
+});
+
+// Wipes stored campaign data: one brand across every period (?brand=), or everything.
+app.delete('/api/campaign-data', requirePerm('deleteData'), mutating(async (req, res) => {
+  const brand = typeof req.query.brand === 'string' ? req.query.brand.trim() : '';
+  if (brand) await removeCampaignBrandRows(brand);
+  else await clearCampaignStore();
+  await clearUploadHashes('campaign');
+  campaignTrash.clear();
+  res.json({ ok: true });
+}));
+
+// Removes every daily row of one campaign in a period. Returns an undo token.
+app.delete('/api/campaign-analysis', requirePerm('deleteData'), mutating(async (req, res) => {
+  const { periodKey, sheetType, campaignId } = req.body || {};
+  if (!periodKey || !SHEET_TYPES.includes(sheetType) || !campaignId) {
+    return res.status(400).json({ error: 'periodKey, sheetType and campaignId are required.' });
+  }
+
+  const removed = await removeCampaignRows(periodKey, sheetType, campaignId);
+  if (!removed.length) return res.status(404).json({ error: 'Campaign not found.' });
+  await clearUploadHashes('campaign');
+
+  const undoToken = `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+  campaignTrash.set(undoToken, { rows: removed, expires: Date.now() + TRASH_TTL_MS });
+  while (campaignTrash.size > TRASH_LIMIT) campaignTrash.delete(campaignTrash.keys().next().value);
+
+  res.json({ ok: true, removedRows: removed.length, undoToken });
+}));
+
+// Re-inserts a previously deleted campaign (Ctrl+Z / undo) using its token.
+app.post('/api/campaign-analysis/restore', requirePerm('deleteData'), mutating(async (req, res) => {
+  const { undoToken } = req.body || {};
+  sweepCampaignTrash();
+  const entry = undoToken ? campaignTrash.get(undoToken) : null;
+  const rows = entry ? entry.rows : null;
+  if (!rows) return res.status(404).json({ error: 'Nothing to restore - the undo window has expired.' });
+
+  await restoreCampaignRows(rows);
+  campaignTrash.delete(undoToken);
+  res.json({ ok: true, restoredRows: rows.length });
+}));
+
+app.get('/api/campaign-summary', requireAuth, (req, res) => {
+  const store = loadCampaignStore();
+  const { periodKey, sheetType, brand } = campaignFilters(req, store);
+
+  const empty = {
+    totalAdSpend: 0, totalSales: 0, overallRoas: null, directRoas: null,
+    totalUnits: 0, totalCampaigns: 0, bestCampaign: null, worstCampaign: null,
+    totalImpressions: 0, totalAtc: 0, totalDirectAtc: 0, totalIndirectAtc: 0, totalNewUsers: 0,
+  };
+  if (!periodKey) return res.json(empty);
+
+  const rows = selectCampaignRows(store, { periodKey, sheetType, brand });
+  const totals = aggregateCampaignTotals(rows);
+  const campaigns = aggregateCampaigns(rows);
+  const ranked = campaigns.filter((c) => c.adSpend > 0 && c.roas !== null);
+  const best = ranked.length ? ranked.reduce((a, b) => (b.roas > a.roas ? b : a)) : null;
+  const worst = ranked.length ? ranked.reduce((a, b) => (b.roas < a.roas ? b : a)) : null;
+
+  res.json({
+    totalAdSpend: totals.adSpend,
+    totalSales: totals.sales,
+    overallRoas: totals.roas,
+    directRoas: totals.directRoas,
+    totalUnits: totals.qtySold,
+    totalCampaigns: campaigns.length,
+    bestCampaign: best ? { name: best.campaignName, roas: best.roas } : null,
+    worstCampaign: worst ? { name: worst.campaignName, roas: worst.roas } : null,
+    totalImpressions: totals.impressions,
+    totalAtc: totals.atc,
+    totalDirectAtc: totals.directAtc,
+    totalIndirectAtc: totals.indirectAtc,
+    totalNewUsers: totals.newUsersAcquired,
+  });
+});
+
+/** Builds the Campaign workbook sheets (summary + daily data) for a period, or null if nothing is stored. */
+function buildCampaignWorksheets(requestedPeriodKey, brand, sheetType) {
+  const store = loadCampaignStore();
+  const periodKey = resolveCampaignPeriod(store, requestedPeriodKey);
+  if (!periodKey) return null;
+
+  const rows = selectCampaignRows(store, { periodKey, sheetType, brand });
+  const campaigns = aggregateCampaigns(rows).sort((a, b) => b.adSpend - a.adSpend);
+
+  const summaryHeaders = [
+    'Campaign', 'Brand', 'Type', 'Targeting Types', 'Ad Spend', 'Sales', 'Direct Sales', 'Indirect Sales',
+    'ROAS', 'Direct ROAS', 'ROS / Unit', 'Impressions', 'Direct ATC', 'Indirect ATC',
+    'Direct Qty Sold', 'Indirect Qty Sold', 'New Users',
+  ];
+  const summaryRows = campaigns.map((c) => [
+    c.campaignName, c.brandName, c.sheetType, c.targetingTypes.join(', '), c.adSpend, c.sales, c.directSales, c.indirectSales,
+    c.roas, c.directRoas, c.rosPerUnit, c.impressions, c.directAtc, c.indirectAtc,
+    c.directQtySold, c.indirectQtySold, c.newUsersAcquired,
+  ]);
+  const summaryWs = XLSX.utils.aoa_to_sheet([summaryHeaders, ...summaryRows]);
+  summaryWs['!cols'] = [{ wch: 45 }, { wch: 14 }, { wch: 24 }, { wch: 30 }, ...Array(13).fill({ wch: 14 })];
+
+  const dailyHeaders = [
+    'Date', 'Campaign ID', 'Campaign', 'Brand', 'Type', 'Targeting Type', 'Targeting Value', 'Match Type',
+    'Most Viewed Position', 'CPM', 'Impressions', 'Direct ATC', 'Indirect ATC', 'Direct Qty Sold', 'Indirect Qty Sold',
+    'Direct Sales', 'Indirect Sales', 'New Users', 'Ad Spend', 'Direct RoAS', 'Total RoAS',
+  ];
+  const dailyRows = [...rows]
+    .sort((a, b) => a.date.localeCompare(b.date) || a.campaignName.localeCompare(b.campaignName))
+    .map((r) => [
+      r.date, r.campaignId, r.campaignName, r.brandName, r.sheetType, r.targetingType, r.targetingValue, r.matchType,
+      r.mostViewedPosition ?? '', r.cpm, r.impressions, r.directAtc, r.indirectAtc, r.directQtySold, r.indirectQtySold,
+      r.directSales, r.indirectSales, r.newUsersAcquired, r.estimatedBudgetConsumed, r.directRoas, r.totalRoas,
+    ]);
+  const dailyWs = XLSX.utils.aoa_to_sheet([dailyHeaders, ...dailyRows]);
+  dailyWs['!cols'] = [{ wch: 12 }, { wch: 12 }, { wch: 45 }, { wch: 14 }, { wch: 24 }, { wch: 18 }, { wch: 28 }, ...Array(14).fill({ wch: 12 })];
+
+  return { summaryWs, dailyWs, periodKey };
+}
+
+app.get('/api/export-campaign', requirePerm('download'), (req, res) => {
+  const sheetType = SHEET_TYPES.includes(req.query.sheetType) ? req.query.sheetType : 'ALL';
+  const built = buildCampaignWorksheets(req.query.periodKey, req.query.brand, sheetType);
+  if (!built) return res.status(400).json({ error: 'No campaign report uploaded yet.' });
+
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, built.summaryWs, 'Campaign Summary');
+  XLSX.utils.book_append_sheet(wb, built.dailyWs, 'Daily Data');
+
+  const buffer = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
+  res.setHeader('Content-Disposition', `attachment; filename="Campaign_Analysis_${built.periodKey}.xlsx"`);
+  res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+  res.send(buffer);
+});
+
+// --- Full report: all sheets in one workbook -------------------------------
+
+app.get('/api/export-all', requirePerm('download'), requirePerm('allBrands'), (req, res) => {
+  const inventory = buildInventoryWorksheet();
+  const sales = buildSalesWorksheet();
+  const campaign = buildCampaignWorksheets(req.query.periodKey, '', 'ALL');
+
+  if (!inventory && !sales && !campaign) {
+    return res.status(400).json({ error: 'Nothing to export yet — upload at least one report first.' });
+  }
+
+  const wb = XLSX.utils.book_new();
+  if (inventory) XLSX.utils.book_append_sheet(wb, inventory.ws, 'Inventory');
+  if (sales) XLSX.utils.book_append_sheet(wb, sales.ws, 'Sales by City');
+  if (campaign) {
+    XLSX.utils.book_append_sheet(wb, campaign.summaryWs, 'Campaign Summary');
+    XLSX.utils.book_append_sheet(wb, campaign.dailyWs, 'Campaign Daily Data');
+  }
+
+  const buffer = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
+  const dateStamp = inventory?.date || sales?.date || todayDateString();
+  res.setHeader('Content-Disposition', `attachment; filename="Full_Report_${dateStamp}.xlsx"`);
+  res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+  res.send(buffer);
+});
+
+// Report data must be loaded before serving; never start with an empty store.
+function start() {
+  kv.init()
+    .then((count) => {
+      console.log(`Loaded ${count} kv_store key(s).`);
+      return accounts.migrateUnknownRoles().then((changed) => {
+        if (changed) console.log(`Moved ${changed} account(s) with an unknown role to Ecom executive.`);
+        app.listen(PORT, () => {
+          console.log(`Blinkit dashboard running at http://localhost:${PORT}`);
+        });
+      });
+    })
+    .catch((err) => {
+      console.error(err.message);
+      process.exit(1);
+    });
+}
+
+// Tests import this file (module.exports) without starting the server.
+if (require.main === module) start();
+module.exports = app;

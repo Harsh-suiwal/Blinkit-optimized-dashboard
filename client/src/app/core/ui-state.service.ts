@@ -1,0 +1,143 @@
+﻿import { DOCUMENT } from '@angular/common';
+import { Injectable, inject, signal } from '@angular/core';
+
+const THEME_KEY = 'blinkitTheme';
+const SIDEBAR_WIDTH_KEY = 'blinkitSidebarWidth';
+const SIDEBAR_COLLAPSED_KEY = 'blinkitSidebarCollapsed';
+const PRODUCT_FOCUS_KEY = 'blinkitFocusProduct';
+const BRAND_FILTER_KEY = 'blinkitBrandFilter';
+const FEEDER_FILTER_KEY = 'blinkitFeederFilter';
+const LOOK_KEY = 'blinkitLook';
+
+@Injectable({ providedIn: 'root' })
+export class UiStateService {
+  private readonly document = inject(DOCUMENT);
+  readonly theme = signal(this.read(THEME_KEY) || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'));
+  /** 'pro' (flat, the default) or 'glass' (the original design). Sets <html data-look>; see the Pro look block in style.css. */
+  readonly look = signal<'pro' | 'glass'>(this.read(LOOK_KEY) === 'glass' ? 'glass' : 'pro');
+  readonly sidebarWidth = signal(Number(this.read(SIDEBAR_WIDTH_KEY)) || 220);
+  readonly collapsed = signal(this.read(SIDEBAR_COLLAPSED_KEY) === '1');
+  readonly focusedProduct = signal(this.read(PRODUCT_FOCUS_KEY));
+  readonly focusedBrand = signal(this.read(BRAND_FILTER_KEY));
+  readonly focusedFeeder = signal(this.read(FEEDER_FILTER_KEY));
+  /** Bumped after any upload / clear so the sidebar re-fetches its brand list. */
+  readonly lookupsVersion = signal(0);
+  /** True while the dashboard is in presentation mode (client meetings). Never saved: a reload ends it. */
+  readonly presenting = signal(false);
+  private fullscreenEntered = false;
+
+  constructor() {
+    this.setFocus('');
+    this.applyTheme(this.theme());
+    this.applyLook(this.look());
+    this.applySidebarWidth(this.sidebarWidth());
+    // Esc in fullscreen is taken by the browser: leaving fullscreen ends the presentation too.
+    this.document.addEventListener('fullscreenchange', () => this.onFullscreenChange());
+  }
+
+  toggleTheme() {
+    const next = this.theme() === 'dark' ? 'light' : 'dark';
+    this.theme.set(next);
+    localStorage.setItem(THEME_KEY, next);
+    this.applyTheme(next);
+  }
+
+  setTheme(theme: 'light' | 'dark') {
+    this.theme.set(theme);
+    localStorage.setItem(THEME_KEY, theme);
+    this.applyTheme(theme);
+  }
+
+  setLook(look: 'pro' | 'glass') {
+    this.look.set(look);
+    localStorage.setItem(LOOK_KEY, look);
+    this.applyLook(look);
+  }
+
+  setSidebarWidth(width: number) {
+    const next = Math.max(160, Math.min(400, width));
+    this.sidebarWidth.set(next);
+    localStorage.setItem(SIDEBAR_WIDTH_KEY, String(next));
+    this.applySidebarWidth(next);
+  }
+
+  toggleSidebar() {
+    const next = !this.collapsed();
+    this.collapsed.set(next);
+    localStorage.setItem(SIDEBAR_COLLAPSED_KEY, next ? '1' : '0');
+  }
+
+  setFocus(product: string) {
+    this.focusedProduct.set(product);
+    this.write(PRODUCT_FOCUS_KEY, product);
+  }
+
+  setBrand(brand: string) {
+    this.focusedBrand.set(brand);
+    this.write(BRAND_FILTER_KEY, brand);
+  }
+
+  setFeeder(feeder: string) {
+    this.focusedFeeder.set(feeder);
+    this.write(FEEDER_FILTER_KEY, feeder);
+  }
+
+  refreshLookups() {
+    this.lookupsVersion.update((version) => version + 1);
+  }
+
+  clearFocus() {
+    this.setFocus('');
+    this.setBrand('');
+    this.setFeeder('');
+  }
+
+  /** Starts presenting the brand picked in the sidebar. Returns false (and does nothing) when no brand is picked. */
+  startPresenting(): boolean {
+    if (!this.focusedBrand()) return false;
+    this.presenting.set(true);
+    const root = this.document.documentElement;
+    root.setAttribute('data-presenting', 'true');
+    // Best effort: browsers allow fullscreen only after a click, so opening /present by link skips it.
+    if (!this.document.fullscreenElement && typeof root.requestFullscreen === 'function') {
+      root.requestFullscreen().then(
+        () => { this.fullscreenEntered = true; },
+        () => { /* refused: carry on without fullscreen */ },
+      );
+    }
+    return true;
+  }
+
+  stopPresenting() {
+    if (!this.presenting()) return;
+    this.presenting.set(false);
+    this.document.documentElement.removeAttribute('data-presenting');
+    if (this.fullscreenEntered && this.document.fullscreenElement) void this.document.exitFullscreen().catch(() => undefined);
+    this.fullscreenEntered = false;
+  }
+
+  private onFullscreenChange() {
+    if (this.fullscreenEntered && !this.document.fullscreenElement) this.stopPresenting();
+  }
+
+  private applyLook(look: string) {
+    this.document.documentElement.setAttribute('data-look', look);
+  }
+
+  private applyTheme(theme: string) {
+    this.document.documentElement.setAttribute('data-theme', theme);
+  }
+
+  private applySidebarWidth(width: number) {
+    this.document.documentElement.style.setProperty('--sidebar-width', `${width}px`);
+  }
+
+  private read(key: string) {
+    return localStorage.getItem(key) || '';
+  }
+
+  private write(key: string, value: string) {
+    if (value) localStorage.setItem(key, value);
+    else localStorage.removeItem(key);
+  }
+}
