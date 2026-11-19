@@ -27,6 +27,7 @@
 // takes no share of ads or other expenses (the same rule the old Profit page used: "sold without a
 // cost row is left out and listed").
 const { productKey } = require('./parseBrandCosts');
+const { listingFigures } = require('./listingFigures');
 
 const DEFAULT_SETTINGS = Object.freeze({
   defaultTaxPct: 18,
@@ -38,7 +39,8 @@ const DEFAULT_SETTINGS = Object.freeze({
 const SETTING_LIMITS = Object.freeze({
   defaultTaxPct: 100, defaultCommissionPct: 100, inwardFee: 100000, fulfilmentFee: 100000, storageFee: 100000,
 });
-const PRODUCT_FIELD_LIMITS = Object.freeze({ cogs: 10000000, taxPct: 100, commissionPct: 100 });
+// mrp and sellingPrice are the Listing table's typed prices (Rs per unit, GST included); they feed the report only, never the profit maths.
+const PRODUCT_FIELD_LIMITS = Object.freeze({ cogs: 10000000, taxPct: 100, commissionPct: 100, mrp: 10000000, sellingPrice: 10000000 });
 const GROUPS = ['month', 'product', 'city'];
 const NO_CITY = 'City not recorded';
 const MAX_MONTHS = 12;
@@ -90,6 +92,8 @@ function resolveCost(sheetRow, manualRow, settings) {
     taxIsDefault: !isNum(manual.taxPct) && !isNum(sheet.taxPct),
     commissionPct: pick(manual.commissionPct, sheet.commissionPct, settings.defaultCommissionPct),
     commissionIsDefault: !isNum(manual.commissionPct) && !isNum(sheet.commissionPct),
+    mrp: pick(manual.mrp, sheet.mrp, null),
+    sellingPrice: pick(manual.sellingPrice, sheet.sellingPrice, null),
     // Fees from an uploaded cost sheet are that sheet's own numbers; otherwise the editable defaults apply.
     inward: pick(null, sheet.inwardFee, settings.inwardFee),
     fulfilment: pick(null, sheet.fulfilmentFee, settings.fulfilmentFee),
@@ -394,6 +398,12 @@ function buildProfitView(input) {
         cogs: c.cogs, cogsSource: c.cogsSource, hasCogs: c.hasCogs,
         taxPct: c.taxPct, taxIsDefault: c.taxIsDefault,
         commissionPct: c.commissionPct, commissionIsDefault: c.commissionIsDefault,
+        mrp: c.mrp, sellingPrice: c.sellingPrice,
+        listing: listingFigures({
+          mrp: c.mrp, sellingPrice: c.sellingPrice, commissionPct: c.commissionPct,
+          commissionKnown: !c.commissionIsDefault || settings.defaultCommissionPct > 0,
+          taxPct: c.taxPct, inward: c.inward, fulfilment: c.fulfilment,
+        }),
       };
     }),
     otherCosts: monthInfo.map((m) => ({ monthKey: m.monthKey, label: m.label, partial: Boolean(m.partial), amount: isNum(otherByMonth[m.monthKey]) ? otherByMonth[m.monthKey] : 0 })),
@@ -439,6 +449,7 @@ function buildProfitView(input) {
 module.exports = {
   buildProfitView,
   resolveSettings,
+  resolveCost,
   cleanSettingsPatch,
   apportion,
   DEFAULT_SETTINGS,

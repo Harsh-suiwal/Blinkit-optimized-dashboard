@@ -3,6 +3,10 @@
 // (admins only, when asked) the profit figures, so this file never reads storage itself.
 const { aggregateTotals, aggregateByCampaign } = require('./campaignStore');
 
+const { productKey } = require('./parseBrandCosts');
+const { resolveCost, resolveSettings } = require('./profitView');
+const { listingFigures } = require('./listingFigures');
+
 const DAY_MS = 86400000;
 const WEEKDAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 const MONTH_NAMES = ['January', 'February', 'March', 'April', 'May', 'June', 'July',
@@ -279,6 +283,56 @@ function profitSection(profit, selected) {
   };
 }
 
+/**
+ * The Listing table as a report section: every product that has a selling price typed on the Profit tab,
+ * with its discount and what Blinkit's fees take out of the price. Null when nothing is typed yet.
+ * Product names come from the brand's sales (the same names the Profit tab lists); units are those of the selected months.
+ */
+function listingSection(slots, costs, selected) {
+  if (!costs) return null;
+  const settings = resolveSettings(costs.manual && costs.manual.settings);
+  const sheetByKey = new Map((costs.products || []).map((p) => [productKey(p.productName), p]));
+  const manualByKey = (costs.manual && costs.manual.products) || {};
+  const sold = new Map(); // productKey -> { name, units }
+  for (const slot of slots) {
+    for (const p of slot.products || []) {
+      const key = productKey(p.productName);
+      if (!key) continue;
+      const row = sold.get(key) || { name: p.productName, units: 0 };
+      if (selected.includes(slot.monthKey)) row.units += p.units || 0;
+      sold.set(key, row);
+    }
+  }
+  const rows = [];
+  for (const [key, p] of sold) {
+    const c = resolveCost(sheetByKey.get(key), manualByKey[key], settings);
+    if (!(c.sellingPrice > 0)) continue;
+    const known = !c.commissionIsDefault || settings.defaultCommissionPct > 0;
+    const f = listingFigures({ mrp: c.mrp, sellingPrice: c.sellingPrice, commissionPct: c.commissionPct, commissionKnown: known, taxPct: c.taxPct, inward: c.inward, fulfilment: c.fulfilment });
+    rows.push({
+      name: p.name, units: p.units, mrp: c.mrp, sellingPrice: c.sellingPrice, taxPct: c.taxPct,
+      commissionPct: known ? c.commissionPct : null, fulfilment: c.fulfilment, inward: c.inward,
+      discountPct: f.discountPct, gstValue: f.gstValue, commissionValue: f.commissionValue,
+      feesValue: f.feesValue, feesPct: f.feesPct, leftValue: f.leftValue,
+    });
+  }
+  if (!rows.length) return null;
+  rows.sort((a, b) => b.units - a.units || a.name.localeCompare(b.name));
+  const priced = rows.filter((r) => r.feesPct !== null);
+  const heaviest = priced.length ? priced.reduce((a, b) => (b.feesPct > a.feesPct ? b : a)) : null;
+  const lightest = priced.length ? priced.reduce((a, b) => (b.feesPct < a.feesPct ? b : a)) : null;
+  const commissions = rows.map((r) => r.commissionPct).filter((v) => v !== null);
+  return {
+    rows,
+    settings: { fulfilment: settings.fulfilmentFee, inward: settings.inwardFee, storage: settings.storageFee },
+    heaviest: heaviest ? { name: heaviest.name, feesPct: heaviest.feesPct, commissionPct: heaviest.commissionPct } : null,
+    lightest: lightest && lightest !== heaviest ? { name: lightest.name, feesPct: lightest.feesPct, commissionPct: lightest.commissionPct } : null,
+    commissionRange: commissions.length ? { min: Math.min(...commissions), max: Math.max(...commissions) } : null,
+    missingPrice: sold.size - rows.length,
+    missingCommission: rows.length - priced.length,
+  };
+}
+
 function insights(data) {
   const { sales, ads, weekday, funnel, keywords, stock } = data;
   const out = { decisions: [], management: { continue: [], optimize: [], restrict: [], fix: [], measure: [] } };
@@ -366,6 +420,7 @@ function buildBrandReport(input) {
   const keywords = adRows.length ? keywordsSection(adRows) : null;
   const stock = stockSection(input.inventoryRows || []);
   const profit = profitSection(input.profit, selected);
+  const listing = listingSection(slots, input.costs || null, selected);
 
   const data = {
     brand: input.brand,
@@ -375,7 +430,7 @@ function buildBrandReport(input) {
       return { monthKey: k, label: monthLabel(k), hasSales: salesKeys.includes(k), hasAds: adKeys.includes(k), units: slot ? slot.totals.units : null };
     }),
     selectedMonths: selected,
-    sales, ads, weekday, funnel, keywords, stock, profit,
+    sales, ads, weekday, funnel, keywords, stock, profit, listing,
     coverage: {
       sales: sales ? { from: sales.months[0].from, to: sales.latest.to } : null,
       ads: ads ? ads.months.map((m) => ({ label: m.label, from: m.from, to: m.to })) : [],
@@ -386,7 +441,7 @@ function buildBrandReport(input) {
   data.available = {
     sales: Boolean(sales), trajectory: Boolean(sales), concentration: Boolean(sales && sales.concentration),
     ads: Boolean(ads), efficiency: Boolean(ads && ads.previous), weekday: Boolean(weekday && weekday.days.length >= 3), funnel: Boolean(funnel),
-    keywords: Boolean(keywords), stock: Boolean(stock), profit: Boolean(profit),
+    keywords: Boolean(keywords), stock: Boolean(stock), profit: Boolean(profit), listing: Boolean(listing),
   };
   return data;
 }

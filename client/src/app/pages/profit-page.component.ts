@@ -163,6 +163,33 @@ import { UiStateService } from '../core/ui-state.service';
           </section>
         }
 
+        <section class="table-wrap compare-table listing-section">
+          <h3>Listing</h3>
+          <p class="muted">Type each product's MRP, selling price (what the customer pays, GST included) and Blinkit commission %. Discount and fees are worked out for you. This table feeds the report's "Catalogue and fee structure" section; it never changes the profit above.</p>
+          @if (d.inputs.products.length) {
+            <div class="listing-scroll">
+              <table class="listing-table">
+                <thead><tr><th>Product</th><th>MRP ₹</th><th>Selling price ₹</th><th>Commission %</th><th>Discount</th><th>Fees % of price</th></tr></thead>
+                <tbody>
+                  @for (p of d.inputs.products; track p.productName) {
+                    <tr>
+                      <td>{{ p.productName }}</td>
+                      <td><input type="number" min="0" step="any" class="styled-select" [value]="p.mrp ?? ''" [attr.aria-label]="'MRP for ' + p.productName" (change)="saveProductField(p, 'mrp', $event)"></td>
+                      <td><input type="number" min="0" step="any" class="styled-select" [value]="p.sellingPrice ?? ''" [attr.aria-label]="'Selling price for ' + p.productName" (change)="saveProductField(p, 'sellingPrice', $event)"></td>
+                      <td><input type="number" min="0" max="100" step="any" class="styled-select" placeholder="type %" [value]="commissionBox(p)" [attr.title]="p.commissionIsDefault ? 'Not typed yet' : 'Typed commission %'" [attr.aria-label]="'Commission % for ' + p.productName" (change)="saveProductField(p, 'commissionPct', $event)"></td>
+                      <td>{{ p.listing.discountPct === null ? '-' : percent(p.listing.discountPct) }}</td>
+                      <td [attr.title]="feesTip(p)">{{ feesCell(p) }}</td>
+                    </tr>
+                  }
+                </tbody>
+              </table>
+            </div>
+            <p class="muted overview-footnote">Fees % of price = (commission + fulfilment {{ money(d.inputs.settings.fulfilmentFee, 0) }} + inward {{ money(d.inputs.settings.inwardFee, 0) }}) ÷ selling price. Storage is left out because it depends on how long a unit sits. Commission % is the same box as in "Your numbers" below, so typing it in either place updates both.</p>
+          } @else {
+            <p class="muted">No products yet. They appear here once the brand's monthly sales are uploaded.</p>
+          }
+        </section>
+
         <section class="table-wrap compare-table">
           <h3>Does it add up?</h3>
           <ul class="muted">
@@ -305,6 +332,21 @@ export class ProfitPageComponent {
   private carriesShare() { return this.group() !== 'month' || !(this.data()?.brandCosts.wholeBrand ?? true); }
   adsHeader() { return this.carriesShare() ? 'Ad spend (share)' : 'Ad spend'; }
   otherHeader() { return this.carriesShare() ? 'Other expenses (share)' : 'Other expenses'; }
+
+  /** The commission box of the Listing table: empty while commission is only the 0 default (nothing typed yet). */
+  commissionBox(p: ProfitViewInputProduct): number | string {
+    return p.commissionIsDefault && p.commissionPct === 0 ? '' : p.commissionPct;
+  }
+  feesCell(p: ProfitViewInputProduct): string {
+    if (p.listing.feesPct !== null) return this.percent(p.listing.feesPct);
+    return p.listing.hasPrice ? 'type commission' : '-';
+  }
+  feesTip(p: ProfitViewInputProduct): string {
+    const l = p.listing;
+    if (l.feesValue === null || l.commissionValue === null) return '';
+    const s = this.data()?.inputs.settings;
+    return `Per unit: commission ${money(l.commissionValue, 2)} + fulfilment ${money(s?.fulfilmentFee ?? 0, 2)} + inward ${money(s?.inwardFee ?? 0, 2)} = ${money(l.feesValue, 2)}`;
+  }
 
   scopeText() {
     const d = this.data();

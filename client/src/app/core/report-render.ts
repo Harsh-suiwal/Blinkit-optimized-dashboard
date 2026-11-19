@@ -16,6 +16,7 @@ export interface ReportSettings {
 
 export const REPORT_SECTIONS: { key: string; label: string }[] = [
   { key: 'summary', label: 'Executive summary' },
+  { key: 'listing', label: 'Catalogue and fee structure (from the Listing table)' },
   { key: 'scope', label: 'Business overview and data scope' },
   { key: 'trajectory', label: 'Sales trajectory' },
   { key: 'products', label: 'Product-wise sales' },
@@ -48,7 +49,7 @@ export function availableSections(data: BrandReport, includeProfit: boolean, inp
   const a = data.available;
   return {
     summary: a.sales || a.ads, scope: a.sales || a.ads, trajectory: a.trajectory, products: a.sales, concentration: a.concentration,
-    stock: a.stock, availability: hasAvailability(inputs), ads: a.ads, campaigns: a.ads, efficiency: a.efficiency, weekday: a.weekday, funnel: a.funnel,
+    listing: a.listing, stock: a.stock, availability: hasAvailability(inputs), ads: a.ads, campaigns: a.ads, efficiency: a.efficiency, weekday: a.weekday, funnel: a.funnel,
     keywords: a.keywords, economics: a.ads, profit: includeProfit && a.profit, decisions: a.sales || a.ads, appendix: a.sales || a.ads,
   };
 }
@@ -69,6 +70,13 @@ const roasText = (n: number | null | undefined): string => (n === null || n === 
 const signed = (n: number | null | undefined, digits = 1): string => (n === null || n === undefined ? 'n/a' : `${n > 0 ? '+' : n < 0 ? '−' : ''}${Math.abs(n).toFixed(digits)}%`);
 const short = (text: string, max: number): string => (text.length > max ? `${text.slice(0, max - 1).trimEnd()}…` : text);
 const monthWord = (label: string): string => label.split(' ')[0];
+/** A product name without the brand in front ("Oicia Heavy Duty Knife" -> "Heavy Duty Knife"); the name itself when nothing would be left. */
+const plainName = (brand: string, name: string): string => {
+  const b = brand.trim();
+  if (!b) return name;
+  const out = name.replace(new RegExp(`^${b.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}[\\s\\-–—:|,]*`, 'i'), '').trim();
+  return out || name;
+};
 const SHORT_MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 const dayText = (iso: string): string => `${Number(iso.slice(8, 10))} ${SHORT_MONTHS[Number(iso.slice(5, 7)) - 1]}`;
 const longDate = (iso: string): string => `${Number(iso.slice(8, 10))} ${SHORT_MONTHS[Number(iso.slice(5, 7)) - 1]} ${iso.slice(0, 4)}`;
@@ -330,19 +338,22 @@ function timeline(d: BrandReport): string {
 function scopeSlide(c: Ctx): SlideFn {
   return (n) => {
     const { d } = c; const s = d.sales; const tiles: string[] = [];
-    if (s) tiles.push(kpi(`${s.productCount} product${s.productCount === 1 ? '' : 's'}`, short(s.rows.slice(0, 5).map((r) => short(r.name, 16)).join(' · '), 56), ''));
+    if (s) tiles.push(kpi(`${s.productCount} product${s.productCount === 1 ? '' : 's'}`, short(s.rows.slice(0, 5).map((r) => short(plainName(c.brand, r.name), 16)).join(' · '), 56), ''));
     if (s) tiles.push(kpi(`${s.latest.cityCount} cities`, s.latest.cities.length ? `Top: ${s.latest.cities[0].city} (${Math.round((s.latest.cities[0].revenue / Math.max(s.latest.revenue, 1)) * 100)}% of revenue)` : 'Cities with orders', ''));
     tiles.push(kpi(c.s.inputs.priceRange.trim() || (s ? inr(s.latest.aov) : '—'), c.s.inputs.priceRange.trim() ? 'Stated selling-price range' : 'Average order value', ''));
     const target = c.s.inputs.availability.find((x) => x.target !== null);
-    tiles.push(kpi(target ? `${num(target.target, 0)}%` : `${d.selectedMonths.length} months`, target ? 'Availability target per product' : 'In this report', ''));
-    if (s && s.rows.length >= 2) tiles.push(kpi(short(s.rows.slice(0, 2).map((r) => short(r.name, 10)).join(' + '), 22), 'Top sellers of the latest month', ''));
+    tiles.push(kpi(target ? `${num(target.target, 0)}%` : `${d.selectedMonths.length} month${d.selectedMonths.length === 1 ? '' : 's'}`, target ? 'Availability target per product' : 'In this report', ''));
     if (d.ads && d.ads.latest) tiles.push(kpi(`Ads: ${d.ads.latest.campaignCount} campaign${d.ads.latest.campaignCount === 1 ? '' : 's'}`, `${d.ads.months.length} month${d.ads.months.length === 1 ? '' : 's'} of advertising data`, ''));
+    // The month's top seller sits above the grid with its full name, so it never gets cut off in a tile.
+    const best = s && s.rows.length ? s.rows[0] : null;
+    const bestUnits = best ? best.perMonth[best.perMonth.length - 1] : null;
+    const top = best ? panel(`TOP SELLER OF ${monthWord(s!.latest.label).toUpperCase()}`, `<p class="rp-p"><b>${esc(plainName(c.brand, best.name))}</b></p><p class="rp-p">${bestUnits === null || bestUnits === undefined ? '' : `${num(bestUnits)} units · `}${best.mixPct.toFixed(1)}% of ${esc(monthWord(s!.latest.label))} units</p>`, 'warm') : '';
     const same = d.coverage.sales && d.coverage.ads.length && d.coverage.ads[d.coverage.ads.length - 1].to === d.coverage.sales.to;
     const tk = d.coverage.sales && d.coverage.ads.length
       ? (same ? 'Sales and advertising end on the same day, so they can be read side by side.' : `Sales end ${longDate(d.coverage.sales.to)} and advertising ends ${longDate(d.coverage.ads[d.coverage.ads.length - 1].to)}, so each dataset is kept separate.`)
       : 'Only one dataset is available, so there is nothing to compare it with yet.';
     return frame(c, n, 'BUSINESS OVERVIEW AND DATA SCOPE', `${s ? `${s.productCount} product${s.productCount === 1 ? '' : 's'}, ${s.latest.cityCount} cities` : 'Advertising data'} and the periods each dataset covers`,
-      `<div class="rs-body two"><div><div class="rs-sub">Business at a glance</div><div class="rgrid g2">${tiles.join('')}</div></div>`
+      `<div class="rs-body two"><div><div class="rs-sub">Business at a glance</div>${top}<div class="rgrid g2">${tiles.join('')}</div></div>`
       + `<div><div class="rs-sub">Reporting windows (${d.coverage.sales ? `${longDate(d.coverage.sales.from)} – ${longDate(d.coverage.sales.to)}` : 'advertising'})</div>${timeline(d)}<div class="spacer"></div>${takeaway(tk)}</div></div>`,
       'Source: monthly product sales and daily campaign rows uploaded to the dashboard.');
   };
@@ -390,14 +401,21 @@ function productsSlide(c: Ctx): SlideFn {
 function concentrationSlide(c: Ctx): SlideFn {
   return (n) => {
     const cc = c.d.sales!.concentration!; const { top } = cc;
-    const col = (x: typeof cc.latest) => ({ label: `${x.label} (${num(x.units)} units)`, segments: [{ value: x.top1 ?? 0, color: BLUE, name: top[0] }, { value: x.top2 ?? 0, color: TEAL, name: top[1] }, { value: x.rest ?? 0, color: SLATE, name: 'All other products' }] });
+    const col = (x: typeof cc.latest) => ({ label: `${x.label} (${num(x.units)} units)`, segments: [{ value: x.top1 ?? 0, color: BLUE, name: plainName(c.brand, top[0]) }, { value: x.top2 ?? 0, color: TEAL, name: plainName(c.brand, top[1]) }, { value: x.rest ?? 0, color: SLATE, name: 'All other products' }] });
     const dTop = cc.topChange; const dRest = cc.restChange; const net = cc.netChange; const now = cc.latest.topShare ?? 0;
+    // Product names without the brand in front, and long enough to read in full.
+    const p0 = plainName(c.brand, top[0]); const p1 = plainName(c.brand, top[1]);
+    const t0 = short(p0, 48); const t1 = short(p1, 48);
+    const read = (c.d.insights.concentration ?? '').split(top[0]).join(p0).split(top[1]).join(p1); // the takeaway sentence, brand-free too
     return frame(c, n, 'PORTFOLIO CONCENTRATION',
-      dRest < 0 && dTop > 0 ? `Gains on ${short(top[0], 14)} and ${short(top[1], 14)} are partly offset by declines elsewhere, so net growth is only ${net >= 0 ? '+' : '−'}${Math.abs(net).toFixed(2)} units a day` : `${short(top[0], 14)} and ${short(top[1], 14)} make up ${(Math.round(now * 10) / 10).toFixed(1)}% of units`,
+      dRest < 0 && dTop > 0
+        ? (net >= 0 ? `Gains on ${t0} and ${t1} are partly offset by declines elsewhere, so net growth is only +${net.toFixed(2)} units a day`
+          : `Gains on ${t0} and ${t1} are more than offset by declines elsewhere, so the brand lost ${Math.abs(net).toFixed(2)} units a day`)
+        : `${t0} and ${t1} make up ${(Math.round(now * 10) / 10).toFixed(1)}% of units`,
       `<div class="rs-body two"><div><div class="rs-sub">Share of units, ${esc(cc.previous.label)} vs ${esc(cc.latest.label)}</div>${stacked([col(cc.previous), col(cc.latest)], 600, 420)}`
-      + `<div class="rleg">${[[BLUE, top[0]], [TEAL, top[1]], [SLATE, 'All other products']].map(([k, t]) => `<span><i style="background:${k}"></i>${esc(short(t, 26))}</span>`).join('')}</div>${takeaway(c.d.insights.concentration ?? '')}</div>`
-      + `<div><div class="rgrid g3">${kpi(`${dTop >= 0 ? '+' : '−'}${Math.abs(dTop).toFixed(2)}/day`, `${short(top[0], 12)} + ${short(top[1], 12)}`, `${cc.topPerDay.previous.toFixed(2)} → ${cc.topPerDay.latest.toFixed(2)} units/day`, dTop >= 0 ? 'good' : 'bad')}${kpi(`${dRest >= 0 ? '+' : '−'}${Math.abs(dRest).toFixed(2)}/day`, 'All other products', `${cc.restPerDay.previous.toFixed(2)} → ${cc.restPerDay.latest.toFixed(2)} units/day`, dRest >= 0 ? 'good' : 'bad')}${kpi(`${net >= 0 ? '+' : '−'}${Math.abs(net).toFixed(2)}/day`, 'Total brand (net)', `${cc.totalPerDay.previous.toFixed(2)} → ${cc.totalPerDay.latest.toFixed(2)} units/day`)}</div>`
-      + `<div class="rgrid g2">${panel('Concentrating on two products', `<p class="rp-p"><b>Upside:</b> spend follows proven velocity.</p><p class="rp-p"><b>Risk:</b> a stock-out on either now hits ${(Math.round(now))}% of units.</p><p class="rp-p"><b>Risk:</b> ${esc(short(top[0], 20))} alone is ${(cc.latest.top1 ?? 0).toFixed(0)}% of units.</p>`)}${panel('Test cannibalization, don’t assume it', `<p class="rp-p"><b>Test:</b> run ads in matched test and hold-out stores or cities.</p><p class="rp-p"><b>Judge:</b> on total brand units, not product-attributed sales.</p><p class="rp-p"><b>Control:</b> compare periods with matched availability.</p>`)}</div></div></div>`,
+      + `<div class="rleg">${[[BLUE, p0], [TEAL, p1], [SLATE, 'All other products']].map(([k, t]) => `<span><i style="background:${k}"></i>${esc(short(t, 48))}</span>`).join('')}</div>${takeaway(read)}</div>`
+      + `<div><div class="rgrid g3">${kpi(`${dTop >= 0 ? '+' : '−'}${Math.abs(dTop).toFixed(2)}/day`, 'Top 2 products combined', `${cc.topPerDay.previous.toFixed(2)} → ${cc.topPerDay.latest.toFixed(2)} units/day`, dTop >= 0 ? 'good' : 'bad')}${kpi(`${dRest >= 0 ? '+' : '−'}${Math.abs(dRest).toFixed(2)}/day`, 'All other products', `${cc.restPerDay.previous.toFixed(2)} → ${cc.restPerDay.latest.toFixed(2)} units/day`, dRest >= 0 ? 'good' : 'bad')}${kpi(`${net >= 0 ? '+' : '−'}${Math.abs(net).toFixed(2)}/day`, 'Total brand (net)', `${cc.totalPerDay.previous.toFixed(2)} → ${cc.totalPerDay.latest.toFixed(2)} units/day`)}</div>`
+      + `<div class="rgrid g2">${panel('Concentrating on two products', `<p class="rp-p"><b>Upside:</b> spend follows proven velocity.</p><p class="rp-p"><b>Risk:</b> a stock-out on either now hits ${(Math.round(now))}% of units.</p><p class="rp-p"><b>Risk:</b> ${esc(short(p0, 60))} alone is ${(cc.latest.top1 ?? 0).toFixed(0)}% of units.</p>`)}${panel('Test cannibalization, don’t assume it', `<p class="rp-p"><b>Test:</b> run ads in matched test and hold-out stores or cities.</p><p class="rp-p"><b>Judge:</b> on total brand units, not product-attributed sales.</p><p class="rp-p"><b>Control:</b> compare periods with matched availability.</p>`)}</div></div></div>`,
       'Source: monthly product sales. An offset between products is not proof of cannibalization.');
   };
 }
@@ -479,9 +497,9 @@ function efficiencySlide(c: Ctx): SlideFn {
     const bars: Bar[] = [{ label: monthWord(p.label), value: p.roas ?? 0, color: BLUE, text: roasText(p.roas) }, { label: `${monthWord(l.label)}${l.days < 28 ? ` ${rangeText(l.from, l.to)}` : ''}`, value: l.roas ?? 0, color: (l.roas ?? 0) < (p.roas ?? 0) ? RED : GREEN, text: roasText(l.roas) }];
     const s = c.d.sales; const extra = s && s.previous && s.rateChangePct !== null ? panel('', `<p class="rp-p"><b>Not the same as brand sales:</b> units/day ${s.rateChangePct >= 0 ? 'rose' : 'fell'} ${Math.abs(s.rateChangePct)}% while attributed units ${(ch.units ?? 0) >= 0 ? 'rose' : 'fell'}. Incrementality is unproven either way.</p>`) : '';
     return frame(c, n, `ADVERTISING EFFICIENCY: ${w(p.label).toUpperCase()} VS ${w(l.label).toUpperCase()}`,
-      ch.roas !== null ? `Reported ad efficiency ${ch.roas < 0 ? 'worsened' : 'improved'}: ROAS ${ch.roas < 0 ? 'fell' : 'rose'} ${Math.abs(ch.roas)}%${ch.spendPer1000 !== null ? ` as each impression became ${Math.abs(ch.spendPer1000) >= 50 ? (ch.spendPer1000 > 0 ? `about ${(1 + ch.spendPer1000 / 100).toFixed(1)}x more expensive` : 'cheaper') : 'similarly priced'}` : ''}` : 'Advertising efficiency, month against month',
+      ch.roas !== null ? (Math.abs(ch.roas) < 0.5 ? 'Reported ad efficiency was flat: ROAS barely moved' : `Reported ad efficiency ${ch.roas < 0 ? 'worsened' : 'improved'}: ROAS ${ch.roas < 0 ? 'fell' : 'rose'} ${Math.abs(ch.roas)}%${ch.spendPer1000 !== null ? ` as each impression became ${Math.abs(ch.spendPer1000) < 10 ? 'similarly priced' : (ch.spendPer1000 > 0 ? `about ${(1 + ch.spendPer1000 / 100).toFixed(1)}x more expensive` : 'cheaper')}` : ''}`) : 'Advertising efficiency, month against month',
       `<div class="rs-body two wide"><div>${table(['Metric', monthWord(p.label), `${monthWord(l.label)}${l.days < 28 ? ` ${rangeText(l.from, l.to)}` : ''}`, 'Change'], rows, { widths: '37%,19%,22%,22%' })}<div class="rs-note">Grey = volume change${l.days !== p.days ? `, not like-for-like (${monthWord(l.label)} is ${l.days} days)` : ''}. Red/green = efficiency ratios.</div></div>`
-      + `<div><div class="rs-sub">ROAS (axis starts at 0; 1.0x = revenue equals spend)</div>${vBars(bars, 520, 250, (v) => `${v.toFixed(2)}x`, 1, 4)}${takeaway(c.d.insights.efficiency ?? '')}${extra}</div></div>`,
+      + `<div><div class="rs-sub">ROAS (axis starts at 0; 1.0x = revenue equals spend)</div>${vBars(bars, 520, 250, (v) => `${v.toFixed(2)}x`, Math.max(...bars.map((b) => b.value)) <= 1 ? 1 : undefined, 4)}${takeaway(c.d.insights.efficiency ?? '')}${extra}</div></div>`,
       'Source: daily campaign rows. Spend per 1,000 impressions is derived (spend ÷ impressions × 1,000); the cause of any change is not identifiable from the data supplied.');
   };
 }
@@ -555,6 +573,50 @@ function economicsSlide(c: Ctx): SlideFn {
   };
 }
 
+function listingSlide(c: Ctx): SlideFn {
+  return (n) => {
+    const l = c.d.listing!; const rows = l.rows;
+    const pct = (v: number | null): string => (v === null ? '<span class="mu">n/a</span>' : `${v.toFixed(1)}%`);
+    const body = rows.map((r) => [
+      `<b>${esc(short(r.name, 44))}</b>`, r.mrp === null ? '<span class="mu">n/a</span>' : inr(r.mrp), inr(r.sellingPrice),
+      r.discountPct === null ? '<span class="mu">n/a</span>' : `${r.discountPct.toFixed(1)}%`,
+      r.commissionPct === null ? '<span class="mu">not entered</span>' : `${r.commissionPct}%`,
+      pct(r.feesPct),
+      r.leftValue === null ? '<span class="mu">n/a</span>' : inr(r.leftValue, 2),
+    ]);
+    // Where one unit's selling price goes, as % of the price: GST, commission, fulfilment + inward, and what is left (before product cost).
+    const priced = rows.filter((r) => r.feesValue !== null && r.commissionValue !== null && r.gstValue !== null && r.leftValue !== null).slice(0, 4);
+    const cols = priced.map((r) => {
+      const p = r.sellingPrice;
+      const gst = ((r.gstValue ?? 0) / p) * 100; const com = ((r.commissionValue ?? 0) / p) * 100;
+      const ful = (((r.feesValue ?? 0) - (r.commissionValue ?? 0)) / p) * 100; const left = Math.max(0, 100 - gst - com - ful);
+      return { label: short(r.name, 18), segments: [
+        { value: gst, color: SLATE, name: 'GST' }, { value: com, color: RED, name: 'Commission' },
+        { value: ful, color: AMBER, name: 'Fulfilment + inward' }, { value: left, color: GREEN, name: 'Left after fees' },
+      ] };
+    });
+    const floors = rows.filter((r) => r.leftValue !== null && r.leftValue > 0).map((r) => r.sellingPrice / (r.leftValue as number));
+    const range = l.commissionRange;
+    const lead = l.heaviest
+      ? `${short(l.heaviest.name, 40)} gives up ${l.heaviest.feesPct.toFixed(1)}% of its price to Blinkit fees`
+      : `${rows.length} listed product${rows.length === 1 ? '' : 's'}: prices and discounts`;
+    const read = l.heaviest
+      ? `${range && range.min !== range.max ? `Commission runs from ${range.min}% to ${range.max}% across the range. ` : range ? `Commission is ${range.min}% on every listed product. ` : ''}${short(l.heaviest.name, 30)} is the heaviest at ${l.heaviest.feesPct.toFixed(1)}% of price${l.lightest ? `, ${short(l.lightest.name, 30)} the lightest at ${l.lightest.feesPct.toFixed(1)}%` : ''}.`
+      : 'Enter each product’s commission % to see how much of the price the fees take.';
+    const notes = [
+      l.missingPrice > 0 ? `${l.missingPrice} sold product${l.missingPrice === 1 ? ' has' : 's have'} no selling price entered, so ${l.missingPrice === 1 ? 'it is' : 'they are'} not listed.` : '',
+      l.missingCommission > 0 ? `${l.missingCommission} listed product${l.missingCommission === 1 ? ' has' : 's have'} no commission % entered, so fees are not shown for ${l.missingCommission === 1 ? 'it' : 'them'}.` : '',
+    ].filter(Boolean).join(' ');
+    return frame(c, n, 'CATALOGUE AND FEE STRUCTURE', lead,
+      `<div class="rs-body two prod"><div>${table(['Product', 'MRP', 'Selling price', 'Discount', 'Commission', 'Fees % of price', 'Left after fees'], body, { widths: '31%,11%,12%,11%,12%,11%,12%' })}`
+      + `<div class="rs-note">Fees = commission + fulfilment ${inr(l.settings.fulfilment)} + inward ${inr(l.settings.inward)}. Left after fees = selling price − GST − fees, still before product cost, ads and other expenses. Storage is not included.${notes ? ` ${esc(notes)}` : ''}</div>`
+      + `${takeaway(read)}</div>`
+      + `<div>${cols.length ? `<div class="rs-sub">Where one unit’s price goes (% of selling price)</div>${stacked(cols, 600, 380)}<div class="rleg">${[[SLATE, 'GST'], [RED, 'Commission'], [AMBER, 'Fulfil + inward'], [GREEN, 'Left']].map(([k, t]) => `<span><i style="background:${k}"></i>${esc(t)}</span>`).join('')}</div>` : ''}`
+      + `${floors.length ? panel('What this means for advertising', `<p class="rp-p">Even if the product cost nothing, ROAS has to be at least <b>${Math.min(...floors).toFixed(2)}x${Math.max(...floors) - Math.min(...floors) > 0.005 ? `–${Math.max(...floors).toFixed(2)}x` : ''}</b> just to cover GST and Blinkit fees on the listed products. The real break-even is higher once product cost is added.</p>`, 'warm') : ''}</div></div>`,
+      'Source: MRP, selling price and commission typed in the Listing table (Profit tab); fulfilment and inward from the Profit defaults.');
+  };
+}
+
 function profitSlide(c: Ctx): SlideFn {
   return (n) => {
     const p = c.d.profit!;
@@ -586,6 +648,7 @@ function appendixSlide(c: Ctx): SlideFn {
     d.coverage.ads.forEach((a) => rows.push([`Advertising, ${a.label}`, rangeText(a.from, a.to), 'Daily campaign rows']));
     if (d.weekday) rows.push(['Weekday and keyword views', `${d.coverage.adDays} days with data`, 'Built from the same daily rows; days of the same weekday are merged']);
     if (d.stock) rows.push(['Stock', 'Latest stock upload', `${d.stock.totals.listings} listings`]);
+    if (d.listing) rows.push(['Listing prices and commission', 'Typed in the Listing table', `${d.listing.rows.length} product${d.listing.rows.length === 1 ? '' : 's'}`]);
     return frame(c, n, 'APPENDIX: DATA COVERAGE, DEFINITIONS AND LIMITATIONS', 'Every figure comes from uploaded reports; here is what each covers and how the measures are defined',
       `<div class="rs-body two"><div>${table(['Dataset', 'Covers', 'Note'], rows, { numFrom: 99, widths: '34%,26%,40%' })}${panel('', `<p class="rp-p"><b>Not added together:</b> product sales, advertising and stock come from different reports with different windows; each is shown on its own basis.</p>`, 'warm')}</div>`
       + `<div>${panel('Definitions and limitations', `<ul class="rul"><li><b>ROAS:</b> attributed revenue ÷ ad spend; below 1.0x means attributed revenue is under spend, before costs.</li><li><b>Spend per attributed unit:</b> spend ÷ reported attributed units; not necessarily the true acquisition cost.</li><li><b>Run-rate:</b> units so far ÷ days so far × days in the month; a straight line, not a forecast.</li><li><b>Break-even ROAS:</b> ≈ 1 ÷ contribution margin before ads.</li><li><b>Spend per 1,000 impressions:</b> derived (spend ÷ impressions × 1,000).</li><li><b>Limits:</b> attribution is not incrementality. Clicks, CTR, CPC and keyword-to-product mapping are not in the uploaded data.</li></ul>`)}</div></div>`,
@@ -681,6 +744,7 @@ export function renderReport(data: BrandReport, settings: ReportSettings): strin
   const on = (key: string): boolean => can[key] === true && settings.sections[key] !== false;
   const slides: SlideFn[] = [coverSlide(c)];
   if (on('summary')) slides.push(summarySlide(c));
+  if (on('listing')) slides.push(listingSlide(c));
   if (on('scope')) slides.push(scopeSlide(c));
   if (on('trajectory')) slides.push(trajectorySlide(c));
   if (on('products')) slides.push(productsSlide(c));

@@ -1,6 +1,6 @@
 // Stored costs per brand for the Profit tab (kv `brandCosts`):
 //   { brands: [ { brandName, fileName, uploadedAt, products: [...], otherCosts: { 'YYYY-MM': rupees },
-//                 manual: { products: { <productKey>: { productName, cogs, taxPct, commissionPct } }, settings: {...} } } ] }
+//                 manual: { products: { <productKey>: { productName, cogs, taxPct, commissionPct, mrp, sellingPrice } }, settings: {...} } } ] }
 // A cost-sheet upload replaces a brand's products and keeps its monthly "other costs" and everything typed
 // into the Profit tab (`manual`). Typed values live apart from `products` on purpose: the old Profit maths and
 // the report read `products` only, and a half-filled typed row must never look like a priced product to them.
@@ -70,13 +70,13 @@ function entryFor(brands, brand) {
 }
 
 /**
- * Sets one typed value of one product (field: cogs | taxPct | commissionPct); null clears it.
+ * Sets one typed value of one product (field: cogs | taxPct | commissionPct | mrp | sellingPrice); null clears it.
  * Throws a readable Error for a bad field or value.
  */
 async function setProductField(brand, productName, field, value) {
   const name = String(productName || '').trim();
   if (!name || name.length > 300) throw new Error('productName is required.');
-  if (!(field in PRODUCT_FIELD_LIMITS)) throw new Error('field must be cogs, taxPct or commissionPct.');
+  if (!(field in PRODUCT_FIELD_LIMITS)) throw new Error('field must be cogs, taxPct, commissionPct, mrp or sellingPrice.');
   const number = value === null ? null : Number(value);
   if (number !== null && (value === '' || !Number.isFinite(number) || number < 0 || number > PRODUCT_FIELD_LIMITS[field])) {
     throw new Error(`${field} must be a number from 0 to ${PRODUCT_FIELD_LIMITS[field]}, or empty to clear it.`);
@@ -88,7 +88,7 @@ async function setProductField(brand, productName, field, value) {
   const key = productKey(name);
   const row = entry.manual.products[key] || { productName: name };
   if (number === null) delete row[field]; else row[field] = Math.round(number * 10000) / 10000;
-  const hasValue = ['cogs', 'taxPct', 'commissionPct'].some((f) => row[f] !== undefined);
+  const hasValue = ['cogs', 'taxPct', 'commissionPct', 'mrp', 'sellingPrice'].some((f) => row[f] !== undefined);
   if (hasValue) entry.manual.products[key] = row; else delete entry.manual.products[key];
   await kv.set(KEY, { brands });
 }

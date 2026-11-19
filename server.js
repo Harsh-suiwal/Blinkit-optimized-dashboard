@@ -72,6 +72,7 @@ const { buildProfitView } = require('./parser/profitView');
 const { profitFromView } = require('./parser/strategyScorecard');
 const { buildProductMonthDetail } = require('./parser/productMonthDetail');
 const { buildBrandReport } = require('./parser/brandReport');
+const { buildReportProfit } = require('./parser/reportProfit');
 
 const kv = require('./store/kv');
 const brandRegistry = require('./store/brandRegistry');
@@ -1017,7 +1018,7 @@ app.get('/api/profit-view', requirePerm('profit'), (req, res) => {
   }));
 });
 
-// One typed value of one product, body { brand, productName, field: 'cogs'|'taxPct'|'commissionPct', value: number|null }.
+// One typed value of one product, body { brand, productName, field: 'cogs'|'taxPct'|'commissionPct'|'mrp'|'sellingPrice', value: number|null }.
 // null clears it. Kept apart from the uploaded cost sheet (see parser/brandCosts.js).
 app.post('/api/profit-product-cost', requirePerm('profit'), mutating(async (req, res) => {
   const body = req.body || {};
@@ -1149,11 +1150,12 @@ app.get('/api/brand-report', requireAuth, (req, res) => {
     slots,
     campaignRows: campaignStore.rows.filter((r) => sameBrand(r.brandName, brand)),
     campaignPeriods: listCampaignPeriods(campaignStore),
+    costs: getBrandCosts(brand),
     inventoryRows: inventory
       ? inventory.rows.filter((r) => sameBrand(brandOf(r.productName, r.brandName, aliases) || 'Unknown', brand))
       : [],
     profit: wantsProfit
-      ? buildBrandProfit({ brand, monthInfo: listMonths(brand, PROFIT_PLATFORM), slots, costs: getBrandCosts(brand), adSpendByMonth: adSpendByMonthFor(brand) })
+      ? buildReportProfit({ brand, monthInfo: listMonths(brand, PROFIT_PLATFORM), slots, costs: getBrandCosts(brand), adSpendByMonth: adSpendByMonthFor(brand) })
       : null,
     today: todayDateString(),
   }));

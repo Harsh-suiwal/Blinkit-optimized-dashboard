@@ -478,6 +478,17 @@ export interface ProfitViewMonthCost {
   otherShare: number;
 }
 
+/** The Listing table's calculated columns for one product; a figure is null while the numbers it needs are not typed. */
+export interface ProfitListingFigures {
+  hasPrice: boolean;
+  discountPct: number | null;
+  gstValue: number | null;
+  commissionValue: number | null;
+  feesValue: number | null;
+  feesPct: number | null;
+  leftValue: number | null;
+}
+
 export interface ProfitViewInputProduct {
   productName: string;
   units: number;
@@ -489,6 +500,9 @@ export interface ProfitViewInputProduct {
   taxIsDefault: boolean;
   commissionPct: number;
   commissionIsDefault: boolean;
+  mrp: number | null;
+  sellingPrice: number | null;
+  listing: ProfitListingFigures;
 }
 
 export interface ProfitView {
@@ -530,7 +544,7 @@ export interface ProfitViewQuery {
   includeAds: boolean;
 }
 
-export type ProfitProductField = 'cogs' | 'taxPct' | 'commissionPct';
+export type ProfitProductField = 'cogs' | 'taxPct' | 'commissionPct' | 'mrp' | 'sellingPrice';
 /** GET /api/product-month-detail: the Sales > Month by month tab. Without `product` it returns only the names. */
 export interface ProductMonthNames {
   products: string[];
@@ -702,16 +716,32 @@ export interface ReportProfit {
   contributionMarginPct: number | null; breakEvenRoas: number | null;
   products: { name: string; units: number; profitPerUnit: number | null; listUnitProfit: number; marginPct: number | null }[];
 }
+/** The report's "Catalogue and fee structure" section: products with a selling price typed in the Listing table. */
+export interface ReportListingRow {
+  name: string; units: number; mrp: number | null; sellingPrice: number; taxPct: number;
+  commissionPct: number | null; fulfilment: number; inward: number;
+  discountPct: number | null; gstValue: number | null; commissionValue: number | null;
+  feesValue: number | null; feesPct: number | null; leftValue: number | null;
+}
+export interface ReportListing {
+  rows: ReportListingRow[];
+  settings: { fulfilment: number; inward: number; storage: number };
+  heaviest: { name: string; feesPct: number; commissionPct: number | null } | null;
+  lightest: { name: string; feesPct: number; commissionPct: number | null } | null;
+  commissionRange: { min: number; max: number } | null;
+  missingPrice: number;
+  missingCommission: number;
+}
 export interface BrandReport {
   brand: string; generatedOn: string; availableMonths: ReportMonthRef[]; selectedMonths: string[];
   sales: ReportSales | null; ads: ReportAds | null; weekday: ReportWeekday | null; funnel: ReportFunnel | null;
-  keywords: { list: ReportKeyword[]; total: number } | null; stock: ReportStock | null; profit: ReportProfit | null;
+  keywords: { list: ReportKeyword[]; total: number } | null; stock: ReportStock | null; profit: ReportProfit | null; listing: ReportListing | null;
   coverage: { sales: { from: string; to: string } | null; ads: { label: string; from: string; to: string }[]; adDays: number };
   insights: {
     decisions: string[]; management: { continue: string[]; optimize: string[]; restrict: string[]; fix: string[]; measure: string[] };
     trajectory?: string; products?: string; concentration?: string; ads?: Record<string, string>; efficiency?: string; weekday?: string; funnel?: string;
   };
-  available: { sales: boolean; trajectory: boolean; concentration: boolean; ads: boolean; efficiency: boolean; weekday: boolean; funnel: boolean; keywords: boolean; stock: boolean; profit: boolean };
+  available: { sales: boolean; trajectory: boolean; concentration: boolean; ads: boolean; efficiency: boolean; weekday: boolean; funnel: boolean; keywords: boolean; stock: boolean; profit: boolean; listing: boolean };
 }
 
 // ---- Strategy tab (append to the end of client/src/app/core/models.ts) ----
