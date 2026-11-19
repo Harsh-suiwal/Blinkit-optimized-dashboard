@@ -8,7 +8,7 @@
  */
 const kv = require('./kv');
 const supabase = require('../db/supabase');
-const { ROLES, ROLE_LABELS } = require('../config/permissions');
+const { getRolePermissions, getRoleLabels } = require('../config/permissions');
 
 const PROFILES_KEY = 'userProfiles';
 const SESSION_PREFIX = 'session:';
@@ -45,9 +45,11 @@ async function endSessionsOf(userId) {
   }
 }
 
-/** Roles in the table have a name; a role missing from the table gets no access. Fails closed. */
+/** Roles in the live permission table have a name; a role missing from the table gets no access. Fails closed. */
 function isKnownRole(role) {
-  return Object.prototype.hasOwnProperty.call(ROLES, role);
+  if (typeof role !== 'string') return false;
+  const roles = getRolePermissions();
+  return Object.prototype.hasOwnProperty.call(roles, role);
 }
 
 /**
@@ -168,7 +170,9 @@ function lastActiveAdminBlocked(users, userId, nextRole, nextActive) {
 
 /** The role list for the Users page: [{ value, label }]. */
 function roleOptions() {
-  return Object.keys(ROLES).map((value) => ({ value, label: ROLE_LABELS[value] || value }));
+  const roles = getRolePermissions();
+  const labels = getRoleLabels();
+  return Object.keys(roles).map((value) => ({ value, label: labels[value] || value }));
 }
 
 module.exports = {

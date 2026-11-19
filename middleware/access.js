@@ -10,7 +10,7 @@
  *
  * The decision functions are pure (no Express) so scripts/access-smoke.js can test them.
  */
-const { ROLE_LABELS, PERM_KEYS, getRolePermissions } = require('../config/permissions');
+const { PERM_KEYS, getRolePermissions, getRoleLabels } = require('../config/permissions');
 const supabase = require('../db/supabase');
 const accounts = require('../store/accounts');
 
@@ -54,10 +54,11 @@ async function resolveAccount(userId) {
 
 /** What the browser may see about the user (no password, no internal fields). */
 function publicAccount(account) {
+  const labels = getRoleLabels();
   return {
     email: account.email,
     role: account.role,
-    roleLabel: ROLE_LABELS[account.role] || account.role,
+    roleLabel: labels[account.role] || account.role,
     name: account.name,
     brands: account.perms.allBrands ? null : account.brands, // null = every brand
     perms: account.perms,

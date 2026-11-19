@@ -4,9 +4,11 @@
  *   POST   /api/users                    create a user (email, password, name, role, brands, active)
  *   PATCH  /api/users/:id                change name, role, brands, active
  *   POST   /api/users/:id/password       set or reset a password (users cannot change their own)
- *   GET    /api/users/permissions        get role-permission matrix and metadata
+ *   GET    /api/users/permissions        get role-permission matrix, labels, and metadata
  *   PUT    /api/users/permissions        update and persist role permissions
- *   POST   /api/users/permissions/reset  restore default role permissions
+ *   POST   /api/users/permissions/reset  restore default built-in role permissions
+ *   POST   /api/users/roles              add a custom role
+ *   DELETE /api/users/roles/:key         delete a custom role (only if no user has it)
  * Passwords are stored as bcrypt hashes and are never sent back. Deactivating a user or resetting a
  * password ends that user's sessions at once. The last active admin cannot be demoted or deactivated.
  */
@@ -18,11 +20,14 @@ const accounts = require('../store/accounts');
 const brandRegistry = require('../store/brandRegistry');
 const { requirePerm } = require('../middleware/access');
 const {
-  ROLE_LABELS,
+  BUILT_IN_ROLES,
   PERM_KEYS,
   PERM_META,
   getRolePermissions,
+  getRoleLabels,
   saveRolePermissions,
+  addRole,
+  deleteRole,
   resetRolePermissions,
 } = require('../config/permissions');
 
@@ -54,6 +59,8 @@ function createUsersRouter({ knownBrands, dataBrands }) {
       roles: accounts.roleOptions(),
       brands: knownBrands(),
       permissions: getRolePermissions(),
+      roleLabels: getRoleLabels(),
+      builtInRoles: BUILT_IN_ROLES,
       permKeys: PERM_KEYS,
       permMeta: PERM_META,
     });
@@ -62,7 +69,9 @@ function createUsersRouter({ knownBrands, dataBrands }) {
   router.get('/permissions', wrap(async (req, res) => {
     res.json({
       roles: getRolePermissions(),
-      roleLabels: ROLE_LABELS,
+      roleLabels: getRoleLabels(),
+      roleOptions: accounts.roleOptions(),
+      builtInRoles: BUILT_IN_ROLES,
       permKeys: PERM_KEYS,
       permMeta: PERM_META,
     });
@@ -71,12 +80,39 @@ function createUsersRouter({ knownBrands, dataBrands }) {
   router.put('/permissions', wrap(async (req, res) => {
     const result = await kv.withLock(() => saveRolePermissions(req.body && req.body.roles));
     if (result.error) return res.status(400).json({ error: result.error });
-    res.json({ ok: true, roles: result.value });
+    res.json({ ok: true, roles: result.value, roleLabels: getRoleLabels(), roleOptions: accounts.roleOptions() });
   }));
 
   router.post('/permissions/reset', wrap(async (req, res) => {
     const roles = await kv.withLock(() => resetRolePermissions());
-    res.json({ ok: true, roles });
+    res.json({ ok: true, roles, roleLabels: getRoleLabels(), roleOptions: accounts.roleOptions() });
+  }));
+
+  router.post('/roles', wrap(async (req, res) => {
+    const result = await kv.withLock(() => addRole(req.body || {}));
+    if (result.error) return res.status(400).json({ error: result.error });
+    res.status(201).json({
+      ok: true,
+      ...result.value,
+      roleOptions: accounts.roleOptions(),
+      builtInRoles: BUILT_IN_ROLES,
+    });
+  }));
+
+  router.delete('/roles/:key', wrap(async (req, res) => {
+    const roleKey = String(req.params.key || '').trim();
+    const users = await allUsers();
+    if (users.some((u) => u.role === roleKey)) {
+      return res.status(409).json({ error: 'A user still has this role. Reassign them first.' });
+    }
+    const result = await kv.withLock(() => deleteRole(roleKey));
+    if (result.error) return res.status(400).json({ error: result.error });
+    res.json({
+      ok: true,
+      ...result.value,
+      roleOptions: accounts.roleOptions(),
+      builtInRoles: BUILT_IN_ROLES,
+    });
   }));
 
   router.post('/', wrap(async (req, res) => {

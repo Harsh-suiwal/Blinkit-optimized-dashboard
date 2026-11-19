@@ -13,6 +13,14 @@ interface PermMetaItem {
   description: string;
 }
 
+interface PermApiResponse {
+  roles: RolePermsMap;
+  roleLabels?: Record<string, string>;
+  roleOptions?: RoleOption[];
+  builtInRoles?: string[];
+  permMeta?: PermMetaItem[];
+}
+
 const DEFAULT_PERM_META: PermMetaItem[] = [
   { key: 'allBrands',   label: 'All brands',       description: 'See every brand; when off, restricted to ticked brands only.' },
   { key: 'profit',      label: 'View profit',      description: 'See profit figures, margins, and cost tabs.' },
@@ -43,7 +51,7 @@ const DEFAULT_PERM_META: PermMetaItem[] = [
         <div class="perm-header">
           <div>
             <h3>Role permissions</h3>
-            <p class="muted">Toggle what each role can access. Upload requires All brands; Admin always keeps Manage users.</p>
+            <p class="muted">Add custom roles or toggle what each role can access. Upload requires All brands; Admin always keeps Manage users.</p>
           </div>
           <div class="perm-actions">
             @if (hasPermChanges()) {
@@ -55,6 +63,11 @@ const DEFAULT_PERM_META: PermMetaItem[] = [
           </div>
         </div>
 
+        <div class="profile-row perm-add-role">
+          <input type="text" [(ngModel)]="newRoleLabel" placeholder="AI Explorer" (keyup.enter)="addRole()" />
+          <button type="button" class="secondary-btn" (click)="addRole()" [disabled]="busy() || !newRoleLabel.trim()">Add role</button>
+        </div>
+
         @if (roleKeys().length) {
           <div class="perm-table-wrap">
             <table class="perm-table">
@@ -62,7 +75,18 @@ const DEFAULT_PERM_META: PermMetaItem[] = [
                 <tr>
                   <th>Permission</th>
                   @for (roleKey of roleKeys(); track roleKey) {
-                    <th class="perm-role-col">{{ roleLabel(roleKey) }}</th>
+                    <th class="perm-role-col">
+                      <span>{{ roleLabel(roleKey) }}</span>
+                      @if (!isBuiltInRole(roleKey)) {
+                        <button
+                          type="button"
+                          class="delete-btn perm-role-delete"
+                          title="Delete custom role (only if no user has it)"
+                          [disabled]="busy()"
+                          (click)="deleteRole(roleKey)"
+                        >×</button>
+                      }
+                    </th>
                   }
                 </tr>
               </thead>
@@ -201,6 +225,7 @@ const DEFAULT_PERM_META: PermMetaItem[] = [
     .perm-header h3 { margin: 0 0 4px; }
     .perm-header p { margin: 0; font-size: 13px; }
     .perm-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+    .perm-add-role { margin-bottom: 10px; }
     .perm-dirty-badge {
       font-size: 12px; font-weight: 600; padding: 3px 8px; border-radius: 999px;
       background: rgba(79, 70, 229, 0.14); color: #4f46e5;
@@ -215,6 +240,7 @@ const DEFAULT_PERM_META: PermMetaItem[] = [
       padding: 10px 8px; border-bottom: 1px solid rgba(127, 127, 127, 0.18); text-align: left;
     }
     .perm-table th.perm-role-col, .perm-cell { text-align: center; min-width: 110px; }
+    .perm-role-delete { margin-left: 4px; font-size: 14px; vertical-align: middle; }
     .perm-name { font-weight: 600; }
     .perm-desc { font-size: 12px; margin-top: 2px; }
 
@@ -243,6 +269,8 @@ export class UsersPageComponent implements OnInit {
   readonly users = signal<AdminUser[]>([]);
   readonly roles = signal<RoleOption[]>([]);
   readonly brands = signal<string[]>([]);
+  readonly roleLabels = signal<Record<string, string>>({});
+  readonly builtInRoles = signal<string[]>(['admin', 'moderator', 'ecom_manager', 'ecom_executive']);
   readonly permMeta = signal<PermMetaItem[]>(DEFAULT_PERM_META);
   readonly savedPerms = signal<RolePermsMap>({});
   readonly draftPerms = signal<RolePermsMap>({});
@@ -264,6 +292,7 @@ export class UsersPageComponent implements OnInit {
   editDraft = { name: '', role: '', brands: [] as string[], active: true };
   passwordDraft = '';
   newBrand = '';
+  newRoleLabel = '';
 
   async ngOnInit() {
     await this.load();
@@ -273,11 +302,13 @@ export class UsersPageComponent implements OnInit {
     try {
       const [data, permRes] = await Promise.all([
         this.api.users(),
-        this.fetchJson<{ roles: RolePermsMap; permMeta?: PermMetaItem[] }>('/api/users/permissions'),
+        this.fetchJson<PermApiResponse>('/api/users/permissions'),
       ]);
       this.users.set(data.users);
-      this.roles.set(data.roles);
+      this.roles.set(permRes.roleOptions?.length ? permRes.roleOptions : data.roles);
       this.brands.set(data.brands);
+      if (permRes.roleLabels) this.roleLabels.set(permRes.roleLabels);
+      if (permRes.builtInRoles?.length) this.builtInRoles.set(permRes.builtInRoles);
       if (permRes.permMeta?.length) this.permMeta.set(permRes.permMeta);
       this.setPermsState(permRes.roles || {});
     } catch (err) {
@@ -296,6 +327,10 @@ export class UsersPageComponent implements OnInit {
       out[role] = { ...perms };
     }
     return out;
+  }
+
+  isBuiltInRole(roleKey: string): boolean {
+    return this.builtInRoles().includes(roleKey);
   }
 
   permValue(roleKey: string, key: PermKey): boolean {
@@ -323,6 +358,35 @@ export class UsersPageComponent implements OnInit {
     this.draftPerms.set(next);
   }
 
+  async addRole() {
+    const label = this.newRoleLabel.trim();
+    if (!label) return;
+    await this.run(async () => {
+      const res = await this.fetchJson<PermApiResponse & { key: string; label: string }>('/api/users/roles', {
+        method: 'POST',
+        body: JSON.stringify({ label }),
+      });
+      if (res.roleLabels) this.roleLabels.set(res.roleLabels);
+      if (res.roleOptions) this.roles.set(res.roleOptions);
+      if (res.builtInRoles) this.builtInRoles.set(res.builtInRoles);
+      this.setPermsState(res.roles);
+      this.newRoleLabel = '';
+      this.message.set(`Added role "${res.label}". Toggle its permissions and click Save permissions.`);
+    });
+  }
+
+  async deleteRole(roleKey: string) {
+    await this.run(async () => {
+      const res = await this.fetchJson<PermApiResponse>(`/api/users/roles/${encodeURIComponent(roleKey)}`, {
+        method: 'DELETE',
+      });
+      if (res.roleLabels) this.roleLabels.set(res.roleLabels);
+      if (res.roleOptions) this.roles.set(res.roleOptions);
+      this.setPermsState(res.roles);
+      this.message.set(`Removed role "${this.roleLabel(roleKey)}".`);
+    });
+  }
+
   discardPerms() {
     this.draftPerms.set(this.clonePerms(this.savedPerms()));
     this.error.set('');
@@ -331,10 +395,12 @@ export class UsersPageComponent implements OnInit {
 
   async savePerms() {
     await this.run(async () => {
-      const res = await this.fetchJson<{ ok: boolean; roles: RolePermsMap }>('/api/users/permissions', {
+      const res = await this.fetchJson<PermApiResponse>('/api/users/permissions', {
         method: 'PUT',
         body: JSON.stringify({ roles: this.draftPerms() }),
       });
+      if (res.roleLabels) this.roleLabels.set(res.roleLabels);
+      if (res.roleOptions) this.roles.set(res.roleOptions);
       this.setPermsState(res.roles);
       this.message.set('Role permissions saved. Changes apply on each user\'s next click.');
     });
@@ -342,11 +408,13 @@ export class UsersPageComponent implements OnInit {
 
   async resetPerms() {
     await this.run(async () => {
-      const res = await this.fetchJson<{ ok: boolean; roles: RolePermsMap }>('/api/users/permissions/reset', {
+      const res = await this.fetchJson<PermApiResponse>('/api/users/permissions/reset', {
         method: 'POST',
       });
+      if (res.roleLabels) this.roleLabels.set(res.roleLabels);
+      if (res.roleOptions) this.roles.set(res.roleOptions);
       this.setPermsState(res.roles);
-      this.message.set('Role permissions reset to defaults.');
+      this.message.set('Built-in role permissions reset to defaults.');
     });
   }
 
@@ -395,7 +463,7 @@ export class UsersPageComponent implements OnInit {
   }
 
   roleLabel(value: string) {
-    return this.roles().find((r) => r.value === value)?.label || value;
+    return this.roleLabels()[value] || this.roles().find((r) => r.value === value)?.label || value;
   }
 
   async create() {
