@@ -1,20 +1,104 @@
-// NEW FILE: client/src/app/pages/users-page.component.ts
-import { Component, OnInit, inject, signal } from '@angular/core';
+// client/src/app/pages/users-page.component.ts
+import { Component, OnInit, computed, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { ApiService } from '../core/api.service';
 import { AdminUser, RoleOption } from '../core/models';
 
-/** Admin-only Users page (route /users). Server enforces manageUsers on every call. */
+type PermKey = 'allBrands' | 'profit' | 'upload' | 'deleteData' | 'download' | 'manageUsers';
+type RolePermsMap = Record<string, Record<PermKey, boolean>>;
+
+interface PermMetaItem {
+  key: PermKey;
+  label: string;
+  description: string;
+}
+
+const DEFAULT_PERM_META: PermMetaItem[] = [
+  { key: 'allBrands',   label: 'All brands',       description: 'See every brand; when off, restricted to ticked brands only.' },
+  { key: 'profit',      label: 'View profit',      description: 'See profit figures, margins, and cost tabs.' },
+  { key: 'upload',      label: 'Upload reports',   description: 'Upload stock, sales, campaign, and cost files (requires All brands).' },
+  { key: 'deleteData',  label: 'Delete data',      description: 'Delete stored stock, sales, monthly, or campaign data.' },
+  { key: 'download',    label: 'Download exports', description: 'Export Excel workbooks.' },
+  { key: 'manageUsers', label: 'Manage users',     description: 'Access Users page, manage accounts, and edit role permissions.' },
+];
+
+/** Admin-only Users & Permissions page (route /users). Server enforces manageUsers on every call. */
 @Component({
   selector: 'app-users-page',
   imports: [FormsModule],
   template: `
     <header class="topbar">
-      <div class="topbar-left"><div><h1>Users</h1><span class="muted">Admins only. A change applies on the user's next click.</span></div></div>
+      <div class="topbar-left">
+        <div>
+          <h1>Users &amp; Permissions</h1>
+          <span class="muted">Admins only. Changes apply on each user's next click.</span>
+        </div>
+      </div>
     </header>
     <section class="profile">
       @if (message()) { <p class="muted">{{ message() }}</p> }
       @if (error()) { <p class="muted users-error">{{ error() }}</p> }
+
+      <div class="overview-list profile-card">
+        <div class="perm-header">
+          <div>
+            <h3>Role permissions</h3>
+            <p class="muted">Toggle what each role can access. Upload requires All brands; Admin always keeps Manage users.</p>
+          </div>
+          <div class="perm-actions">
+            @if (hasPermChanges()) {
+              <span class="perm-dirty-badge">Unsaved changes</span>
+            }
+            <button type="button" class="secondary-btn" (click)="discardPerms()" [disabled]="busy() || !hasPermChanges()">Discard</button>
+            <button type="button" class="secondary-btn" (click)="resetPerms()" [disabled]="busy()">Reset defaults</button>
+            <button type="button" class="secondary-btn perm-save-btn" (click)="savePerms()" [disabled]="busy() || !hasPermChanges()">Save permissions</button>
+          </div>
+        </div>
+
+        @if (roleKeys().length) {
+          <div class="perm-table-wrap">
+            <table class="perm-table">
+              <thead>
+                <tr>
+                  <th>Permission</th>
+                  @for (roleKey of roleKeys(); track roleKey) {
+                    <th class="perm-role-col">{{ roleLabel(roleKey) }}</th>
+                  }
+                </tr>
+              </thead>
+              <tbody>
+                @for (perm of permMeta(); track perm.key) {
+                  <tr>
+                    <td>
+                      <div class="perm-name">{{ perm.label }}</div>
+                      <div class="muted perm-desc">{{ perm.description }}</div>
+                    </td>
+                    @for (roleKey of roleKeys(); track roleKey) {
+                      <td class="perm-cell">
+                        <label
+                          class="perm-switch"
+                          [class.is-disabled]="isPermLocked(roleKey, perm.key)"
+                          [title]="permLockReason(roleKey, perm.key)"
+                        >
+                          <input
+                            type="checkbox"
+                            [checked]="permValue(roleKey, perm.key)"
+                            [disabled]="busy() || isPermLocked(roleKey, perm.key)"
+                            (change)="togglePerm(roleKey, perm.key, $any($event.target).checked)"
+                          />
+                          <span class="perm-slider"></span>
+                        </label>
+                      </td>
+                    }
+                  </tr>
+                }
+              </tbody>
+            </table>
+          </div>
+        } @else {
+          <p class="muted">Loading role permissions…</p>
+        }
+      </div>
 
       <div class="overview-list profile-card">
         <h3>Brands</h3>
@@ -109,6 +193,48 @@ import { AdminUser, RoleOption } from '../core/models';
     .brand-chip:hover { background: rgba(127, 127, 127, 0.12); }
     .brand-chip input { cursor: pointer; accent-color: #4f46e5; }
     .brand-chip.select-all { font-weight: 600; border-style: dashed; }
+
+    .perm-header {
+      display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: space-between;
+      gap: 12px; margin-bottom: 12px;
+    }
+    .perm-header h3 { margin: 0 0 4px; }
+    .perm-header p { margin: 0; font-size: 13px; }
+    .perm-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+    .perm-dirty-badge {
+      font-size: 12px; font-weight: 600; padding: 3px 8px; border-radius: 999px;
+      background: rgba(79, 70, 229, 0.14); color: #4f46e5;
+    }
+    .perm-save-btn {
+      background: #4f46e5; color: #fff; border-color: #4f46e5;
+    }
+    .perm-save-btn:disabled { opacity: 0.45; cursor: not-allowed; }
+    .perm-table-wrap { overflow-x: auto; }
+    .perm-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+    .perm-table th, .perm-table td {
+      padding: 10px 8px; border-bottom: 1px solid rgba(127, 127, 127, 0.18); text-align: left;
+    }
+    .perm-table th.perm-role-col, .perm-cell { text-align: center; min-width: 110px; }
+    .perm-name { font-weight: 600; }
+    .perm-desc { font-size: 12px; margin-top: 2px; }
+
+    .perm-switch {
+      position: relative; display: inline-block; width: 38px; height: 22px; cursor: pointer;
+    }
+    .perm-switch.is-disabled { opacity: 0.45; cursor: not-allowed; }
+    .perm-switch input { opacity: 0; width: 0; height: 0; position: absolute; }
+    .perm-slider {
+      position: absolute; inset: 0; border-radius: 999px;
+      background: rgba(127, 127, 127, 0.35); transition: background 0.16s ease;
+    }
+    .perm-slider::before {
+      content: ''; position: absolute; left: 3px; top: 3px; width: 16px; height: 16px;
+      border-radius: 50%; background: #fff; transition: transform 0.16s ease;
+      box-shadow: 0 1px 2px rgba(0, 0, 0, 0.25);
+    }
+    .perm-switch input:checked + .perm-slider { background: #4f46e5; }
+    .perm-switch input:checked + .perm-slider::before { transform: translateX(16px); }
+    .perm-switch input:focus-visible + .perm-slider { outline: 2px solid #4f46e5; outline-offset: 2px; }
   `,
 })
 export class UsersPageComponent implements OnInit {
@@ -117,10 +243,22 @@ export class UsersPageComponent implements OnInit {
   readonly users = signal<AdminUser[]>([]);
   readonly roles = signal<RoleOption[]>([]);
   readonly brands = signal<string[]>([]);
+  readonly permMeta = signal<PermMetaItem[]>(DEFAULT_PERM_META);
+  readonly savedPerms = signal<RolePermsMap>({});
+  readonly draftPerms = signal<RolePermsMap>({});
   readonly message = signal('');
   readonly error = signal('');
   readonly busy = signal(false);
   readonly editingId = signal<string | null>(null);
+
+  readonly roleKeys = computed(() => {
+    const fromRoles = this.roles().map((r) => r.value);
+    return fromRoles.length ? fromRoles : Object.keys(this.draftPerms());
+  });
+
+  readonly hasPermChanges = computed(
+    () => JSON.stringify(this.draftPerms()) !== JSON.stringify(this.savedPerms()),
+  );
 
   newUser = { email: '', name: '', password: '', role: 'ecom_executive', brands: [] as string[], active: true };
   editDraft = { name: '', role: '', brands: [] as string[], active: true };
@@ -133,13 +271,94 @@ export class UsersPageComponent implements OnInit {
 
   async load() {
     try {
-      const data = await this.api.users();
+      const [data, permRes] = await Promise.all([
+        this.api.users(),
+        this.fetchJson<{ roles: RolePermsMap; permMeta?: PermMetaItem[] }>('/api/users/permissions'),
+      ]);
       this.users.set(data.users);
       this.roles.set(data.roles);
       this.brands.set(data.brands);
+      if (permRes.permMeta?.length) this.permMeta.set(permRes.permMeta);
+      this.setPermsState(permRes.roles || {});
     } catch (err) {
       this.error.set((err as Error).message);
     }
+  }
+
+  private setPermsState(roles: RolePermsMap) {
+    this.savedPerms.set(this.clonePerms(roles));
+    this.draftPerms.set(this.clonePerms(roles));
+  }
+
+  private clonePerms(roles: RolePermsMap): RolePermsMap {
+    const out: RolePermsMap = {};
+    for (const [role, perms] of Object.entries(roles || {})) {
+      out[role] = { ...perms };
+    }
+    return out;
+  }
+
+  permValue(roleKey: string, key: PermKey): boolean {
+    return Boolean(this.draftPerms()[roleKey]?.[key]);
+  }
+
+  isPermLocked(roleKey: string, key: PermKey): boolean {
+    if (roleKey === 'admin' && key === 'manageUsers') return true;
+    if (key === 'upload' && !this.permValue(roleKey, 'allBrands')) return true;
+    return false;
+  }
+
+  permLockReason(roleKey: string, key: PermKey): string {
+    if (roleKey === 'admin' && key === 'manageUsers') return 'Admin must always keep Manage users permission.';
+    if (key === 'upload' && !this.permValue(roleKey, 'allBrands')) return 'Requires All brands to be enabled.';
+    return '';
+  }
+
+  togglePerm(roleKey: string, key: PermKey, on: boolean) {
+    if (this.isPermLocked(roleKey, key)) return;
+    const next = this.clonePerms(this.draftPerms());
+    if (!next[roleKey]) return;
+    next[roleKey][key] = on;
+    if (key === 'allBrands' && !on) next[roleKey].upload = false;
+    this.draftPerms.set(next);
+  }
+
+  discardPerms() {
+    this.draftPerms.set(this.clonePerms(this.savedPerms()));
+    this.error.set('');
+    this.message.set('');
+  }
+
+  async savePerms() {
+    await this.run(async () => {
+      const res = await this.fetchJson<{ ok: boolean; roles: RolePermsMap }>('/api/users/permissions', {
+        method: 'PUT',
+        body: JSON.stringify({ roles: this.draftPerms() }),
+      });
+      this.setPermsState(res.roles);
+      this.message.set('Role permissions saved. Changes apply on each user\'s next click.');
+    });
+  }
+
+  async resetPerms() {
+    await this.run(async () => {
+      const res = await this.fetchJson<{ ok: boolean; roles: RolePermsMap }>('/api/users/permissions/reset', {
+        method: 'POST',
+      });
+      this.setPermsState(res.roles);
+      this.message.set('Role permissions reset to defaults.');
+    });
+  }
+
+  private async fetchJson<T>(url: string, init?: RequestInit): Promise<T> {
+    const res = await fetch(url, {
+      credentials: 'same-origin',
+      headers: { 'Content-Type': 'application/json', ...(init?.headers || {}) },
+      ...init,
+    });
+    const body = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(body.error || `Request failed (${res.status}).`);
+    return body as T;
   }
 
   async addBrand() {

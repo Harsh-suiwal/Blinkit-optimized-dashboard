@@ -10,7 +10,7 @@
  *
  * The decision functions are pure (no Express) so scripts/access-smoke.js can test them.
  */
-const { ROLES, ROLE_LABELS, PERM_KEYS } = require('../config/permissions');
+const { ROLE_LABELS, PERM_KEYS, getRolePermissions } = require('../config/permissions');
 const supabase = require('../db/supabase');
 const accounts = require('../store/accounts');
 
@@ -19,9 +19,10 @@ const BRAND_FREE_ROUTES = new Set(['/api/brand-names', '/api/campaign-brands']);
 
 const NO_ACCESS = Object.fromEntries(PERM_KEYS.map((k) => [k, false]));
 
-/** The permissions a role has. Uploads also need allBrands. Unknown roles get nothing. */
+/** The permissions a role has (reads persisted overrides). Uploads also need allBrands. Unknown roles get nothing. */
 function permsFor(role) {
-  const base = Object.prototype.hasOwnProperty.call(ROLES, role) ? { ...NO_ACCESS, ...ROLES[role] } : { ...NO_ACCESS };
+  const roles = getRolePermissions();
+  const base = Object.prototype.hasOwnProperty.call(roles, role) ? { ...NO_ACCESS, ...roles[role] } : { ...NO_ACCESS };
   base.upload = Boolean(base.upload && base.allBrands);
   return base;
 }
