@@ -8,8 +8,6 @@
  *   deleteData   deletes stored data (stock, sales, monthly sales, campaigns, a brand).
  *   download     downloads Excel exports.
  *   manageUsers  the Users page: create users, set passwords, roles, brand ticks, active flag.
- *
- * VALUES BELOW ARE PLACEHOLDERS. The team has not confirmed them yet.
  * A role name that is not in this table gets no access at all (fails closed).
  */
 const ROLES = {
