@@ -2,17 +2,24 @@
  * Run once to create your first admin user:
  *   node db/seed-admin.js
  *
- * Uses .env for Supabase creds.
- * Change the email/password below to your own before running.
+ * Uses .env for Supabase creds and first-admin credentials.
  */
 
 require('dotenv').config();
 const bcrypt = require('bcrypt');
 const supabase = require('./supabase');
 
-// login lowercases the email it looks up, so the seeded one must be lowercase too
-const ADMIN_EMAIL = String(process.env.ADMIN_EMAIL || 'admin@blinkit.local').trim().toLowerCase();
-const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'changeme123';
+const ADMIN_EMAIL = String(process.env.ADMIN_EMAIL || '').trim().toLowerCase();
+const ADMIN_PASSWORD = String(process.env.ADMIN_PASSWORD || '');
+
+if (!ADMIN_EMAIL) {
+  console.error('Seed failed: set ADMIN_EMAIL in .env.');
+  process.exit(1);
+}
+if (!ADMIN_PASSWORD) {
+  console.error('Seed failed: set ADMIN_PASSWORD in .env.');
+  process.exit(1);
+}
 
 async function seed() {
   const hash = await bcrypt.hash(ADMIN_PASSWORD, 12);
@@ -32,7 +39,6 @@ async function seed() {
 
   console.log('✅  Admin user created / updated:');
   console.log(`   Email:    ${ADMIN_EMAIL}`);
-  console.log(`   Password: ${ADMIN_PASSWORD}`);
   console.log(`   Role:     admin`);
   console.log(`   ID:       ${data[0].id}`);
 }
