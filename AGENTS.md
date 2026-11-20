@@ -1,4 +1,4 @@
-﻿# AGENTS.md — Blinkit Optimized Dashboard
+# AGENTS.md — Blinkit Optimized Dashboard
 
 Seller analytics: Inventory, Sales Performance, Campaign performance (ROAS) from uploaded Blinkit `.xlsx` reports. Single login, roles `admin` (upload/delete) / `viewer` (read).
 
@@ -187,3 +187,7 @@ Routes: `/app/overview` (default), `/app/sales-performance` (Sales), `/app/inven
 - Upload also needs `allBrands` (enforced in `permsFor`). Protected routes use `requirePerm(...)`; exports need `download`; profit fields need `profit`.
 - Users API: `routes/users.js` (manageUsers only). Email, password (bcrypt) and role stay in `admin_users`; name, brand ticks and active flag are in kv `userProfiles`. The last active admin cannot be demoted or deactivated. A password reset or deactivation ends that user's sessions.
 - Test: `node scripts/access-smoke.js` (no server or database needed). Express routes themselves are not covered by it.
+
+## Changes of 20 Nov 2026
+- **Listing upload (Profit tab):** `POST /api/brand-costs-upload` now also reads Blinkit's own Product Listing report (headers Product name, MRP, Selling price, Platform commission (%), optional Platform commission value). It is detected by the commission column and the absence of a COGS column (`kind: 'listing'` in the answer, plus `names`). Such a file does NOT replace the cost sheet: `saveListingFigures` (`parser/brandCosts.js`) writes MRP, selling price and commission % into the typed values (`manual.products`), the same boxes as the Listing table, overwriting those three fields only; COGS and GST % are never touched. Commission % typed or uploaded feeds the profit maths, as before. The Profit tab has an "Upload listing report" button in the header and one inside the Listing section. The old cost-sheet format still works.
+- **Advertising trend chart:** the metric pills are now a multi-select (at least one stays on), each metric has a fixed colour (`trendMetrics` in `campaign-page.component.ts`). One metric = its own real scale; several = each line scaled to its own peak (left scale in % of peak), dots show the real value on hover.

@@ -417,6 +417,10 @@ export interface BrandCostsUploadResult {
   ok: boolean;
   productCount: number;
   skippedRows: number;
+  /** 'listing' = Blinkit Product Listing report (fills MRP, price, commission); 'costSheet' = the older cost sheet. */
+  kind?: 'listing' | 'costSheet';
+  /** Product names read from the file (listing reports only). */
+  names?: string[];
 }
 
 /** GET /api/profit-view: the Profit tab. Every money figure is a whole rupee; rows add up to `totals`. */

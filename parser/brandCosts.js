@@ -93,6 +93,33 @@ async function setProductField(brand, productName, field, value) {
   await kv.set(KEY, { brands });
 }
 
+/**
+ * Fills MRP, selling price and commission % of many products at once from a Blinkit Product Listing report.
+ * They go into the typed values (`manual.products`), the same boxes as the Listing table, so the report
+ * overwrites what was typed for those three fields and leaves COGS and GST % alone. The uploaded cost
+ * sheet (`products`) is not touched. Returns how many products were filled.
+ */
+async function saveListingFigures(brand, products, fileName) {
+  const brands = loadForWrite();
+  const entry = entryFor(brands, brand);
+  entry.manual = entry.manual || {};
+  entry.manual.products = entry.manual.products || {};
+  let filled = 0;
+  for (const p of products) {
+    const key = productKey(p.productName);
+    if (!key) continue;
+    const row = entry.manual.products[key] || { productName: p.productName };
+    if (p.mrp > 0) row.mrp = p.mrp;
+    if (p.sellingPrice > 0) row.sellingPrice = p.sellingPrice;
+    if (p.commissionPct >= 0 && p.commissionPct <= 100) row.commissionPct = p.commissionPct;
+    entry.manual.products[key] = row;
+    filled += 1;
+  }
+  entry.manual.listingFile = { fileName: String(fileName || ''), uploadedAt: new Date().toISOString().slice(0, 10) };
+  await kv.set(KEY, { brands });
+  return filled;
+}
+
 /** Saves the Profit tab's default numbers (GST %, commission %, per-unit inward / fulfilment / storage fees). */
 async function setProfitSettings(brand, patch) {
   const clean = cleanSettingsPatch(patch);
@@ -144,4 +171,4 @@ async function removeBrandCosts(brand, { typed = false } = {}) {
   return { costSheet: hadSheet, typed: typed && hadTyped };
 }
 
-module.exports = { getBrandCosts, saveBrandProducts, setOtherCost, setProductField, setProfitSettings, listBrandCosts, removeBrandCosts };
+module.exports = { getBrandCosts, saveBrandProducts, saveListingFigures, setOtherCost, setProductField, setProfitSettings, listBrandCosts, removeBrandCosts };

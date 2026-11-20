@@ -18,7 +18,7 @@ import { UiStateService } from '../core/ui-state.service';
       @if (isAdmin() && brand()) {
         <div class="topbar-right">
           <label class="feeder-option" title="Untick to leave the Advertising spend out of the costs"><input type="checkbox" [checked]="includeAds()" (change)="toggleAds()"><span>Include ad spend</span></label>
-          <label class="upload-btn">Upload cost sheet<input type="file" accept=".xlsx,.xls" hidden (change)="uploadCosts($event)"></label>
+          <label class="upload-btn" title="Blinkit Product Listing report: fills MRP, selling price and commission %">Upload listing report<input type="file" accept=".xlsx,.xls" hidden (change)="uploadCosts($event)"></label>
         </div>
       }
     </header>
@@ -164,8 +164,11 @@ import { UiStateService } from '../core/ui-state.service';
         }
 
         <section class="table-wrap compare-table listing-section">
-          <h3>Listing</h3>
-          <p class="muted">Type each product's MRP, selling price (what the customer pays, GST included) and Blinkit commission %. Discount and fees are worked out for you. This table feeds the report's "Catalogue and fee structure" section; it never changes the profit above.</p>
+          <div class="listing-head">
+            <h3>Listing</h3>
+            @if (isAdmin()) { <label class="upload-btn" title="Blinkit Product Listing report (.xlsx)">Upload listing report<input type="file" accept=".xlsx,.xls" hidden (change)="uploadCosts($event)"></label> }
+          </div>
+          <p class="muted">Upload Blinkit's Product Listing report to fill MRP, selling price and commission % for every product at once, or type them yourself. Discount and fees are worked out for you. This table feeds the report's "Catalogue and fee structure" section; it never changes the profit above.</p>
           @if (d.inputs.products.length) {
             <div class="listing-scroll">
               <table class="listing-table">
@@ -441,14 +444,25 @@ export class ProfitPageComponent {
     try {
       const result = await this.api.uploadBrandCosts(brand, file);
       const skipped = result.skippedRows ? `, ${result.skippedRows} rows skipped` : '';
-      this.setStatus(`Saved costs for ${result.productCount} products${skipped}.`, 'success');
-      await this.load(true);
+      if (result.kind === 'listing') {
+        await this.load(true);
+        const sold = new Set((this.data()?.inputs.products ?? []).map((p) => this.nameKey(p.productName)));
+        const matched = (result.names ?? []).filter((n) => sold.has(this.nameKey(n))).length;
+        const note = matched < result.productCount ? ` ${result.productCount - matched} not sold yet in this brand's sales, so they are stored but not shown.` : '';
+        this.setStatus(`Listing report read: ${result.productCount} products${skipped}, ${matched} filled in the table below.${note}`, 'success');
+      } else {
+        this.setStatus(`Saved costs for ${result.productCount} products${skipped}.`, 'success');
+        await this.load(true);
+      }
     } catch (error) {
       this.setStatus((error as Error).message, 'error');
     } finally {
       input.value = '';
     }
   }
+
+  /** Same matching rule as the server: case, spaces and punctuation ignored. */
+  private nameKey(name: string) { return String(name ?? '').toLowerCase().replace(/[^a-z0-9]/g, ''); }
 
   /** Reads a number box: empty -> null (clears), a bad value -> undefined. */
   private readNumber(input: HTMLInputElement): number | null | undefined {

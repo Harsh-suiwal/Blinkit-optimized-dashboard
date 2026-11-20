@@ -92,7 +92,7 @@ const SHEET_LABELS: Record<CampaignSheetFilter, string> = {
     <section class="ad-trend">
       <div class="ad-trend-head">
         <h2 class="section-title">Trends <span class="muted">daily @if (selection().count) { - {{ selection().count }} selected }</span></h2>
-        <div class="ad-trend-pills">@for (metric of trendMetrics; track metric.key) { <button type="button" class="ad-pill" [class.active]="trendMetric() === metric.key" (click)="trendMetric.set(metric.key)">{{ metric.label }}</button> }</div>
+        <div class="ad-trend-pills" role="group" aria-label="Metrics to draw (tick several to compare)">@for (metric of trendMetrics; track metric.key) { <button type="button" class="ad-pill" [class.active]="isTrendOn(metric.key)" [attr.aria-pressed]="isTrendOn(metric.key)" [style.--pill]="metric.color" title="Click to show or hide this line" (click)="toggleTrend(metric.key)"><span class="ad-swatch" [style.background]="metric.color"></span>{{ metric.label }}</button> }</div>
       </div>
       <div class="ad-trend-body">
         <div class="ad-trend-chart">
@@ -101,12 +101,13 @@ const SHEET_LABELS: Record<CampaignSheetFilter, string> = {
               @for (tick of t.ticks; track $index) { <span class="ad-gridline" [style.top.%]="tick.y"></span> }
               <!-- The line is drawn in real screen pixels (the box is measured), with an ordinary stroke: nothing here depends on a browser-specific SVG feature. -->
               <svg [attr.viewBox]="'0 0 ' + plotSize().w + ' ' + plotSize().h" preserveAspectRatio="none" aria-hidden="true">
-                <polyline class="ad-line" [attr.points]="trendLine()" />
+                @for (line of trendLines(); track line.key) { <polyline class="ad-line" [style.stroke]="line.color" [attr.points]="line.points" /> }
               </svg>
               @for (tick of t.ticks; track $index) { <span class="ad-axis ad-axis-y" [style.top.%]="tick.y">{{ tick.label }}</span> }
               @for (label of t.labels; track $index) { <span class="ad-axis ad-axis-x" [style.left.%]="label.x">{{ label.text }}</span> }
-              @for (dot of t.dots; track $index) { <span class="ad-dot" [style.left.%]="dot.x" [style.top.%]="dot.y" [title]="dot.title"></span> }
+              @for (dot of t.dots; track $index) { <span class="ad-dot" [style.left.%]="dot.x" [style.top.%]="dot.y" [style.--dot]="dot.color" [title]="dot.title"></span> }
             </div>
+            @if (t.multi) { <p class="muted ad-trend-note">Each line is scaled to its own highest day (the left scale is % of that peak), so shapes compare even though the units differ. Hover a dot for the real value.</p> }
           } @else { <p class="muted">No daily data to chart for this period.</p> }
         </div>
         <aside class="ad-trend-side">
@@ -231,9 +232,10 @@ export class CampaignPageComponent implements OnInit, OnDestroy {
   readonly ui = inject(UiStateService);
 
   readonly sheetTabs: CampaignSheetFilter[] = ['ALL', 'PRODUCT_BOOSTING', 'PRODUCT_RECOMMENDATION'];
-  readonly trendMetrics: { key: TrendKey; label: string }[] = [
-    { key: 'adSpend', label: 'Spend' }, { key: 'impressions', label: 'Impressions' }, { key: 'atc', label: 'ATC' },
-    { key: 'qtySold', label: 'Qty Sold' }, { key: 'sales', label: 'Sales' }, { key: 'roas', label: 'ROAS' },
+  readonly trendMetrics: { key: TrendKey; label: string; color: string }[] = [
+    { key: 'adSpend', label: 'Spend', color: '#ef4444' }, { key: 'impressions', label: 'Impressions', color: '#3b82f6' },
+    { key: 'atc', label: 'ATC', color: '#f59e0b' }, { key: 'qtySold', label: 'Qty Sold', color: '#8b5cf6' },
+    { key: 'sales', label: 'Sales', color: '#10b981' }, { key: 'roas', label: 'ROAS', color: '#06b6d4' },
   ];
   readonly brandColumns: { key: keyof CampaignBrandRow; label: string }[] = [
     { key: 'adSpend', label: 'Spend' }, { key: 'sales', label: 'Sales' }, { key: 'roas', label: 'ROAS' },
@@ -251,7 +253,8 @@ export class CampaignPageComponent implements OnInit, OnDestroy {
   readonly rows = signal<CampaignRow[]>([]);
   /** Per campaign per day, for the trend chart. */
   readonly daily = signal<CampaignDailyPoint[]>([]);
-  readonly trendMetric = signal<TrendKey>('adSpend');
+  /** Metrics drawn on the chart; any mix can be on at once (at least one stays on). */
+  readonly trendOn = signal<TrendKey[]>(['adSpend']);
   /** Left edge: the tick-box column, hidden until asked for. Apply keeps the ticks when it is hidden again. */
   readonly showSelect = signal(false);
   readonly applySelection = signal(false);
@@ -357,7 +360,7 @@ export class CampaignPageComponent implements OnInit, OnDestroy {
   });
   readonly totals = computed<CampaignSummary>(() => this.summarise(this.scopeRows()));
   /** The trend chart: one point per day for the campaigns in scope. Positions are percentages of the plot box (0 to 100); the
-   *  labels and dots are placed by percentage, and trendLine() turns the same points into pixels for the line. Null when there is nothing to draw. */
+   *  labels and dots are placed by percentage, and trendLines() turns the same points into pixels for the line. Null when there is nothing to draw. */
   readonly trend = computed(() => {
     const keys = new Set(this.scopeRows().map((row) => this.rowKey(row)));
     const byDate = new Map<string, { adSpend: number; sales: number; impressions: number; atc: number; qtySold: number }>();
@@ -367,40 +370,59 @@ export class CampaignPageComponent implements OnInit, OnDestroy {
       day.adSpend += point.adSpend; day.sales += point.sales; day.impressions += point.impressions; day.atc += point.atc; day.qtySold += point.qtySold;
       byDate.set(point.date, day);
     }
-    const metric = this.trendMetric();
+    const on = this.trendMetrics.filter((m) => this.trendOn().includes(m.key));
+    const dates = Array.from(byDate.keys()).sort();
+    if (!dates.length || !on.length) return null;
+    const multi = on.length > 1;
     // ROAS for a day is that day's sales / spend (recomputed from the sums, never averaged).
-    const days = Array.from(byDate.entries()).sort(([a], [b]) => a.localeCompare(b))
-      .map(([date, t]) => ({ date, value: metric === 'roas' ? (t.adSpend > 0 ? t.sales / t.adSpend : 0) : t[metric] }));
-    if (!days.length) return null;
-
-    const isMoney = metric === 'adSpend' || metric === 'sales';
-    const top = this.niceCeiling(Math.max(...days.map((d) => d.value)));
-    const x = (i: number) => Math.round((days.length === 1 ? 50 : (i / (days.length - 1)) * 100) * 100) / 100;
-    const y = (value: number) => Math.round((100 - (value / top) * 100) * 100) / 100;
-    const exact = (value: number) => (isMoney ? money(value, 0) : metric === 'roas' ? this.roas(Math.round(value * 100) / 100) : number(value));
-    const short = (value: number) => {
-      const trim = (n: number) => String(Math.round(n * 100) / 100);
-      const text = value >= 100000 ? `${trim(value / 100000)}L` : value >= 1000 ? `${trim(value / 1000)}K` : trim(value);
-      return isMoney ? `₹${text}` : metric === 'roas' ? `${text}x` : text;
+    const valueOf = (key: TrendKey, date: string) => {
+      const t = byDate.get(date)!;
+      return key === 'roas' ? (t.adSpend > 0 ? t.sales / t.adSpend : 0) : t[key];
     };
-    const labelEvery = Math.max(1, Math.ceil(days.length / 8));
+    const x = (i: number) => Math.round((dates.length === 1 ? 50 : (i / (dates.length - 1)) * 100) * 100) / 100;
+    const fmt = (key: TrendKey, value: number) => (key === 'adSpend' || key === 'sales' ? money(value, 0) : key === 'roas' ? this.roas(Math.round(value * 100) / 100) : number(value));
+    const trim = (n: number) => String(Math.round(n * 100) / 100);
+    const shortOf = (key: TrendKey, value: number) => {
+      const text = value >= 100000 ? `${trim(value / 100000)}L` : value >= 1000 ? `${trim(value / 1000)}K` : trim(value);
+      return key === 'adSpend' || key === 'sales' ? `₹${text}` : key === 'roas' ? `${text}x` : text;
+    };
+    // One metric: its own real scale. Several: each line is scaled to its own peak, so the left scale reads in % of peak.
+    const series = on.map((m) => {
+      const values = dates.map((d) => valueOf(m.key, d));
+      const top = this.niceCeiling(Math.max(...values));
+      return { ...m, values, top, y: (value: number) => Math.round((100 - (value / top) * 100) * 100) / 100 };
+    });
+    const first = series[0];
     return {
-      label: this.trendMetrics.find((m) => m.key === metric)?.label ?? '',
-      dots: days.map((d, i) => ({ x: x(i), y: y(d.value), title: `${this.dayLabel(d.date)}: ${exact(d.value)}` })),
-      ticks: [0, 1, 2, 3, 4].map((i) => ({ y: y((top * i) / 4), label: short((top * i) / 4) })),
-      labels: days.map((d, i) => ({ x: x(i), text: this.dayLabel(d.date) })).filter((_, i) => i % labelEvery === 0),
+      label: series.map((s) => s.label).join(', '),
+      multi,
+      series: series.map((s) => ({ key: s.key, color: s.color, ys: s.values.map((v) => s.y(v)) })),
+      dots: series.flatMap((s) => s.values.map((v, i) => ({ x: x(i), y: s.y(v), color: s.color, title: `${s.label} · ${this.dayLabel(dates[i])}: ${fmt(s.key, v)}` }))),
+      ticks: [0, 1, 2, 3, 4].map((i) => ({ y: first.y((first.top * i) / 4), label: multi ? `${i * 25}%` : shortOf(first.key, (first.top * i) / 4) })),
+      xs: dates.map((_, i) => x(i)),
+      labels: dates.map((d, i) => ({ x: x(i), text: this.dayLabel(d) })).filter((_, i) => i % Math.max(1, Math.ceil(dates.length / 8)) === 0),
     };
   });
   /** The chart's plot box on screen, in CSS pixels. Starts at a sensible size and is corrected as soon as the box is measured. */
   private readonly plot = viewChild<ElementRef<HTMLElement>>('plot');
   readonly plotSize = signal({ w: 800, h: 160 }, { equal: (a, b) => a.w === b.w && a.h === b.h });
-  /** The line's points in those pixels, e.g. "0,120 72.5,96". */
-  readonly trendLine = computed(() => {
+  /** Each drawn metric's line in those pixels, e.g. "0,120 72.5,96". */
+  readonly trendLines = computed(() => {
     const t = this.trend();
-    if (!t) return '';
+    if (!t) return [];
     const { w, h } = this.plotSize();
-    return t.dots.map((d) => `${Math.round(d.x * w) / 100},${Math.round(d.y * h) / 100}`).join(' ');
+    return t.series.map((s) => ({ key: s.key, color: s.color, points: s.ys.map((y, i) => `${Math.round(t.xs[i] * w) / 100},${Math.round(y * h) / 100}`).join(' ') }));
   });
+  isTrendOn(key: TrendKey) { return this.trendOn().includes(key); }
+  toggleTrend(key: TrendKey) {
+    const current = this.trendOn();
+    if (current.includes(key)) {
+      if (current.length === 1) return; // at least one line stays on
+      this.trendOn.set(current.filter((k) => k !== key));
+    } else {
+      this.trendOn.set([...current, key]);
+    }
+  }
   readonly sortedBrands = computed(() => {
     const direction = this.brandSortAsc() ? 1 : -1;
     return [...this.brandSummaries()].sort((a, b) => direction * compareValues(a, b, this.brandSortKey()));

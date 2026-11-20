@@ -65,7 +65,7 @@ const { computeStockHealth, decorateRows, stripHealth, productsNeedingAction } =
 const { monthSalesView, previousMonthKey } = require('./parser/salesMonthView');
 const { buildBrandOverview } = require('./parser/brandOverview');
 const { parseCostFile } = require('./parser/parseBrandCosts');
-const { getBrandCosts, saveBrandProducts, setOtherCost, setProductField, setProfitSettings, listBrandCosts, removeBrandCosts } = require('./parser/brandCosts');
+const { getBrandCosts, saveBrandProducts, saveListingFigures, setOtherCost, setProductField, setProfitSettings, listBrandCosts, removeBrandCosts } = require('./parser/brandCosts');
 const { buildUploadsOverview } = require('./parser/uploadsOverview');
 const { buildBrandProfit } = require('./parser/brandProfit');
 const { buildProfitView } = require('./parser/profitView');
@@ -1053,10 +1053,15 @@ app.post('/api/brand-costs-upload', requirePerm('upload'), uploadReport, mutatin
   if (!req.file) return res.status(400).json({ error: 'No file uploaded.' });
   try {
     if (!brand) return res.status(400).json({ error: 'brand is required.' });
-    const { products, skippedRows } = parseCostFile(req.file.path);
+    const { products, skippedRows, kind } = parseCostFile(req.file.path);
     await captureUndo('costs', { fileName: req.file.originalname, brands: [brand] });
-    await saveBrandProducts(brand, products, req.file.originalname, todayDateString());
-    res.json({ ok: true, productCount: products.length, skippedRows });
+    if (kind === 'listing') {
+      // Blinkit Product Listing report: MRP, selling price and commission % go into the Listing table's boxes.
+      await saveListingFigures(brand, products, req.file.originalname);
+    } else {
+      await saveBrandProducts(brand, products, req.file.originalname, todayDateString());
+    }
+    res.json({ ok: true, productCount: products.length, skippedRows, kind, names: kind === 'listing' ? products.map((p) => p.productName) : undefined });
   } catch (err) {
     if (err.kvError) throw err; // save failed -> 500 from mutating()
     res.status(400).json({ error: err.message });

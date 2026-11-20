@@ -24,6 +24,10 @@ const FIELD_BY_HEADER = {
   fulfillmentfee: 'fulfilmentFee',
   blinkitcommissionfee: 'commissionFee',
   commissionfee: 'commissionFee',
+  // Blinkit's own "Product Listing" report (Seller Central download). It has no COGS or Tax % column.
+  platformcommission: 'commissionPct',          // "Platform commission (%)"
+  platformcommissionvalue: 'commissionFee',      // "Platform commission value" (rupees per unit)
+  inwardingfee: 'inwardFee',                     // "Inwarding fee"
 };
 
 // [field, label shown in the error message]
@@ -79,7 +83,10 @@ function parseCostRows(grid) {
     const field = FIELD_BY_HEADER[normalizeHeader(cell)];
     if (field && columns[field] === undefined) columns[field] = index;
   });
-  const missing = REQUIRED.filter(([field]) => columns[field] === undefined).map(([, label]) => label);
+  // The Blinkit Product Listing report: prices and commission only (COGS and GST are typed on the Profit tab).
+  const isListingReport = columns.commissionPct !== undefined && columns.cogs === undefined;
+  const required = isListingReport ? REQUIRED.filter(([field]) => field === 'productName' || field === 'sellingPrice') : REQUIRED;
+  const missing = required.filter(([field]) => columns[field] === undefined).map(([, label]) => label);
   if (missing.length) throw new Error(`Missing expected column(s): ${missing.join(', ')}`);
 
   const cell = (row, field) => (columns[field] === undefined ? '' : row[columns[field]]);
@@ -97,6 +104,16 @@ function parseCostRows(grid) {
     seen.add(key);
 
     const commissionFee = toNumber(cell(row, 'commissionFee'));
+    if (isListingReport) {
+      const typedPct = columns.commissionPct === undefined ? 0 : toNumber(cell(row, 'commissionPct'));
+      products.push({
+        productName,
+        mrp: toNumber(cell(row, 'mrp')),
+        sellingPrice,
+        commissionPct: typedPct > 0 ? round(typedPct, 4) : round((commissionFee / sellingPrice) * 100, 4),
+      });
+      continue;
+    }
     products.push({
       productName,
       mrp: toNumber(cell(row, 'mrp')),
@@ -112,7 +129,7 @@ function parseCostRows(grid) {
   }
 
   if (!products.length) throw new Error('No product rows were found in the cost sheet.');
-  return { products, skippedRows };
+  return { products, skippedRows, kind: isListingReport ? 'listing' : 'costSheet' };
 }
 
 /** One unit sold at the list price: price without tax, and profit before ad spend. */
