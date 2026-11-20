@@ -10,7 +10,7 @@ const PILLARS = [
     id: 'p0', title: 'Product truth and compliance',
     why: 'The product must be legal to sell, its claims true, its specs listed correctly. Do this first.',
     musts: [
-      'Check the category rules (blade size for knives, FSSAI for food, BIS where needed).',
+      'Check the category rules that apply to this product (labelling, certification, safety or any category restrictions).',
       'Make sure every claim on the listing can be proven.',
       'Get the brand’s confirmation in writing for anything doubtful.',
     ],
@@ -67,8 +67,8 @@ const PILLARS = [
     why: 'Keep four campaign buckets apart so each one can be judged on its own.',
     musts: [
       'Brand: the brand’s own name. Cheap, protects existing demand.',
-      'Category: what the product is (knife, kitchen knife).',
-      'Use-case: the buying situations (chicken cutting knife, meat cutter).',
+      'Category: what the product is and the terms shoppers use to find it.',
+      'Use-case: the buying situations and needs for this product.',
       'Competitor and discovery: broad match to find new search terms. Small budget.',
       'Start at the platform’s suggested bid. Decide nothing on a keyword before about 10 clicks.',
       'Every week: move winning search terms to exact match, add wasters as negatives.',

@@ -41,5 +41,7 @@ assert.strictEqual(Object.keys(MODULES).length, 10);
 for (const p of PILLARS) assert.ok(p.musts.length > 0 && p.title && p.why, p.id);
 for (const mod of Object.values(MODULES)) for (const n of mod.needs) if (n.tick) assert.ok(ids.includes(n.tick), 'add-on points at a real tick: ' + n.tick);
 assert.ok(planAsText().includes('6-MONTH PLAN'));
+const strategyText = planAsText().toLowerCase();
+assert.ok(!/\b(?:knife|blades?|knife-blade)\b/.test(strategyText), 'base plan must not contain product-specific knife or blade references');
 
 console.log('strategy smoke: all checks passed');

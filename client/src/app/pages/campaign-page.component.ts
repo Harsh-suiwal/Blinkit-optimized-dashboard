@@ -107,7 +107,7 @@ const SHEET_LABELS: Record<CampaignSheetFilter, string> = {
               @for (label of t.labels; track $index) { <span class="ad-axis ad-axis-x" [style.left.%]="label.x">{{ label.text }}</span> }
               @for (dot of t.dots; track $index) { <span class="ad-dot" [style.left.%]="dot.x" [style.top.%]="dot.y" [style.--dot]="dot.color" [title]="dot.title"></span> }
             </div>
-            @if (t.multi) { <p class="muted ad-trend-note">Each line is scaled to its own highest day (the left scale is % of that peak), so shapes compare even though the units differ. Hover a dot for the real value.</p> }
+            @if (t.multi) { <p class="muted ad-trend-note">Each line is normalized to its peak for trend comparison; hover over a point to view the actual value.</p> }
           } @else { <p class="muted">No daily data to chart for this period.</p> }
         </div>
         <aside class="ad-trend-side">
